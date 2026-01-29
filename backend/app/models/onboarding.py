@@ -1,0 +1,44 @@
+"""Onboarding state model for tracking user onboarding progress."""
+
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
+
+from app.db.base import BaseModel
+
+
+class OnboardingState(BaseModel):
+    """Onboarding state entity tracking user progress through onboarding flow.
+    
+    Tracks the current step (0-11) and stores step data in JSONB format.
+    Each user has exactly one onboarding state.
+    """
+    
+    __tablename__ = "onboarding_states"
+    
+    # Foreign key to user
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False
+    )
+    
+    # Onboarding progress
+    current_step = Column(Integer, default=0, nullable=False)
+    is_complete = Column(Boolean, default=False, nullable=False)
+    
+    # Step data stored as JSONB for flexibility
+    step_data = Column(JSONB, default=dict, nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="onboarding_state")
+    
+    # Table constraints
+    __table_args__ = (
+        UniqueConstraint('user_id', name='unique_user_onboarding'),
+        Index(
+            'idx_onboarding_user',
+            'user_id',
+            postgresql_where=(Column('deleted_at').is_(None))
+        ),
+    )

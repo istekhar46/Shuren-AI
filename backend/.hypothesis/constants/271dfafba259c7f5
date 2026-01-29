@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\api\v1\endpoints\profiles.py
+# hypothesis_version: 6.151.4
+
+['/me', '/me/lock', 'allergies', 'carbs_percentage', 'constraint_type', 'daily_calorie_target', 'day_of_week', 'description', 'diet_type', 'dislikes', 'enable_notifications', 'energy_level', 'fats_percentage', 'goal_type', 'intolerances', 'meal_name', 'priority', 'protein_percentage', 'scheduled_time', 'severity', 'sleep_quality', 'stress_level', 'target_weight_kg']
