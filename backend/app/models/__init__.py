@@ -13,6 +13,16 @@ from app.models.preferences import (
     HydrationPreference,
     LifestyleBaseline,
 )
+from app.models.workout import (
+    WorkoutPlan,
+    WorkoutDay,
+    WorkoutExercise,
+    ExerciseLibrary,
+)
+from app.models.chat import (
+    ChatSession,
+    ChatMessage,
+)
 
 __all__ = [
     "User",
@@ -27,4 +37,10 @@ __all__ = [
     "WorkoutSchedule",
     "HydrationPreference",
     "LifestyleBaseline",
+    "WorkoutPlan",
+    "WorkoutDay",
+    "WorkoutExercise",
+    "ExerciseLibrary",
+    "ChatSession",
+    "ChatMessage",
 ]

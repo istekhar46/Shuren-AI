@@ -72,7 +72,7 @@ class TestSoftDeleteCascade:
     )
     @settings(
         max_examples=10,
-        suppress_health_check=[HealthCheck.function_scoped_fixture]
+        suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow]
     )
     async def test_soft_delete_cascades_to_related_records(self, user, profile):
         """

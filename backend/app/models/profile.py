@@ -1,8 +1,9 @@
 """User profile models for fitness configuration and versioning."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, UniqueConstraint, event
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.exc import IntegrityError
 
 from app.db.base import BaseModel
 
@@ -131,3 +132,70 @@ class UserProfileVersion(BaseModel):
     __table_args__ = (
         Index('idx_profile_versions', 'profile_id', 'version_number'),
     )
+
+
+# Event listeners for UserProfileVersion immutability
+
+@event.listens_for(UserProfileVersion, 'before_delete')
+def prevent_profile_version_deletion(mapper, connection, target):
+    """Prevent deletion of profile version records.
+    
+    Profile versions are immutable audit records and must never be deleted.
+    This ensures audit trail integrity.
+    
+    Raises:
+        IntegrityError: Always raised to prevent deletion
+    """
+    raise IntegrityError(
+        "Profile versions are immutable and cannot be deleted",
+        params=None,
+        orig=None
+    )
+
+
+@event.listens_for(UserProfileVersion, 'before_update')
+def prevent_profile_version_modification(mapper, connection, target):
+    """Prevent modification of profile version records.
+    
+    Profile versions are immutable audit records and must never be modified
+    after creation. This ensures audit trail integrity.
+    
+    Raises:
+        IntegrityError: Always raised to prevent modification
+    """
+    # Allow updates to deleted_at for soft deletes (though we prevent hard deletes)
+    # But prevent any other modifications
+    state = target._sa_instance_state
+    if state.has_identity:
+        # Check if any non-timestamp fields are being modified
+        history = state.get_history('snapshot', True)
+        if history.has_changes():
+            raise IntegrityError(
+                "Profile versions are immutable and cannot be modified",
+                params=None,
+                orig=None
+            )
+        
+        history = state.get_history('version_number', True)
+        if history.has_changes():
+            raise IntegrityError(
+                "Profile versions are immutable and cannot be modified",
+                params=None,
+                orig=None
+            )
+        
+        history = state.get_history('change_reason', True)
+        if history.has_changes():
+            raise IntegrityError(
+                "Profile versions are immutable and cannot be modified",
+                params=None,
+                orig=None
+            )
+        
+        history = state.get_history('profile_id', True)
+        if history.has_changes():
+            raise IntegrityError(
+                "Profile versions are immutable and cannot be modified",
+                params=None,
+                orig=None
+            )

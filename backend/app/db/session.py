@@ -20,11 +20,24 @@ from app.core.config import settings
 # Convert postgres:// to postgresql+asyncpg:// if needed
 # Aiven and some providers use postgres:// but SQLAlchemy async requires postgresql+asyncpg://
 def get_async_database_url(url: str) -> str:
-    """Convert database URL to async format if needed."""
+    """Convert database URL to async format if needed.
+    
+    Also removes sslmode parameter as asyncpg doesn't support it.
+    SSL is enabled by default when connecting to cloud databases.
+    """
+    # Convert postgres:// to postgresql+asyncpg://
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    # Remove sslmode parameter - asyncpg handles SSL automatically
+    # when connecting to cloud databases
+    import re
+    url = re.sub(r'[?&]sslmode=[^&]*', '', url)
+    # Clean up any trailing ? or & characters
+    url = re.sub(r'[?&]$', '', url)
+    
     return url
 
 

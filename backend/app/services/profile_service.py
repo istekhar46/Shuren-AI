@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import ProfileLockedException
 from app.models.preferences import (
     DietaryPreference,
     FitnessGoal,
@@ -109,8 +110,7 @@ class ProfileService:
         
         # Check if profile is locked
         if profile.is_locked and "unlock" not in updates:
-            raise HTTPException(
-                status_code=403,
+            raise ProfileLockedException(
                 detail="Profile is locked. Provide explicit unlock or reason to modify."
             )
         

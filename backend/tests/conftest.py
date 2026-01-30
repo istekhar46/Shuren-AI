@@ -33,7 +33,11 @@ from app.models.profile import UserProfile
 # Test database URL - use separate database or schema for testing
 # This prevents test data from polluting the development database
 def get_test_database_url() -> str:
-    """Get test database URL from settings or create test-specific URL."""
+    """Get test database URL from settings or create test-specific URL.
+    
+    For remote databases (like Aiven), we use the same database but with
+    transaction isolation to prevent test data pollution.
+    """
     db_url = settings.DATABASE_URL
     
     # Convert to async format
@@ -58,8 +62,12 @@ def get_test_database_url() -> str:
         else:
             db_url = base_url
     
-    # Replace database name with test database
-    # Example: postgresql+asyncpg://user:pass@host/db -> postgresql+asyncpg://user:pass@host/test_db
+    # For remote databases (containing cloud provider domains), use the same database
+    # with transaction isolation instead of trying to create a test database
+    if any(domain in db_url for domain in ['aivencloud.com', 'amazonaws.com', 'azure.com', 'cloud.google.com']):
+        return db_url
+    
+    # For local databases, try to use a test database
     if "//" in db_url and "/" in db_url.split("//")[1]:
         parts = db_url.rsplit("/", 1)
         db_name = parts[1].split("?")[0]  # Remove query params if any
