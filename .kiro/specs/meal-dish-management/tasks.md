@@ -126,7 +126,7 @@ Create migration for `template_meals` table.
 Implement SQLAlchemy Dish model.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/models/dish.py`
+- [x] File created: `backend/app/models/dish.py`
 - [ ] Dish class inherits from BaseModel
 - [ ] All columns defined with correct SQLAlchemy types
 - [ ] All CHECK constraints defined in __table_args__
@@ -151,7 +151,7 @@ Implement SQLAlchemy Dish model.
 Implement Ingredient and DishIngredient models.
 
 **Acceptance Criteria:**
-- [ ] Ingredient class added to `backend/app/models/dish.py`
+- [x] Ingredient class added to `backend/app/models/dish.py`
 - [ ] DishIngredient class added to same file
 - [ ] All columns and constraints defined
 - [ ] Relationships configured: ingredient.dish_ingredients, dish.dish_ingredients
@@ -169,7 +169,7 @@ Implement Ingredient and DishIngredient models.
 Implement MealTemplate and TemplateMeal models.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/models/meal_template.py`
+- [x] File created: `backend/app/models/meal_template.py`
 - [ ] MealTemplate class defined with all columns
 - [ ] TemplateMeal class defined with all columns
 - [ ] Relationships: template.template_meals, template.profile
@@ -188,11 +188,11 @@ Implement MealTemplate and TemplateMeal models.
 Add meal_templates relationship to UserProfile.
 
 **Acceptance Criteria:**
-- [ ] Relationship added to UserProfile in `backend/app/models/profile.py`
-- [ ] Cascade behavior: "all, delete-orphan"
-- [ ] back_populates="profile"
-- [ ] No import errors
-- [ ] Existing tests still pass
+- [x] Relationship added to UserProfile in `backend/app/models/profile.py`
+- [x] Cascade behavior: "all, delete-orphan"
+- [x] back_populates="profile"
+- [x] No import errors
+- [x] Existing tests still pass
 
 **Code:**
 ```python
@@ -214,9 +214,9 @@ meal_templates = relationship(
 Export new models from models package.
 
 **Acceptance Criteria:**
-- [ ] Dish, Ingredient, DishIngredient exported from `backend/app/models/__init__.py`
-- [ ] MealTemplate, TemplateMeal exported
-- [ ] Can import: `from app.models import Dish, MealTemplate`
+- [x] Dish, Ingredient, DishIngredient exported from `backend/app/models/__init__.py`
+- [x] MealTemplate, TemplateMeal exported
+- [x] Can import: `from app.models import Dish, MealTemplate`
 
 ---
 
@@ -231,17 +231,17 @@ Export new models from models package.
 Create Pydantic schemas for dish responses.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/schemas/dish.py`
-- [ ] IngredientBase schema with name, category
-- [ ] IngredientResponse schema with all fields
-- [ ] DishIngredientResponse with ingredient, quantity, unit
-- [ ] DishBase schema with name, cuisine_type, meal_type
-- [ ] DishResponse with all fields + ingredients list
-- [ ] DishSummaryResponse (without ingredients)
-- [ ] All fields have Field(..., description="...")
-- [ ] Config.from_attributes = True
-- [ ] total_time_minutes computed property
-- [ ] Schemas validate correctly
+- [x] File created: `backend/app/schemas/dish.py`
+- [x] IngredientBase schema with name, category
+- [x] IngredientResponse schema with all fields
+- [x] DishIngredientResponse with ingredient, quantity, unit
+- [x] DishBase schema with name, cuisine_type, meal_type
+- [x] DishResponse with all fields + ingredients list
+- [x] DishSummaryResponse (without ingredients)
+- [x] All fields have Field(..., description="...")
+- [x] Config.from_attributes = True
+- [x] total_time_minutes computed property
+- [x] Schemas validate correctly
 
 **Example:**
 ```python
@@ -268,17 +268,17 @@ class DishResponse(DishBase):
 Create Pydantic schemas for meal template responses and requests.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/schemas/meal_template.py`
-- [ ] TemplateMealResponse: id, day_of_week, meal_name, scheduled_time, is_primary, dish
-- [ ] MealSlotResponse: meal_name, scheduled_time, primary_dish, alternative_dishes
-- [ ] DayMealsResponse: day_of_week, day_name, meals, total_calories/protein/carbs/fats
-- [ ] MealTemplateResponse: id, week_number, is_active, days, timestamps
-- [ ] TodayMealsResponse: date, day_of_week, day_name, meals, totals
-- [ ] NextMealResponse: meal_name, scheduled_time, time_until_meal_minutes, dishes
-- [ ] TemplateRegenerateRequest: preferences (optional), week_number (optional)
-- [ ] DishSwapRequest: day_of_week, meal_name, new_dish_id
-- [ ] All schemas have json_schema_extra with examples
-- [ ] Schemas validate correctly
+- [x] File created: `backend/app/schemas/meal_template.py`
+- [x] TemplateMealResponse: id, day_of_week, meal_name, scheduled_time, is_primary, dish
+- [x] MealSlotResponse: meal_name, scheduled_time, primary_dish, alternative_dishes
+- [x] DayMealsResponse: day_of_week, day_name, meals, total_calories/protein/carbs/fats
+- [x] MealTemplateResponse: id, week_number, is_active, days, timestamps
+- [x] TodayMealsResponse: date, day_of_week, day_name, meals, totals
+- [x] NextMealResponse: meal_name, scheduled_time, time_until_meal_minutes, dishes
+- [x] TemplateRegenerateRequest: preferences (optional), week_number (optional)
+- [x] DishSwapRequest: day_of_week, meal_name, new_dish_id
+- [x] All schemas have json_schema_extra with examples
+- [x] Schemas validate correctly
 
 ---
 
@@ -291,12 +291,12 @@ Create Pydantic schemas for meal template responses and requests.
 Create Pydantic schemas for shopping list responses.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/schemas/shopping_list.py`
-- [ ] ShoppingListIngredient: ingredient_id, name, category, total_quantity, unit, used_in_dishes
-- [ ] ShoppingListCategory: category, ingredients list
-- [ ] ShoppingListResponse: week_number, start_date, end_date, categories, total_items
-- [ ] All fields have descriptions
-- [ ] Schemas validate correctly
+- [x] File created: `backend/app/schemas/shopping_list.py`
+- [x] ShoppingListIngredient: ingredient_id, name, category, total_quantity, unit, used_in_dishes
+- [x] ShoppingListCategory: category, ingredients list
+- [x] ShoppingListResponse: week_number, start_date, end_date, categories, total_items
+- [x] All fields have descriptions
+- [x] Schemas validate correctly
 
 ---
 
@@ -309,10 +309,10 @@ Create Pydantic schemas for shopping list responses.
 Export new schemas from schemas package.
 
 **Acceptance Criteria:**
-- [ ] All dish schemas exported from `backend/app/schemas/__init__.py`
-- [ ] All meal template schemas exported
-- [ ] All shopping list schemas exported
-- [ ] Can import: `from app.schemas import DishResponse, MealTemplateResponse`
+- [x] All dish schemas exported from `backend/app/schemas/__init__.py`
+- [x] All meal template schemas exported
+- [x] All shopping list schemas exported
+- [x] Can import: `from app.schemas import DishResponse, MealTemplateResponse`
 
 ---
 
@@ -327,15 +327,15 @@ Export new schemas from schemas package.
 Implement DishService with search and filtering.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/services/dish_service.py`
-- [ ] DishService class with __init__(self, db: AsyncSession)
-- [ ] get_dish(dish_id, include_ingredients=False) method
-- [ ] search_dishes(meal_type, diet_type, max_prep_time, max_calories, exclude_allergens, limit, offset) method
-- [ ] get_dishes_for_meal_slot(meal_type, target_calories, target_protein, dietary_preferences, count=3) method
-- [ ] Uses selectinload for eager loading
-- [ ] Proper async/await usage
-- [ ] All methods have docstrings
-- [ ] Service instantiates without errors
+- [x] File created: `backend/app/services/dish_service.py`
+- [x] DishService class with __init__(self, db: AsyncSession)
+- [x] get_dish(dish_id, include_ingredients=False) method
+- [x] search_dishes(meal_type, diet_type, max_prep_time, max_calories, exclude_allergens, limit, offset) method
+- [x] get_dishes_for_meal_slot(meal_type, target_calories, target_protein, dietary_preferences, count=3) method
+- [x] Uses selectinload for eager loading
+- [x] Proper async/await usage
+- [x] All methods have docstrings
+- [x] Service instantiates without errors
 
 **Key Logic:**
 - get_dishes_for_meal_slot: ±15% calories, ±20% protein tolerance
@@ -354,16 +354,16 @@ Implement DishService with search and filtering.
 Implement MealTemplateService read operations.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/services/meal_template_service.py`
-- [ ] MealTemplateService class with __init__(self, db: AsyncSession)
-- [ ] get_active_template(profile_id) - determines current week (1-4 rotation)
-- [ ] get_today_meals(profile_id) - returns today's meals with dishes
-- [ ] get_next_meal(profile_id) - finds next meal after current time
-- [ ] get_template_by_week(profile_id, week_number)
-- [ ] Uses selectinload for template_meals, dishes, meal_schedules
-- [ ] Calculates nutritional totals
-- [ ] Groups meals by schedule
-- [ ] All methods have docstrings
+- [x] File created: `backend/app/services/meal_template_service.py`
+- [x] MealTemplateService class with __init__(self, db: AsyncSession)
+- [x] get_active_template(profile_id) - determines current week (1-4 rotation)
+- [x] get_today_meals(profile_id) - returns today's meals with dishes
+- [x] get_next_meal(profile_id) - finds next meal after current time
+- [x] get_template_by_week(profile_id, week_number)
+- [x] Uses selectinload for template_meals, dishes, meal_schedules
+- [x] Calculates nutritional totals
+- [x] Groups meals by schedule
+- [x] All methods have docstrings
 
 **Key Logic:**
 - Current week: ((week_of_year - 1) % 4) + 1
@@ -381,12 +381,12 @@ Implement MealTemplateService read operations.
 Implement MealTemplateService write operations.
 
 **Acceptance Criteria:**
-- [ ] generate_template(profile_id, week_number, preferences) method
-- [ ] swap_dish(profile_id, day_of_week, meal_name, new_dish_id) method
-- [ ] _determine_meal_type(meal_name) helper
-- [ ] _calculate_meal_targets(meal_name, daily_calories, daily_protein, meals_per_day) helper
-- [ ] _get_profile(profile_id) helper with eager loading
-- [ ] Profile lock validation in all write methods
+- [x] generate_template(profile_id, week_number, preferences) method
+- [x] swap_dish(profile_id, day_of_week, meal_name, new_dish_id) method
+- [x] _determine_meal_type(meal_name) helper
+- [x] _calculate_meal_targets(meal_name, daily_calories, daily_protein, meals_per_day) helper
+- [x] _get_profile(profile_id) helper with eager loading
+- [x] Profile lock validation in all write methods
 - [ ] Raises ProfileLockedException if locked
 - [ ] Creates template with primary + 2 alternatives per meal slot
 - [ ] All methods have docstrings
@@ -408,8 +408,8 @@ Implement MealTemplateService write operations.
 Implement ShoppingListService for ingredient aggregation.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/services/shopping_list_service.py`
-- [ ] ShoppingListService class with __init__(self, db: AsyncSession)
+- [x] File created: `backend/app/services/shopping_list_service.py`
+- [x] ShoppingListService class with __init__(self, db: AsyncSession)
 - [ ] generate_shopping_list(profile_id, weeks=1) method
 - [ ] Aggregates ingredients from all primary dishes in template
 - [ ] Groups by ingredient category
@@ -434,8 +434,8 @@ Implement ShoppingListService for ingredient aggregation.
 Export new services from services package.
 
 **Acceptance Criteria:**
-- [ ] DishService exported from `backend/app/services/__init__.py`
-- [ ] MealTemplateService exported
+- [x] DishService exported from `backend/app/services/__init__.py`
+- [x] MealTemplateService exported
 - [ ] ShoppingListService exported
 - [ ] Can import: `from app.services import DishService, MealTemplateService`
 
@@ -452,15 +452,15 @@ Export new services from services package.
 Implement read-only meal template endpoints.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/api/v1/endpoints/meal_templates.py`
-- [ ] Router created with APIRouter()
-- [ ] GET /today endpoint - returns TodayMealsResponse
-- [ ] GET /next endpoint - returns NextMealResponse (404 if none)
-- [ ] GET /template endpoint - returns MealTemplateResponse (optional week_number query param)
-- [ ] Uses Depends(get_current_user) and Depends(get_db)
-- [ ] Response models specified in decorator
-- [ ] Error handling with HTTPException
-- [ ] Docstrings with description and examples
+- [x] File created: `backend/app/api/v1/endpoints/meal_templates.py`
+- [x] Router created with APIRouter()
+- [x] GET /today endpoint - returns TodayMealsResponse
+- [x] GET /next endpoint - returns NextMealResponse (404 if none)
+- [x] GET /template endpoint - returns MealTemplateResponse (optional week_number query param)
+- [x] Uses Depends(get_current_user) and Depends(get_db)
+- [x] Response models specified in decorator
+- [x] Error handling with HTTPException
+- [x] Docstrings with description and examples
 
 ---
 
@@ -473,11 +473,13 @@ Implement read-only meal template endpoints.
 Implement write meal template endpoints.
 
 **Acceptance Criteria:**
-- [ ] POST /template/regenerate endpoint - returns MealTemplateResponse (201)
+- [x] POST /template/regenerate endpoint - returns MealTemplateResponse (201)
 - [ ] PATCH /template/swap endpoint - returns MealTemplateResponse (200)
-- [ ] Request body validation with Pydantic
-- [ ] Profile lock validation (403 if locked)
-- [ ] Proper status codes
+- [x] Request body validation with Pydantic
+- [x] Profile lock validation (403 if locked)
+- [x] Proper status codes
+- [x] Error responses with detail and error_code
+- [x] Docstrings with examples
 - [ ] Error responses with detail and error_code
 - [ ] Docstrings with examples
 
@@ -492,14 +494,14 @@ Implement write meal template endpoints.
 Implement shopping list endpoint.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/api/v1/endpoints/shopping_list.py`
-- [ ] Router created
-- [ ] GET / endpoint - returns ShoppingListResponse
-- [ ] Query param: weeks (1-4, default 1)
-- [ ] Uses Depends(get_current_user) and Depends(get_db)
-- [ ] Response model specified
-- [ ] Error handling
-- [ ] Docstring with example
+- [x] File created: `backend/app/api/v1/endpoints/shopping_list.py`
+- [x] Router created
+- [x] GET / endpoint - returns ShoppingListResponse
+- [x] Query param: weeks (1-4, default 1)
+- [x] Uses Depends(get_current_user) and Depends(get_db)
+- [x] Response model specified
+- [x] Error handling
+- [x] Docstring with example
 
 ---
 
@@ -512,15 +514,15 @@ Implement shopping list endpoint.
 Implement dish search and detail endpoints.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/app/api/v1/endpoints/dishes.py`
-- [ ] Router created
-- [ ] GET /search endpoint - returns List[DishSummaryResponse]
-- [ ] Query params: meal_type, diet_type, max_prep_time, max_calories, limit (1-100), offset
-- [ ] GET /{dish_id} endpoint - returns DishResponse with ingredients
-- [ ] Applies user's dietary preferences to search (exclude allergens)
-- [ ] Pagination support
-- [ ] Response models specified
-- [ ] Docstrings with examples
+- [x] File created: `backend/app/api/v1/endpoints/dishes.py`
+- [x] Router created
+- [x] GET /search endpoint - returns List[DishSummaryResponse]
+- [x] Query params: meal_type, diet_type, max_prep_time, max_calories, limit (1-100), offset
+- [x] GET /{dish_id} endpoint - returns DishResponse with ingredients
+- [x] Applies user's dietary preferences to search (exclude allergens)
+- [x] Pagination support
+- [x] Response models specified
+- [x] Docstrings with examples
 
 ---
 
@@ -533,13 +535,13 @@ Implement dish search and detail endpoints.
 Register new endpoints in API router.
 
 **Acceptance Criteria:**
-- [ ] meal_templates router included in `backend/app/api/v1/__init__.py`
-- [ ] Prefix: "/meals", tags: ["Meal Templates"]
-- [ ] shopping_list router included
-- [ ] Prefix: "/meals/shopping-list", tags: ["Shopping List"]
-- [ ] dishes router included
-- [ ] Prefix: "/dishes", tags: ["Dishes"]
-- [ ] Routes accessible at /api/v1/meals/today, etc.
+- [x] meal_templates router included in `backend/app/api/v1/__init__.py`
+- [x] Prefix: "/meals", tags: ["Meal Templates"]
+- [x] shopping_list router included
+- [x] Prefix: "/meals/shopping-list", tags: ["Shopping List"]
+- [x] dishes router included
+- [x] Prefix: "/dishes", tags: ["Dishes"]
+- [x] Routes accessible at /api/v1/meals/today, etc.
 
 ---
 
@@ -573,7 +575,7 @@ Update existing /meals endpoints to include dish data.
 Create comprehensive dish data for seeding.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/seed_data/dishes.py`
+- [x] File created: `backend/seed_data/dishes.py`
 - [ ] Minimum 50 breakfast dishes (veg + non-veg mix)
 - [ ] Minimum 50 lunch dishes
 - [ ] Minimum 50 dinner dishes
@@ -621,7 +623,7 @@ DISHES = [
 Create master ingredient list.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/seed_data/ingredients.py`
+- [x] File created: `backend/seed_data/ingredients.py`
 - [ ] All common Indian ingredients included (100+ ingredients)
 - [ ] Categories: vegetable, fruit, protein, grain, dairy, spice, oil, other
 - [ ] Allergen tags set (peanuts, tree_nuts, dairy, eggs, soy, wheat, fish, shellfish)
@@ -640,7 +642,7 @@ Create master ingredient list.
 Create script to seed dish database.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/seed_dishes.py`
+- [x] File created: `backend/seed_dishes.py`
 - [ ] Imports dish and ingredient data
 - [ ] get_or_create_ingredient(db, name) function
 - [ ] Creates dishes with all fields
@@ -674,7 +676,7 @@ async def seed_dishes():
 Execute dish seeding script.
 
 **Acceptance Criteria:**
-- [ ] All migrations applied: `poetry run alembic upgrade head`
+- [x] All migrations applied: `poetry run alembic upgrade head`
 - [ ] Seed script runs: `poetry run python seed_dishes.py`
 - [ ] Minimum 200 dishes created
 - [ ] All ingredients created

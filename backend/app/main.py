@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.endpoints import auth, chat, meals, onboarding, profiles, workouts
+from app.api import v1
 from app.core.config import settings
 from app.core.exceptions import ProfileLockedException
 from app.schemas.error import ErrorResponse
@@ -102,6 +103,12 @@ app.include_router(
     meals.router,
     prefix="/api/v1/meals",
     tags=["Meals"]
+)
+
+# Include v1 API router (meal templates, shopping list, dishes)
+app.include_router(
+    v1.api_router,
+    prefix="/api/v1"
 )
 
 app.include_router(

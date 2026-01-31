@@ -91,6 +91,12 @@ class UserProfile(BaseModel):
         cascade="all, delete-orphan"
     )
     
+    meal_templates = relationship(
+        "MealTemplate",
+        back_populates="profile",
+        cascade="all, delete-orphan"
+    )
+    
     # Table constraints
     __table_args__ = (
         UniqueConstraint('user_id', name='unique_user_profile'),

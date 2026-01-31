@@ -23,6 +23,15 @@ from app.models.chat import (
     ChatSession,
     ChatMessage,
 )
+from app.models.dish import (
+    Dish,
+    Ingredient,
+    DishIngredient,
+)
+from app.models.meal_template import (
+    MealTemplate,
+    TemplateMeal,
+)
 
 __all__ = [
     "User",
@@ -43,4 +52,9 @@ __all__ = [
     "ExerciseLibrary",
     "ChatSession",
     "ChatMessage",
+    "Dish",
+    "Ingredient",
+    "DishIngredient",
+    "MealTemplate",
+    "TemplateMeal",
 ]
