@@ -43,6 +43,35 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     @property
+    def async_database_url(self) -> str:
+        """
+        Convert DATABASE_URL to asyncpg format if needed.
+        
+        SQLAlchemy with asyncpg requires postgresql+asyncpg:// protocol.
+        This property automatically converts legacy postgres:// or postgresql://
+        formats to the correct asyncpg format and removes sslmode parameter
+        (asyncpg handles SSL automatically for cloud databases).
+        
+        Returns:
+            str: Database URL with postgresql+asyncpg:// protocol
+        """
+        url = self.DATABASE_URL
+        
+        # Convert protocol to asyncpg format
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # Remove sslmode parameter - asyncpg handles SSL automatically
+        import re
+        url = re.sub(r'[?&]sslmode=[^&]*', '', url)
+        # Clean up any trailing ? or & characters
+        url = re.sub(r'[?&]$', '', url)
+        
+        return url
+    
+    @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS string into a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

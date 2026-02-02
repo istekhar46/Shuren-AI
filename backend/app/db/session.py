@@ -46,7 +46,7 @@ def get_async_database_url(url: str) -> str:
 # - pool_pre_ping=True: Verify connections before using them
 # - pool_size=5: Connection pool size for production
 engine = create_async_engine(
-    get_async_database_url(settings.DATABASE_URL),
+    settings.async_database_url,
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_size=5,

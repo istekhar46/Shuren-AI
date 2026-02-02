@@ -171,6 +171,68 @@ class TestSendMessage:
         assert response.status_code == 422
 
 
+class TestCreateChatSession:
+    """Tests for POST /api/v1/chat/sessions endpoint."""
+    
+    def test_create_session_success(self, client, mock_db, mock_chat_session):
+        """Test successful session creation with request body."""
+        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
+            mock_service = MockService.return_value
+            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
+            
+            response = client.post(
+                "/api/v1/chat/sessions",
+                json={
+                    "session_type": "workout",
+                    "context_data": {"goal": "strength"}
+                }
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["session_type"] == "general"
+            assert data["status"] == "active"
+            assert "id" in data
+            assert "started_at" in data
+            assert "last_activity_at" in data
+            assert data["ended_at"] is None
+    
+    def test_create_session_no_body(self, client, mock_db, mock_chat_session):
+        """Test session creation without request body defaults to 'general' type."""
+        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
+            mock_service = MockService.return_value
+            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
+            
+            response = client.post("/api/v1/chat/sessions")
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert "id" in data
+            assert data["status"] == "active"
+            # Verify the service was called with default "general" type
+            mock_service.create_session.assert_called_once()
+            call_args = mock_service.create_session.call_args
+            assert call_args[0][1].session_type == "general"
+    
+    def test_create_session_with_context_data(self, client, mock_db, mock_chat_session):
+        """Test session creation with context data."""
+        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
+            mock_service = MockService.return_value
+            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
+            
+            response = client.post(
+                "/api/v1/chat/sessions",
+                json={
+                    "session_type": "meal",
+                    "context_data": {"meal_plan_id": "123e4567-e89b-12d3-a456-426614174000"}
+                }
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert "id" in data
+
+
 class TestStartSession:
     """Tests for POST /api/v1/chat/session/start endpoint."""
     

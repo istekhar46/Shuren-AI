@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 # Base Schemas
@@ -45,10 +45,10 @@ class IngredientResponse(IngredientBase):
     """
     id: UUID = Field(..., description="Unique identifier for this ingredient")
     typical_unit: str = Field(..., description="Typical measurement unit (g, ml, piece, cup, tbsp, tsp)")
-    calories_per_100g: Optional[Decimal] = Field(None, description="Calories per 100g")
-    protein_per_100g: Optional[Decimal] = Field(None, description="Protein per 100g in grams")
-    carbs_per_100g: Optional[Decimal] = Field(None, description="Carbohydrates per 100g in grams")
-    fats_per_100g: Optional[Decimal] = Field(None, description="Fats per 100g in grams")
+    calories_per_100g: Optional[float] = Field(None, description="Calories per 100g")
+    protein_per_100g: Optional[float] = Field(None, description="Protein per 100g in grams")
+    carbs_per_100g: Optional[float] = Field(None, description="Carbohydrates per 100g in grams")
+    fats_per_100g: Optional[float] = Field(None, description="Fats per 100g in grams")
     is_allergen: bool = Field(..., description="Whether this ingredient is an allergen")
     allergen_type: Optional[str] = Field(None, description="Type of allergen if applicable (peanuts, tree_nuts, dairy, eggs, soy, wheat, fish, shellfish)")
     is_active: bool = Field(..., description="Whether this ingredient is currently active")
@@ -67,7 +67,7 @@ class DishIngredientResponse(BaseModel):
     quantity and preparation notes.
     """
     ingredient: IngredientResponse = Field(..., description="Complete ingredient details")
-    quantity: Decimal = Field(..., description="Quantity required for this dish")
+    quantity: float = Field(..., description="Quantity required for this dish")
     unit: str = Field(..., description="Measurement unit (g, ml, piece, cup, tbsp, tsp)")
     preparation_note: Optional[str] = Field(None, description="Preparation instructions (e.g., 'finely chopped', 'soaked overnight')")
     is_optional: bool = Field(..., description="Whether this ingredient is optional")
@@ -87,12 +87,12 @@ class DishResponse(DishBase):
     dish_category: Optional[str] = Field(None, description="Dish category (main_course, side_dish, beverage, dessert)")
     
     # Nutritional information (per serving)
-    serving_size_g: Decimal = Field(..., description="Serving size in grams")
-    calories: Decimal = Field(..., description="Calories per serving")
-    protein_g: Decimal = Field(..., description="Protein in grams per serving")
-    carbs_g: Decimal = Field(..., description="Carbohydrates in grams per serving")
-    fats_g: Decimal = Field(..., description="Fats in grams per serving")
-    fiber_g: Optional[Decimal] = Field(None, description="Fiber in grams per serving")
+    serving_size_g: float = Field(..., description="Serving size in grams")
+    calories: int = Field(..., description="Calories per serving")
+    protein_g: float = Field(..., description="Protein in grams per serving")
+    carbs_g: float = Field(..., description="Carbohydrates in grams per serving")
+    fats_g: float = Field(..., description="Fats in grams per serving")
+    fiber_g: Optional[float] = Field(None, description="Fiber in grams per serving")
     
     # Preparation details
     prep_time_minutes: int = Field(..., description="Preparation time in minutes")
@@ -116,7 +116,7 @@ class DishResponse(DishBase):
     updated_at: datetime = Field(..., description="Timestamp of last modification")
     
     # Ingredients (optional, loaded on demand)
-    ingredients: Optional[List[DishIngredientResponse]] = Field(None, description="List of ingredients with quantities (loaded on demand)")
+    ingredients: Optional[List[DishIngredientResponse]] = Field(None, description="List of ingredients with quantities (loaded on demand)", validation_alias="dish_ingredients", serialization_alias="ingredients")
     
     @computed_field
     @property
@@ -126,6 +126,7 @@ class DishResponse(DishBase):
     
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class DishSummaryResponse(BaseModel):
@@ -142,10 +143,10 @@ class DishSummaryResponse(BaseModel):
     cuisine_type: str = Field(..., description="Cuisine type (north_indian, south_indian, continental, fusion)")
     
     # Nutritional information
-    calories: Decimal = Field(..., description="Calories per serving")
-    protein_g: Decimal = Field(..., description="Protein in grams per serving")
-    carbs_g: Decimal = Field(..., description="Carbohydrates in grams per serving")
-    fats_g: Decimal = Field(..., description="Fats in grams per serving")
+    calories: int = Field(..., description="Calories per serving")
+    protein_g: float = Field(..., description="Protein in grams per serving")
+    carbs_g: float = Field(..., description="Carbohydrates in grams per serving")
+    fats_g: float = Field(..., description="Fats in grams per serving")
     
     # Preparation details
     prep_time_minutes: int = Field(..., description="Preparation time in minutes")

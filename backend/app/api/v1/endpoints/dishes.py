@@ -23,6 +23,159 @@ router = APIRouter()
 
 
 @router.get(
+    "/",
+    response_model=List[DishSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all dishes",
+    responses={
+        200: {
+            "description": "Dishes retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Egg Omelette with Multigrain Toast",
+                            "name_hindi": "अंडे का ऑमलेट",
+                            "meal_type": "breakfast",
+                            "cuisine_type": "north_indian",
+                            "calories": 350,
+                            "protein_g": 25,
+                            "carbs_g": 30,
+                            "fats_g": 15,
+                            "prep_time_minutes": 5,
+                            "cook_time_minutes": 10,
+                            "total_time_minutes": 15,
+                            "difficulty_level": "easy",
+                            "is_vegetarian": True,
+                            "is_vegan": False
+                        }
+                    ]
+                }
+            }
+        },
+        400: {
+            "description": "Bad request - invalid parameters",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "limit must be between 1 and 100"
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized - authentication required",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Not authenticated"
+                    }
+                }
+            }
+        }
+    }
+)
+async def list_dishes(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    meal_type: Annotated[
+        str | None,
+        Query(
+            description="Filter by meal type (breakfast, lunch, dinner, snack, pre_workout, post_workout)"
+        )
+    ] = None,
+    diet_type: Annotated[
+        str | None,
+        Query(
+            description="Filter by diet type (vegetarian, vegan)"
+        )
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=100,
+            description="Maximum number of results to return (1-100)"
+        )
+    ] = 50,
+    offset: Annotated[
+        int,
+        Query(
+            ge=0,
+            description="Number of results to skip for pagination"
+        )
+    ] = 0
+) -> List[DishSummaryResponse]:
+    """
+    List all dishes with optional filters and pagination.
+    
+    Returns a paginated list of dishes. Automatically excludes dishes
+    containing user's allergens. Supports filtering by meal type and
+    diet type. Results ordered by popularity score.
+    
+    Query Parameters:
+    - meal_type: Filter by meal type (breakfast, lunch, dinner, snack, pre_workout, post_workout)
+    - diet_type: Filter by diet type (vegetarian, vegan)
+    - limit: Maximum results (1-100, default 50)
+    - offset: Skip N results (default 0)
+    
+    Returns:
+    - Array of DishSummaryResponse objects
+    
+    Status Codes:
+    - 200: Success
+    - 400: Invalid parameters
+    - 401: Unauthorized
+    
+    Example:
+        GET /api/v1/dishes?meal_type=breakfast&limit=10
+        
+        Response (200 OK):
+        ```json
+        [
+            {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "name": "Egg Omelette with Multigrain Toast",
+                "meal_type": "breakfast",
+                "calories": 350,
+                "protein_g": 25,
+                ...
+            }
+        ]
+        ```
+    """
+    # Initialize dish service
+    service = DishService(db)
+    
+    # Get user's allergen preferences from profile
+    # Need to refresh the user to load the profile relationship
+    await db.refresh(current_user, ["profile"])
+    profile = current_user.profile
+    exclude_allergens = []
+    
+    if profile:
+        # Refresh profile to load dietary_preferences relationship
+        await db.refresh(profile, ["dietary_preferences"])
+        if profile.dietary_preferences:
+            # Get allergies from dietary preferences
+            allergies = profile.dietary_preferences.allergies or []
+            exclude_allergens = allergies
+    
+    # Call DishService.search_dishes() with filters and allergen exclusions
+    dishes = await service.search_dishes(
+        meal_type=meal_type,
+        diet_type=diet_type,
+        exclude_allergens=exclude_allergens,
+        limit=limit,
+        offset=offset
+    )
+    
+    # Convert results to DishSummaryResponse objects
+    return [DishSummaryResponse.model_validate(dish) for dish in dishes]
+
+
+@router.get(
     "/search",
     response_model=List[DishSummaryResponse],
     status_code=status.HTTP_200_OK,
@@ -165,13 +318,18 @@ async def search_dishes(
     service = DishService(db)
     
     # Get user's dietary preferences to exclude allergens
+    # Need to refresh the user to load the profile relationship
+    await db.refresh(current_user, ["profile"])
     profile = current_user.profile
     exclude_allergens = []
     
-    if profile and profile.dietary_preferences:
-        # Get allergies from dietary preferences
-        allergies = profile.dietary_preferences.allergies or []
-        exclude_allergens = allergies
+    if profile:
+        # Refresh profile to load dietary_preferences relationship
+        await db.refresh(profile, ["dietary_preferences"])
+        if profile.dietary_preferences:
+            # Get allergies from dietary preferences
+            allergies = profile.dietary_preferences.allergies or []
+            exclude_allergens = allergies
     
     # Search dishes with filters
     dishes = await service.search_dishes(

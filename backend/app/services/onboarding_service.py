@@ -1,5 +1,6 @@
 """Onboarding service for managing user onboarding flow."""
 
+import logging
 from datetime import time
 from decimal import Decimal
 from typing import Any
@@ -21,6 +22,8 @@ from app.models.preferences import (
     WorkoutSchedule,
 )
 from app.models.profile import UserProfile, UserProfileVersion
+
+logger = logging.getLogger(__name__)
 
 
 class OnboardingValidationError(Exception):
@@ -633,6 +636,9 @@ class OnboardingService:
             # Flush to ensure all entities are created
             await self.db.flush()
             
+            # Generate meal templates for weeks 1-4
+            await self._generate_initial_meal_templates(profile.id)
+            
             # Create initial ProfileVersion
             snapshot = await self._create_profile_snapshot(profile)
             profile_version = UserProfileVersion(
@@ -673,6 +679,64 @@ class OnboardingService:
         except Exception as e:
             await self.db.rollback()
             raise
+    
+    async def _generate_initial_meal_templates(self, profile_id: UUID) -> None:
+        """Generate initial meal templates for weeks 1-4 during onboarding.
+        
+        This method attempts to generate meal templates but does not fail
+        the onboarding process if template generation fails. Errors are
+        logged for monitoring.
+        
+        Args:
+            profile_id: UUID of the user profile
+        """
+        try:
+            # Import here to avoid circular dependency
+            from app.services.meal_template_service import MealTemplateService
+            
+            template_service = MealTemplateService(self.db)
+            
+            logger.info(f"Starting meal template generation for profile {profile_id}")
+            
+            # Temporarily unlock profile for template generation
+            # (profile is locked by default during onboarding completion)
+            result = await self.db.execute(
+                select(UserProfile).where(UserProfile.id == profile_id)
+            )
+            profile = result.scalar_one()
+            original_lock_state = profile.is_locked
+            profile.is_locked = False
+            await self.db.flush()
+            
+            # Generate templates for all 4 weeks
+            for week in [1, 2, 3, 4]:
+                try:
+                    await template_service.generate_template(
+                        profile_id=profile_id,
+                        week_number=week,
+                        preferences="Initial onboarding template"
+                    )
+                    logger.info(f"Generated meal template for week {week}, profile {profile_id}")
+                except Exception as week_error:
+                    logger.error(
+                        f"Failed to generate meal template for week {week}, profile {profile_id}: {week_error}",
+                        exc_info=True
+                    )
+                    # Continue with next week even if one fails
+                    continue
+            
+            # Restore original lock state
+            profile.is_locked = original_lock_state
+            await self.db.flush()
+            
+            logger.info(f"Completed meal template generation for profile {profile_id}")
+            
+        except Exception as e:
+            logger.error(
+                f"Meal template generation failed for profile {profile_id}: {e}",
+                exc_info=True
+            )
+            # Don't raise - allow onboarding to complete even if template generation fails
     
     async def _create_profile_snapshot(self, profile: UserProfile) -> dict[str, Any]:
         """Create a complete snapshot of profile state for versioning.

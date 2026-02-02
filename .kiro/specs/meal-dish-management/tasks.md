@@ -697,11 +697,11 @@ Execute dish seeding script.
 Add meal template generation to onboarding flow.
 
 **Acceptance Criteria:**
-- [ ] Update `backend/app/services/onboarding_service.py`
-- [ ] Modify complete_meal_schedule_step() method
-- [ ] After meal schedules created, generate templates for weeks 1-4
-- [ ] Error handling doesn't fail onboarding (log error, continue)
-- [ ] Template generation logged
+- [x] Update `backend/app/services/onboarding_service.py`
+- [x] Modify complete_meal_schedule_step() method
+- [x] After meal schedules created, generate templates for weeks 1-4
+- [x] Error handling doesn't fail onboarding (log error, continue)
+- [x] Template generation logged
 - [ ] Can optionally add template_generated flag to onboarding_state
 
 **Implementation:**
@@ -730,11 +730,11 @@ except Exception as e:
 Update onboarding tests to verify template generation.
 
 **Acceptance Criteria:**
-- [ ] Update `backend/tests/test_onboarding_service.py`
-- [ ] Test verifies 4 templates created after onboarding
-- [ ] Test checks templates respect dietary preferences
-- [ ] Existing onboarding tests still pass
-- [ ] Run: `poetry run pytest backend/tests/test_onboarding_service.py`
+- [x] Update `backend/tests/test_onboarding_service.py`
+- [x] Test verifies 4 templates created after onboarding
+- [x] Test checks templates respect dietary preferences
+- [x] Existing onboarding tests still pass
+- [x] Run: `poetry run pytest backend/tests/test_onboarding_service.py`
 
 ---
 
@@ -793,14 +793,14 @@ Add Redis caching to dish service.
 Create unit tests for DishService.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/tests/test_dish_service.py`
-- [ ] Test get_dish() with and without ingredients
-- [ ] Test search_dishes() with various filters
-- [ ] Test get_dishes_for_meal_slot()
-- [ ] Test dietary preference filtering
-- [ ] Test allergen exclusion
-- [ ] All tests pass: `poetry run pytest backend/tests/test_dish_service.py`
-- [ ] Code coverage > 80%
+- [x] File created: `backend/tests/test_dish_service.py`
+- [x] Test get_dish() with and without ingredients
+- [x] Test search_dishes() with various filters
+- [x] Test get_dishes_for_meal_slot()
+- [x] Test dietary preference filtering
+- [x] Test allergen exclusion
+- [x] All tests pass: `poetry run pytest backend/tests/test_dish_service.py`
+- [x] Code coverage > 80%
 
 ---
 
@@ -813,16 +813,16 @@ Create unit tests for DishService.
 Create unit tests for MealTemplateService.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/tests/test_meal_template_service.py`
-- [ ] Test get_active_template()
-- [ ] Test get_today_meals()
-- [ ] Test get_next_meal()
-- [ ] Test generate_template()
-- [ ] Test swap_dish()
-- [ ] Test profile lock validation
-- [ ] Test dietary preference enforcement
-- [ ] All tests pass
-- [ ] Code coverage > 80%
+- [x] File created: `backend/tests/test_meal_template_service.py`
+- [x] Test get_active_template()
+- [x] Test get_today_meals()
+- [x] Test get_next_meal()
+- [x] Test generate_template()
+- [x] Test swap_dish()
+- [x] Test profile lock validation
+- [x] Test dietary preference enforcement
+- [x] All tests pass
+- [x] Code coverage > 80%
 
 ---
 
@@ -835,13 +835,13 @@ Create unit tests for MealTemplateService.
 Create unit tests for ShoppingListService.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/tests/test_shopping_list_service.py`
-- [ ] Test generate_shopping_list()
-- [ ] Test ingredient aggregation
-- [ ] Test category grouping
-- [ ] Test quantity calculations
-- [ ] All tests pass
-- [ ] Code coverage > 80%
+- [x] File created: `backend/tests/test_shopping_list_service.py`
+- [x] Test generate_shopping_list()
+- [x] Test ingredient aggregation
+- [x] Test category grouping
+- [x] Test quantity calculations
+- [x] All tests pass
+- [x] Code coverage > 80%
 
 ---
 
@@ -854,17 +854,17 @@ Create unit tests for ShoppingListService.
 Create integration tests for all endpoints.
 
 **Acceptance Criteria:**
-- [ ] Files created: `backend/tests/test_meal_template_endpoints.py`, `test_shopping_list_endpoints.py`, `test_dish_endpoints.py`
-- [ ] Test GET /meals/today
-- [ ] Test GET /meals/next
-- [ ] Test GET /meals/template
-- [ ] Test POST /meals/template/regenerate
+- [x] Files created: `backend/tests/test_meal_template_endpoints.py`, `test_shopping_list_endpoints.py`, `test_dish_endpoints.py`
+- [x] Test GET /meals/today
+- [x] Test GET /meals/next
+- [x] Test GET /meals/template
+- [x] Test POST /meals/template/regenerate
 - [ ] Test PATCH /meals/template/swap
-- [ ] Test GET /meals/shopping-list
-- [ ] Test GET /dishes/search
-- [ ] Test GET /dishes/{id}
-- [ ] Test authentication (401 without token)
-- [ ] Test profile lock enforcement (403 when locked)
+- [x] Test GET /meals/shopping-list
+- [x] Test GET /dishes/search
+- [x] Test GET /dishes/{id}
+- [x] Test authentication (401 without token)
+- [x] Test profile lock enforcement (403 when locked)
 - [ ] All tests pass
 
 ---
@@ -878,15 +878,15 @@ Create integration tests for all endpoints.
 Create property-based tests for correctness.
 
 **Acceptance Criteria:**
-- [ ] File created: `backend/tests/test_meal_template_properties.py`
-- [ ] Install hypothesis: `poetry add --group dev hypothesis`
-- [ ] Property 1: Nutritional balance (±5% calories)
-- [ ] Property 2: Dietary restriction compliance
-- [ ] Property 3: Macro percentage consistency
-- [ ] Property 4: Template completeness
-- [ ] Property 5: Shopping list accuracy
-- [ ] All properties pass with 100+ examples
-- [ ] Run: `poetry run pytest backend/tests/test_meal_template_properties.py`
+- [x] File created: `backend/tests/test_meal_template_properties.py`
+- [x] Install hypothesis: `poetry add --group dev hypothesis`
+- [x] Property 1: Nutritional balance (±5% calories)
+- [x] Property 2: Dietary restriction compliance
+- [x] Property 3: Macro percentage consistency
+- [x] Property 4: Template completeness
+- [x] Property 5: Shopping list accuracy
+- [x] All properties pass with 100+ examples
+- [x] Run: `poetry run pytest backend/tests/test_meal_template_properties.py`
 
 **Example:**
 ```python
@@ -908,13 +908,13 @@ async def test_template_meets_calorie_targets(db, user, daily_calories):
 Create test fixtures for dishes and templates.
 
 **Acceptance Criteria:**
-- [ ] Update `backend/tests/conftest.py`
-- [ ] Fixture: sample_dishes (10-20 dishes)
-- [ ] Fixture: sample_ingredients
-- [ ] Fixture: user_with_meal_template
-- [ ] Fixture: vegetarian_user
-- [ ] Fixture: user_with_allergies
-- [ ] Fixtures can be reused: `def test_something(sample_dishes):`
+- [x] Update `backend/tests/conftest.py`
+- [x] Fixture: sample_dishes (10-20 dishes)
+- [x] Fixture: sample_ingredients
+- [x] Fixture: user_with_meal_template
+- [x] Fixture: vegetarian_user
+- [x] Fixture: user_with_allergies
+- [x] Fixtures can be reused: `def test_something(sample_dishes):`
 
 ---
 
@@ -929,7 +929,7 @@ Create test fixtures for dishes and templates.
 Ensure OpenAPI documentation is complete.
 
 **Acceptance Criteria:**
-- [ ] All endpoints have descriptions
+- [x] All endpoints have descriptions
 - [ ] All request/response schemas documented
 - [ ] Example requests/responses in docstrings
 - [ ] Error responses documented (400, 401, 403, 404)
@@ -950,7 +950,7 @@ Document migration process for deployment.
 - [ ] File created: `backend/docs/migrations/meal-dish-management.md`
 - [ ] Migration order documented (1.1 → 1.2 → 1.3 → 1.4 → 1.5)
 - [ ] Rollback procedures documented
-- [ ] Seeding instructions included
+- [x] Seeding instructions included
 - [ ] Backfill script usage documented
 
 ---
@@ -1001,10 +1001,10 @@ Add metrics and logging for observability.
 Update project README with feature information.
 
 **Acceptance Criteria:**
-- [ ] Feature description added to `backend/README.md`
-- [ ] New API endpoints listed
+- [x] Feature description added to `backend/README.md`
+- [x] New API endpoints listed
 - [ ] Seeding instructions included
-- [ ] Migration instructions included
+- [x] Migration instructions included
 
 ---
 

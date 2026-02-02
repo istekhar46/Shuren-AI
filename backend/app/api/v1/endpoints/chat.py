@@ -138,6 +138,109 @@ async def send_message(
 
 
 @router.post(
+    "/sessions",
+    response_model=ChatSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create chat session",
+    responses={
+        201: {
+            "description": "Session created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "session_type": "general",
+                        "status": "active",
+                        "started_at": "2026-02-02T10:00:00Z",
+                        "ended_at": None,
+                        "last_activity_at": "2026-02-02T10:00:00Z"
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Not authenticated"
+                    }
+                }
+            }
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["body", "session_type"],
+                                "msg": "value is not a valid enumeration member",
+                                "type": "type_error.enum"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+)
+async def create_chat_session(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    session_create: Optional[ChatSessionCreate] = None
+) -> ChatSessionResponse:
+    """
+    Create new chat session.
+    
+    Creates a new conversation context for AI agent interaction.
+    If no request body provided, creates a "general" session type.
+    
+    **Request Body (optional):**
+    ```json
+    {
+        "session_type": "workout",
+        "context_data": {
+            "workout_plan_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+    }
+    ```
+    
+    Args:
+        current_user: Authenticated user from get_current_user dependency
+        db: Database session from dependency injection
+        session_create: Optional ChatSessionCreate with session type and context
+        
+    Returns:
+        ChatSessionResponse with new session details
+        
+    Raises:
+        HTTPException(422): If validation fails (handled by FastAPI)
+        HTTPException(401): If authentication fails (handled by dependency)
+    """
+    # Initialize chat service
+    chat_service = ChatService(db)
+    
+    # Default to "general" session type if no body provided
+    if session_create is None:
+        session_create = ChatSessionCreate(session_type="general")
+    
+    # Create session
+    session = await chat_service.create_session(current_user.id, session_create)
+    
+    # Return response
+    return ChatSessionResponse(
+        id=session.id,
+        session_type=session.session_type,
+        status=session.status,
+        started_at=session.started_at,
+        ended_at=session.ended_at,
+        last_activity_at=session.last_activity_at
+    )
+
+
+@router.post(
     "/session/start",
     response_model=ChatSessionResponse,
     status_code=status.HTTP_201_CREATED,

@@ -162,7 +162,24 @@ poetry run alembic upgrade head
 # Only create new migrations if you modify the models
 ```
 
-### 7. Run the Development Server
+### 7. Seed Dish Database (Optional)
+
+The Meal Dish Management feature requires a populated dish database. To seed the database with sample dishes:
+
+```bash
+# Seed ingredients and dishes
+poetry run python seed_dishes.py
+
+# This will create:
+# - 200+ Indian dishes across all meal types
+# - 100+ ingredients with nutritional information
+# - Dish-ingredient relationships
+
+# Verify seeding
+poetry run python -c "from app.db.session import async_session_maker; from app.models import Dish; import asyncio; async def count(): async with async_session_maker() as db: from sqlalchemy import select, func; result = await db.execute(select(func.count(Dish.id))); print(f'Dishes: {result.scalar()}'); asyncio.run(count())"
+```
+
+### 8. Run the Development Server
 
 **Option 1: Quick Start Script (Recommended)**
 
@@ -242,6 +259,55 @@ poetry run alembic history
 
 # View current migration version
 poetry run alembic current
+```
+
+### Meal Dish Management Migrations
+
+The Meal Dish Management feature includes the following migrations (in order):
+
+1. **Create Dishes Table** (`7f960ed91e7c_create_dishes_table.py`)
+   - Master dish library with nutritional information
+   - Dietary tags and allergen information
+   - Indexes for performance
+
+2. **Create Ingredients Table** (`0a27131ea639_create_ingredients_table.py`)
+   - Master ingredient list
+   - Nutritional data per 100g
+   - Allergen tags
+
+3. **Create Dish Ingredients Junction Table** (`5e89aa6e6fb3_create_dish_ingredients_table.py`)
+   - Links dishes to ingredients with quantities
+   - Cascade delete for dishes, restrict for ingredients
+
+4. **Create Meal Templates Table** (`43aeb196576c_create_meal_templates_table.py`)
+   - User's weekly meal templates (4-week rotation)
+   - Links to user profiles
+
+5. **Create Template Meals Table** (`582ee71d9305_create_template_meals_table.py`)
+   - Specific dish assignments for meal slots
+   - Primary and alternative dish options
+
+**To apply these migrations:**
+```bash
+poetry run alembic upgrade head
+```
+
+**To rollback all meal dish management migrations:**
+```bash
+# Rollback to before template_meals
+poetry run alembic downgrade 43aeb196576c
+
+# Rollback to before meal_templates
+poetry run alembic downgrade 5e89aa6e6fb3
+
+# Rollback to before dish_ingredients
+poetry run alembic downgrade 0a27131ea639
+
+# Rollback to before ingredients
+poetry run alembic downgrade 7f960ed91e7c
+
+# Rollback to before dishes (complete removal)
+poetry run alembic downgrade -1
 ```
 
 ## API Documentation
@@ -351,6 +417,27 @@ poetry run mypy app/
 | `CORS_ORIGINS` | Allowed CORS origins | No | - |
 | `LOG_LEVEL` | Logging level | No | INFO |
 
+## Features
+
+### Meal Dish Management
+
+The Meal Dish Management feature provides concrete dish recommendations for each meal slot in your nutrition plan. Instead of abstract calorie and macro targets, users receive specific Indian dishes tailored to their dietary preferences and fitness goals.
+
+**Key Capabilities:**
+- **Weekly Meal Templates**: 4-week rotating meal plans with specific dish recommendations
+- **Dish Library**: Comprehensive database of Indian dishes with accurate nutritional information
+- **Dietary Compliance**: Automatic filtering based on vegetarian/vegan preferences and allergen restrictions
+- **Flexible Options**: 2-3 alternative dishes per meal slot for variety
+- **Shopping Lists**: Auto-generated ingredient lists for weekly meal prep
+- **Smart Recommendations**: Dishes selected based on meal timing (pre-workout, post-workout, regular meals)
+
+**Benefits:**
+- Eliminates meal planning guesswork
+- Ensures nutritional targets are met with real food
+- Provides culturally appropriate meal suggestions
+- Supports grocery shopping with ingredient lists
+- Maintains variety with weekly rotation
+
 ## API Endpoints
 
 ### Authentication
@@ -371,6 +458,23 @@ poetry run mypy app/
 - `GET /api/v1/profiles/me` - Get user profile with all preferences
 - `PATCH /api/v1/profiles/me` - Update user profile
 - `POST /api/v1/profiles/me/lock` - Lock user profile
+
+### Meal Templates
+
+- `GET /api/v1/meals/today` - Get today's meals with dish recommendations
+- `GET /api/v1/meals/next` - Get next upcoming meal with dishes
+- `GET /api/v1/meals/template` - Get current week's meal template
+- `POST /api/v1/meals/template/regenerate` - Generate new meal template
+- `PATCH /api/v1/meals/template/swap` - Swap a dish in the template
+
+### Dishes
+
+- `GET /api/v1/dishes/search` - Search dishes by meal type, diet, prep time, etc.
+- `GET /api/v1/dishes/{dish_id}` - Get detailed dish information with ingredients
+
+### Shopping List
+
+- `GET /api/v1/meals/shopping-list` - Get aggregated shopping list for meal template
 
 ## Performance Targets
 

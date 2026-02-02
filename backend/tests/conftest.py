@@ -494,3 +494,671 @@ def invalid_onboarding_data() -> dict:
             "sleep_quality": -5  # Negative
         }
     }
+
+
+# ============================================================================
+# Meal Dish Management Fixtures (Task 9.6)
+# ============================================================================
+#
+# These fixtures provide test data for the meal dish management feature:
+#
+# - sample_ingredients: 10 common ingredients (proteins, grains, vegetables, etc.)
+# - sample_dishes: 12 dishes covering all meal types (breakfast, lunch, dinner, 
+#                  snacks, pre/post-workout) with both vegetarian and non-vegetarian
+# - user_with_meal_template: User with complete meal template (week 1) and 
+#                            meal schedules
+# - vegetarian_user: User with vegetarian dietary preferences
+# - user_with_allergies: User with dairy and egg allergies
+#
+# Usage:
+#   async def test_something(sample_dishes, vegetarian_user):
+#       dishes = sample_dishes
+#       user, profile = vegetarian_user
+#       # ... test logic
+#
+# ============================================================================
+
+
+@pytest_asyncio.fixture
+async def sample_ingredients(db_session: AsyncSession) -> list:
+    """Create sample ingredients for testing.
+    
+    Returns:
+        list: List of Ingredient objects with various categories
+    
+    Usage:
+        async def test_ingredients(sample_ingredients):
+            assert len(sample_ingredients) >= 10
+    """
+    from app.models.dish import Ingredient
+    from decimal import Decimal
+    
+    ingredients_data = [
+        # Proteins
+        {"name": "chicken_breast", "name_hindi": "चिकन ब्रेस्ट", "category": "protein", 
+         "calories_per_100g": Decimal("165"), "protein_per_100g": Decimal("31"), 
+         "carbs_per_100g": Decimal("0"), "fats_per_100g": Decimal("3.6"), 
+         "typical_unit": "g", "is_allergen": False},
+        {"name": "eggs", "name_hindi": "अंडे", "category": "protein", 
+         "calories_per_100g": Decimal("155"), "protein_per_100g": Decimal("13"), 
+         "carbs_per_100g": Decimal("1.1"), "fats_per_100g": Decimal("11"), 
+         "typical_unit": "piece", "is_allergen": True, "allergen_type": "eggs"},
+        {"name": "paneer", "name_hindi": "पनीर", "category": "dairy", 
+         "calories_per_100g": Decimal("265"), "protein_per_100g": Decimal("18"), 
+         "carbs_per_100g": Decimal("1.2"), "fats_per_100g": Decimal("20"), 
+         "typical_unit": "g", "is_allergen": True, "allergen_type": "dairy"},
+        
+        # Grains
+        {"name": "brown_rice", "name_hindi": "ब्राउन राइस", "category": "grain", 
+         "calories_per_100g": Decimal("111"), "protein_per_100g": Decimal("2.6"), 
+         "carbs_per_100g": Decimal("23"), "fats_per_100g": Decimal("0.9"), 
+         "typical_unit": "g", "is_allergen": False},
+        {"name": "oats", "name_hindi": "ओट्स", "category": "grain", 
+         "calories_per_100g": Decimal("389"), "protein_per_100g": Decimal("17"), 
+         "carbs_per_100g": Decimal("66"), "fats_per_100g": Decimal("7"), 
+         "typical_unit": "g", "is_allergen": False},
+        
+        # Vegetables
+        {"name": "spinach", "name_hindi": "पालक", "category": "vegetable", 
+         "calories_per_100g": Decimal("23"), "protein_per_100g": Decimal("2.9"), 
+         "carbs_per_100g": Decimal("3.6"), "fats_per_100g": Decimal("0.4"), 
+         "typical_unit": "g", "is_allergen": False},
+        {"name": "tomato", "name_hindi": "टमाटर", "category": "vegetable", 
+         "calories_per_100g": Decimal("18"), "protein_per_100g": Decimal("0.9"), 
+         "carbs_per_100g": Decimal("3.9"), "fats_per_100g": Decimal("0.2"), 
+         "typical_unit": "g", "is_allergen": False},
+        
+        # Fruits
+        {"name": "banana", "name_hindi": "केला", "category": "fruit", 
+         "calories_per_100g": Decimal("89"), "protein_per_100g": Decimal("1.1"), 
+         "carbs_per_100g": Decimal("23"), "fats_per_100g": Decimal("0.3"), 
+         "typical_unit": "piece", "is_allergen": False},
+        
+        # Oils and spices
+        {"name": "olive_oil", "name_hindi": "जैतून का तेल", "category": "oil", 
+         "calories_per_100g": Decimal("884"), "protein_per_100g": Decimal("0"), 
+         "carbs_per_100g": Decimal("0"), "fats_per_100g": Decimal("100"), 
+         "typical_unit": "ml", "is_allergen": False},
+        {"name": "turmeric", "name_hindi": "हल्दी", "category": "spice", 
+         "calories_per_100g": Decimal("312"), "protein_per_100g": Decimal("9.7"), 
+         "carbs_per_100g": Decimal("67"), "fats_per_100g": Decimal("3.2"), 
+         "typical_unit": "tsp", "is_allergen": False},
+    ]
+    
+    ingredients = []
+    for data in ingredients_data:
+        ingredient = Ingredient(
+            id=uuid4(),
+            **data,
+            is_active=True,
+            created_at=datetime.now(timezone.utc)
+        )
+        db_session.add(ingredient)
+        ingredients.append(ingredient)
+    
+    await db_session.commit()
+    for ingredient in ingredients:
+        await db_session.refresh(ingredient)
+    
+    return ingredients
+
+
+@pytest_asyncio.fixture
+async def sample_dishes(db_session: AsyncSession, sample_ingredients: list) -> list:
+    """Create sample dishes for testing.
+    
+    Returns:
+        list: List of 10-20 Dish objects with various meal types
+    
+    Usage:
+        async def test_dishes(sample_dishes):
+            breakfast_dishes = [d for d in sample_dishes if d.meal_type == 'breakfast']
+            assert len(breakfast_dishes) > 0
+    """
+    from app.models.dish import Dish, DishIngredient
+    from decimal import Decimal
+    
+    # Get ingredients by name for easy reference
+    ingredients_map = {ing.name: ing for ing in sample_ingredients}
+    
+    dishes_data = [
+        # Breakfast dishes
+        {
+            "name": "Scrambled Eggs with Toast",
+            "name_hindi": "अंडे का भुर्जी",
+            "cuisine_type": "continental",
+            "meal_type": "breakfast",
+            "serving_size_g": Decimal("200"),
+            "calories": Decimal("350"),
+            "protein_g": Decimal("25"),
+            "carbs_g": Decimal("30"),
+            "fats_g": Decimal("15"),
+            "prep_time_minutes": 5,
+            "cook_time_minutes": 10,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "ingredients": [
+                {"name": "eggs", "quantity": Decimal("3"), "unit": "piece"},
+                {"name": "olive_oil", "quantity": Decimal("5"), "unit": "ml"},
+            ]
+        },
+        {
+            "name": "Oatmeal with Banana",
+            "name_hindi": "ओट्स और केला",
+            "cuisine_type": "continental",
+            "meal_type": "breakfast",
+            "serving_size_g": Decimal("250"),
+            "calories": Decimal("300"),
+            "protein_g": Decimal("12"),
+            "carbs_g": Decimal("50"),
+            "fats_g": Decimal("6"),
+            "prep_time_minutes": 2,
+            "cook_time_minutes": 5,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "is_vegan": True,
+            "ingredients": [
+                {"name": "oats", "quantity": Decimal("50"), "unit": "g"},
+                {"name": "banana", "quantity": Decimal("1"), "unit": "piece"},
+            ]
+        },
+        {
+            "name": "Paneer Bhurji",
+            "name_hindi": "पनीर भुर्जी",
+            "cuisine_type": "north_indian",
+            "meal_type": "breakfast",
+            "serving_size_g": Decimal("200"),
+            "calories": Decimal("400"),
+            "protein_g": Decimal("22"),
+            "carbs_g": Decimal("15"),
+            "fats_g": Decimal("28"),
+            "prep_time_minutes": 10,
+            "cook_time_minutes": 15,
+            "difficulty_level": "medium",
+            "is_vegetarian": True,
+            "contains_allergens": ["dairy"],
+            "ingredients": [
+                {"name": "paneer", "quantity": Decimal("150"), "unit": "g"},
+                {"name": "tomato", "quantity": Decimal("50"), "unit": "g"},
+                {"name": "turmeric", "quantity": Decimal("1"), "unit": "tsp"},
+            ]
+        },
+        
+        # Lunch dishes
+        {
+            "name": "Grilled Chicken with Rice",
+            "name_hindi": "ग्रिल्ड चिकन और चावल",
+            "cuisine_type": "continental",
+            "meal_type": "lunch",
+            "serving_size_g": Decimal("350"),
+            "calories": Decimal("500"),
+            "protein_g": Decimal("45"),
+            "carbs_g": Decimal("50"),
+            "fats_g": Decimal("10"),
+            "prep_time_minutes": 10,
+            "cook_time_minutes": 25,
+            "difficulty_level": "medium",
+            "is_vegetarian": False,
+            "ingredients": [
+                {"name": "chicken_breast", "quantity": Decimal("200"), "unit": "g"},
+                {"name": "brown_rice", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "olive_oil", "quantity": Decimal("10"), "unit": "ml"},
+            ]
+        },
+        {
+            "name": "Spinach Dal with Rice",
+            "name_hindi": "पालक दाल",
+            "cuisine_type": "north_indian",
+            "meal_type": "lunch",
+            "serving_size_g": Decimal("300"),
+            "calories": Decimal("380"),
+            "protein_g": Decimal("18"),
+            "carbs_g": Decimal("60"),
+            "fats_g": Decimal("8"),
+            "prep_time_minutes": 15,
+            "cook_time_minutes": 30,
+            "difficulty_level": "medium",
+            "is_vegetarian": True,
+            "is_vegan": True,
+            "ingredients": [
+                {"name": "spinach", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "brown_rice", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "turmeric", "quantity": Decimal("1"), "unit": "tsp"},
+            ]
+        },
+        
+        # Dinner dishes
+        {
+            "name": "Paneer Tikka with Vegetables",
+            "name_hindi": "पनीर टिक्का",
+            "cuisine_type": "north_indian",
+            "meal_type": "dinner",
+            "serving_size_g": Decimal("300"),
+            "calories": Decimal("450"),
+            "protein_g": Decimal("25"),
+            "carbs_g": Decimal("35"),
+            "fats_g": Decimal("22"),
+            "prep_time_minutes": 20,
+            "cook_time_minutes": 20,
+            "difficulty_level": "medium",
+            "is_vegetarian": True,
+            "contains_allergens": ["dairy"],
+            "ingredients": [
+                {"name": "paneer", "quantity": Decimal("200"), "unit": "g"},
+                {"name": "tomato", "quantity": Decimal("50"), "unit": "g"},
+                {"name": "spinach", "quantity": Decimal("50"), "unit": "g"},
+            ]
+        },
+        {
+            "name": "Chicken Curry with Rice",
+            "name_hindi": "चिकन करी",
+            "cuisine_type": "north_indian",
+            "meal_type": "dinner",
+            "serving_size_g": Decimal("400"),
+            "calories": Decimal("550"),
+            "protein_g": Decimal("40"),
+            "carbs_g": Decimal("55"),
+            "fats_g": Decimal("15"),
+            "prep_time_minutes": 15,
+            "cook_time_minutes": 35,
+            "difficulty_level": "medium",
+            "is_vegetarian": False,
+            "ingredients": [
+                {"name": "chicken_breast", "quantity": Decimal("200"), "unit": "g"},
+                {"name": "brown_rice", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "tomato", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "turmeric", "quantity": Decimal("1"), "unit": "tsp"},
+            ]
+        },
+        
+        # Snacks
+        {
+            "name": "Boiled Eggs",
+            "name_hindi": "उबले अंडे",
+            "cuisine_type": "continental",
+            "meal_type": "snack",
+            "serving_size_g": Decimal("100"),
+            "calories": Decimal("155"),
+            "protein_g": Decimal("13"),
+            "carbs_g": Decimal("1"),
+            "fats_g": Decimal("11"),
+            "prep_time_minutes": 2,
+            "cook_time_minutes": 10,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "contains_allergens": ["eggs"],
+            "ingredients": [
+                {"name": "eggs", "quantity": Decimal("2"), "unit": "piece"},
+            ]
+        },
+        {
+            "name": "Banana Smoothie",
+            "name_hindi": "केला स्मूदी",
+            "cuisine_type": "continental",
+            "meal_type": "snack",
+            "serving_size_g": Decimal("250"),
+            "calories": Decimal("200"),
+            "protein_g": Decimal("8"),
+            "carbs_g": Decimal("35"),
+            "fats_g": Decimal("3"),
+            "prep_time_minutes": 5,
+            "cook_time_minutes": 0,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "is_vegan": True,
+            "ingredients": [
+                {"name": "banana", "quantity": Decimal("2"), "unit": "piece"},
+                {"name": "oats", "quantity": Decimal("20"), "unit": "g"},
+            ]
+        },
+        
+        # Pre-workout
+        {
+            "name": "Banana with Oats",
+            "name_hindi": "केला और ओट्स",
+            "cuisine_type": "continental",
+            "meal_type": "pre_workout",
+            "serving_size_g": Decimal("150"),
+            "calories": Decimal("250"),
+            "protein_g": Decimal("8"),
+            "carbs_g": Decimal("45"),
+            "fats_g": Decimal("4"),
+            "prep_time_minutes": 3,
+            "cook_time_minutes": 2,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "is_vegan": True,
+            "ingredients": [
+                {"name": "banana", "quantity": Decimal("1"), "unit": "piece"},
+                {"name": "oats", "quantity": Decimal("30"), "unit": "g"},
+            ]
+        },
+        
+        # Post-workout
+        {
+            "name": "Chicken and Rice Bowl",
+            "name_hindi": "चिकन राइस बाउल",
+            "cuisine_type": "continental",
+            "meal_type": "post_workout",
+            "serving_size_g": Decimal("300"),
+            "calories": Decimal("450"),
+            "protein_g": Decimal("40"),
+            "carbs_g": Decimal("45"),
+            "fats_g": Decimal("8"),
+            "prep_time_minutes": 10,
+            "cook_time_minutes": 20,
+            "difficulty_level": "easy",
+            "is_vegetarian": False,
+            "ingredients": [
+                {"name": "chicken_breast", "quantity": Decimal("180"), "unit": "g"},
+                {"name": "brown_rice", "quantity": Decimal("100"), "unit": "g"},
+            ]
+        },
+        {
+            "name": "Paneer and Rice Bowl",
+            "name_hindi": "पनीर राइस बाउल",
+            "cuisine_type": "north_indian",
+            "meal_type": "post_workout",
+            "serving_size_g": Decimal("300"),
+            "calories": Decimal("480"),
+            "protein_g": Decimal("28"),
+            "carbs_g": Decimal("45"),
+            "fats_g": Decimal("18"),
+            "prep_time_minutes": 10,
+            "cook_time_minutes": 15,
+            "difficulty_level": "easy",
+            "is_vegetarian": True,
+            "contains_allergens": ["dairy"],
+            "ingredients": [
+                {"name": "paneer", "quantity": Decimal("150"), "unit": "g"},
+                {"name": "brown_rice", "quantity": Decimal("100"), "unit": "g"},
+                {"name": "spinach", "quantity": Decimal("50"), "unit": "g"},
+            ]
+        },
+    ]
+    
+    dishes = []
+    for dish_data in dishes_data:
+        # Extract ingredients data
+        ingredients_data = dish_data.pop("ingredients")
+        
+        # Create dish
+        dish = Dish(
+            id=uuid4(),
+            **dish_data,
+            is_active=True,
+            popularity_score=50,
+            created_at=datetime.now(timezone.utc)
+        )
+        db_session.add(dish)
+        dishes.append(dish)
+        
+        # Create dish ingredients
+        for ing_data in ingredients_data:
+            ingredient = ingredients_map.get(ing_data["name"])
+            if ingredient:
+                dish_ingredient = DishIngredient(
+                    id=uuid4(),
+                    dish_id=dish.id,
+                    ingredient_id=ingredient.id,
+                    quantity=ing_data["quantity"],
+                    unit=ing_data["unit"],
+                    is_optional=False,
+                    created_at=datetime.now(timezone.utc)
+                )
+                db_session.add(dish_ingredient)
+    
+    await db_session.commit()
+    for dish in dishes:
+        await db_session.refresh(dish)
+    
+    return dishes
+
+
+@pytest_asyncio.fixture
+async def user_with_meal_template(
+    db_session: AsyncSession,
+    sample_dishes: list
+) -> tuple[User, UserProfile]:
+    """Create a user with a complete meal template.
+    
+    Returns:
+        tuple: (User, UserProfile) with meal template and template meals
+    
+    Usage:
+        async def test_template(user_with_meal_template):
+            user, profile = user_with_meal_template
+            # Profile has meal_templates relationship populated
+    """
+    from app.models.profile import UserProfile
+    from app.models.preferences import MealSchedule
+    from app.models.meal_template import MealTemplate, TemplateMeal
+    from datetime import time
+    
+    # Create user
+    user = User(
+        id=uuid4(),
+        email="template_user@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Template User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    # Create profile
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=True,
+        fitness_level="intermediate",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create meal schedules
+    meal_schedules = [
+        MealSchedule(
+            id=uuid4(),
+            profile_id=profile.id,
+            meal_name="breakfast",
+            scheduled_time=time(8, 0),
+            enable_notifications=True,
+            created_at=datetime.now(timezone.utc)
+        ),
+        MealSchedule(
+            id=uuid4(),
+            profile_id=profile.id,
+            meal_name="lunch",
+            scheduled_time=time(13, 0),
+            enable_notifications=True,
+            created_at=datetime.now(timezone.utc)
+        ),
+        MealSchedule(
+            id=uuid4(),
+            profile_id=profile.id,
+            meal_name="dinner",
+            scheduled_time=time(19, 0),
+            enable_notifications=True,
+            created_at=datetime.now(timezone.utc)
+        ),
+    ]
+    for schedule in meal_schedules:
+        db_session.add(schedule)
+    
+    # Create meal template
+    template = MealTemplate(
+        id=uuid4(),
+        profile_id=profile.id,
+        week_number=1,
+        is_active=True,
+        generated_by="system",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(template)
+    
+    # Create template meals (assign dishes to meal slots)
+    # Get dishes by meal type
+    breakfast_dishes = [d for d in sample_dishes if d.meal_type == "breakfast"]
+    lunch_dishes = [d for d in sample_dishes if d.meal_type == "lunch"]
+    dinner_dishes = [d for d in sample_dishes if d.meal_type == "dinner"]
+    
+    # Assign dishes for each day of the week
+    for day in range(7):  # 0=Monday to 6=Sunday
+        # Breakfast
+        if breakfast_dishes:
+            template_meal = TemplateMeal(
+                id=uuid4(),
+                template_id=template.id,
+                meal_schedule_id=meal_schedules[0].id,
+                dish_id=breakfast_dishes[day % len(breakfast_dishes)].id,
+                day_of_week=day,
+                is_primary=True,
+                alternative_order=1,
+                created_at=datetime.now(timezone.utc)
+            )
+            db_session.add(template_meal)
+        
+        # Lunch
+        if lunch_dishes:
+            template_meal = TemplateMeal(
+                id=uuid4(),
+                template_id=template.id,
+                meal_schedule_id=meal_schedules[1].id,
+                dish_id=lunch_dishes[day % len(lunch_dishes)].id,
+                day_of_week=day,
+                is_primary=True,
+                alternative_order=1,
+                created_at=datetime.now(timezone.utc)
+            )
+            db_session.add(template_meal)
+        
+        # Dinner
+        if dinner_dishes:
+            template_meal = TemplateMeal(
+                id=uuid4(),
+                template_id=template.id,
+                meal_schedule_id=meal_schedules[2].id,
+                dish_id=dinner_dishes[day % len(dinner_dishes)].id,
+                day_of_week=day,
+                is_primary=True,
+                alternative_order=1,
+                created_at=datetime.now(timezone.utc)
+            )
+            db_session.add(template_meal)
+    
+    await db_session.commit()
+    await db_session.refresh(user)
+    await db_session.refresh(profile)
+    
+    return user, profile
+
+
+@pytest_asyncio.fixture
+async def vegetarian_user(db_session: AsyncSession) -> tuple[User, UserProfile]:
+    """Create a vegetarian user with dietary preferences.
+    
+    Returns:
+        tuple: (User, UserProfile) with vegetarian diet type
+    
+    Usage:
+        async def test_vegetarian_dishes(vegetarian_user):
+            user, profile = vegetarian_user
+            # Use for testing vegetarian dish filtering
+    """
+    from app.models.profile import UserProfile
+    from app.models.preferences import DietaryPreference
+    
+    # Create user
+    user = User(
+        id=uuid4(),
+        email="vegetarian@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Vegetarian User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    # Create profile
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create dietary preferences
+    dietary_prefs = DietaryPreference(
+        id=uuid4(),
+        profile_id=profile.id,
+        diet_type="vegetarian",
+        allergies=[],
+        intolerances=[],
+        dislikes=[],
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(dietary_prefs)
+    
+    await db_session.commit()
+    await db_session.refresh(user)
+    await db_session.refresh(profile)
+    
+    return user, profile
+
+
+@pytest_asyncio.fixture
+async def user_with_allergies(db_session: AsyncSession) -> tuple[User, UserProfile]:
+    """Create a user with food allergies.
+    
+    Returns:
+        tuple: (User, UserProfile) with dairy and egg allergies
+    
+    Usage:
+        async def test_allergen_filtering(user_with_allergies):
+            user, profile = user_with_allergies
+            # Use for testing allergen exclusion
+    """
+    from app.models.profile import UserProfile
+    from app.models.preferences import DietaryPreference
+    
+    # Create user
+    user = User(
+        id=uuid4(),
+        email="allergies@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="User With Allergies",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    # Create profile
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="intermediate",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create dietary preferences with allergies
+    dietary_prefs = DietaryPreference(
+        id=uuid4(),
+        profile_id=profile.id,
+        diet_type="omnivore",
+        allergies=["dairy", "eggs"],
+        intolerances=["lactose"],
+        dislikes=["mushrooms"],
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(dietary_prefs)
+    
+    await db_session.commit()
+    await db_session.refresh(user)
+    await db_session.refresh(profile)
+    
+    return user, profile
