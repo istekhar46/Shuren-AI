@@ -264,6 +264,31 @@ async def authenticated_client(
     return client, test_user
 
 
+@pytest_asyncio.fixture
+async def authenticated_client_with_profile(
+    client: AsyncClient,
+    completed_onboarding_user: tuple[User, "UserProfile"]
+) -> tuple[AsyncClient, User]:
+    """Create an authenticated test client with a user that has a completed profile.
+    
+    This fixture is needed for endpoints that require user context loading,
+    which depends on having a user profile in the database.
+    
+    Returns:
+        tuple: (AsyncClient with Authorization header, User with profile)
+    
+    Usage:
+        async def test_chat_endpoint(authenticated_client_with_profile):
+            client, user = authenticated_client_with_profile
+            response = await client.post("/api/v1/chat/chat", json={"message": "Hello"})
+            assert response.status_code == 200
+    """
+    user, profile = completed_onboarding_user
+    token = create_access_token({"user_id": str(user.id)})
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client, user
+
+
 @pytest.fixture
 def sample_onboarding_data() -> dict:
     """Provide sample onboarding data for all 11 steps.
@@ -1162,3 +1187,42 @@ async def user_with_allergies(db_session: AsyncSession) -> tuple[User, UserProfi
     await db_session.refresh(profile)
     
     return user, profile
+
+
+@pytest.fixture
+def mock_gemini_client(monkeypatch):
+    """Mock Google Gemini API client to avoid quota issues and API calls.
+    
+    This fixture mocks the ChatGoogleGenerativeAI class from langchain_google_genai
+    to return canned responses instead of making actual API calls.
+    
+    Returns:
+        MagicMock: Mocked Gemini client that returns predefined responses
+    
+    Usage:
+        def test_agent_with_gemini(mock_gemini_client):
+            # Gemini API calls will be mocked automatically
+            result = agent.process_query("meal plan")
+            assert result is not None
+    """
+    from unittest.mock import MagicMock, AsyncMock
+    
+    # Create mock response
+    mock_response = MagicMock()
+    mock_response.content = "Mocked Gemini response: Here's a sample meal plan based on your preferences."
+    
+    # Create mock client
+    mock_client = MagicMock()
+    mock_client.invoke = MagicMock(return_value=mock_response)
+    mock_client.ainvoke = AsyncMock(return_value=mock_response)
+    
+    # Mock the ChatGoogleGenerativeAI class
+    def mock_gemini_constructor(*args, **kwargs):
+        return mock_client
+    
+    monkeypatch.setattr(
+        "langchain_google_genai.ChatGoogleGenerativeAI",
+        mock_gemini_constructor
+    )
+    
+    return mock_client

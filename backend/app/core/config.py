@@ -106,6 +106,19 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     """Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)."""
     
+    # LiveKit Configuration
+    LIVEKIT_URL: str
+    """LiveKit server URL (wss://...)."""
+    
+    LIVEKIT_API_KEY: str
+    """LiveKit API key."""
+    
+    LIVEKIT_API_SECRET: str
+    """LiveKit API secret."""
+    
+    LIVEKIT_WORKER_NUM_IDLE: int = 2
+    """Number of idle agent workers to maintain."""
+    
     @property
     def async_database_url(self) -> str:
         """

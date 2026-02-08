@@ -988,108 +988,250 @@
         "uid": "27659503-7256efe1-718a-4388-9e8f-686e3e4d2ae8",
         "name": "08 - Shopping List"
       },
-      "09_chat": {
-        "id": "c9fddfa5-e06c-4bce-9524-373065abe325",
-        "uid": "27659503-c9fddfa5-e06c-4bce-9524-373065abe325",
-        "name": "09 - Chat",
+      "09_voice_sessions": {
+        "id": "f8a3c2d1-9b4e-4f5a-8c7d-6e5f4a3b2c1d",
+        "uid": "27659503-f8a3c2d1-9b4e-4f5a-8c7d-6e5f4a3b2c1d",
+        "name": "09 - Voice Sessions",
         "requests": {
-          "start_chat_session": {
-            "id": "59afbb5c-638a-ec46-9c5c-0bc9c80346cf",
-            "name": "Start Chat Session",
+          "start_voice_session": {
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Start Voice Session",
             "method": "POST",
-            "url": "{{api_base}}/chat/session/start",
-            "description": "Creates a new chat session and extracts session_id to environment",
+            "url": "{{api_base}}/voice-sessions/start",
+            "description": "Creates a new voice coaching session with LiveKit room and access token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_type\": \"workout\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "test_script": [
               "pm.test('Status code is 200 OK', function() {",
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Session ID is returned', function() {",
+              "pm.test('Response has complete voice session structure', function() {",
               "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData).to.have.property('session_id');",
-              "    pm.expect(jsonData.session_id).to.be.a('string');",
-              "    pm.environment.set('chat_session_id', jsonData.session_id);",
+              "    pm.expect(jsonData).to.have.property('room_name');",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData).to.have.property('livekit_url');",
+              "    pm.expect(jsonData).to.have.property('agent_type');",
+              "    pm.expect(jsonData).to.have.property('expires_at');",
               "    ",
-              "    // Track created test chat session for cleanup",
-              "    const testChatSessions = JSON.parse(pm.environment.get('test_chat_sessions_created') || '[]');",
-              "    testChatSessions.push({",
-              "        id: jsonData.session_id,",
-              "        user_id: pm.environment.get('user_id')",
-              "    });",
-              "    pm.environment.set('test_chat_sessions_created', JSON.stringify(testChatSessions));",
+              "    // Store room_name for subsequent tests",
+              "    pm.environment.set('voice_room_name', jsonData.room_name);",
               "});",
               "",
-              "pm.test('Session is active', function() {",
+              "pm.test('Room name follows naming convention', function() {",
               "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData.is_active).to.be.true;",
+              "    pm.expect(jsonData.room_name).to.match(/^fitness-voice-[a-f0-9-]+-[a-f0-9]{8}$/);",
+              "});",
+              "",
+              "pm.test('Token is a valid JWT string', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.token).to.be.a('string');",
+              "    pm.expect(jsonData.token.length).to.be.greaterThan(0);",
+              "    // JWT format: header.payload.signature",
+              "    pm.expect(jsonData.token.split('.')).to.have.lengthOf(3);",
+              "});",
+              "",
+              "pm.test('Agent type matches request', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.agent_type).to.equal('workout');",
+              "});",
+              "",
+              "pm.test('LiveKit URL is configured', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.livekit_url).to.be.a('string');",
+              "    pm.expect(jsonData.livekit_url).to.match(/^wss?:\\/\\//);",
+              "});",
+              "",
+              "pm.test('Expires at is in the future', function() {",
+              "    const jsonData = pm.response.json();",
+              "    const expiresAt = new Date(jsonData.expires_at);",
+              "    const now = new Date();",
+              "    pm.expect(expiresAt.getTime()).to.be.greaterThan(now.getTime());",
               "});"
             ]
           },
-          "end_chat_session": {
-            "id": "d7d827d5-08e5-de11-e1eb-9065d5cb002f",
-            "name": "End Chat Session",
+          "start_voice_session_general_agent": {
+            "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "name": "Start Voice Session (General Agent)",
+            "method": "POST",
+            "url": "{{api_base}}/voice-sessions/start",
+            "description": "Creates voice session with default general agent type",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_type\": \"general\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "test_script": [
+              "pm.test('Status code is 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Agent type is general', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.agent_type).to.equal('general');",
+              "});"
+            ]
+          },
+          "get_session_status": {
+            "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+            "name": "Get Session Status",
+            "method": "GET",
+            "url": "{{api_base}}/voice-sessions/{{voice_room_name}}/status",
+            "description": "Retrieves status of an active voice session",
+            "test_script": [
+              "pm.test('Status code is 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Status has complete structure', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('room_name');",
+              "    pm.expect(jsonData).to.have.property('active');",
+              "    pm.expect(jsonData).to.have.property('participants');",
+              "    pm.expect(jsonData).to.have.property('agent_connected');",
+              "    pm.expect(jsonData).to.have.property('created_at');",
+              "});",
+              "",
+              "pm.test('Room name matches', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.room_name).to.equal(pm.environment.get('voice_room_name'));",
+              "});",
+              "",
+              "pm.test('Active is boolean', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.active).to.be.a('boolean');",
+              "});",
+              "",
+              "pm.test('Participants is a number', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.participants).to.be.a('number');",
+              "    pm.expect(jsonData.participants).to.be.at.least(0);",
+              "});",
+              "",
+              "pm.test('Agent connected is boolean', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.agent_connected).to.be.a('boolean');",
+              "});"
+            ]
+          },
+          "get_session_status_not_found": {
+            "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+            "name": "Get Session Status (Not Found)",
+            "method": "GET",
+            "url": "{{api_base}}/voice-sessions/nonexistent-room-12345/status",
+            "description": "Tests 404 error for non-existent voice session",
+            "test_script": [
+              "pm.test('Status code is 404 Not Found', function() {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "",
+              "pm.test('Error message indicates session not found', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.detail.toLowerCase()).to.match(/session not found|not found/);",
+              "});"
+            ]
+          },
+          "list_active_sessions": {
+            "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+            "name": "List Active Sessions",
+            "method": "GET",
+            "url": "{{api_base}}/voice-sessions/active",
+            "description": "Lists all active voice sessions for the authenticated user",
+            "test_script": [
+              "pm.test('Status code is 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has sessions array', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('sessions');",
+              "    pm.expect(jsonData.sessions).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('Sessions have required fields', function() {",
+              "    const jsonData = pm.response.json();",
+              "    if (jsonData.sessions.length > 0) {",
+              "        jsonData.sessions.forEach(session => {",
+              "            pm.expect(session).to.have.property('room_name');",
+              "            pm.expect(session).to.have.property('agent_type');",
+              "            pm.expect(session).to.have.property('participants');",
+              "            pm.expect(session).to.have.property('created_at');",
+              "        });",
+              "    }",
+              "});",
+              "",
+              "pm.test('At least one session exists (from previous test)', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.sessions.length).to.be.at.least(1);",
+              "});"
+            ]
+          },
+          "end_session": {
+            "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+            "name": "End Session",
             "method": "DELETE",
-            "url": "{{api_base}}/chat/session/{{chat_session_id}}",
-            "description": "Ends an active chat session and validates session marked inactive",
+            "url": "{{api_base}}/voice-sessions/{{voice_room_name}}",
+            "description": "Ends an active voice session and deletes the LiveKit room",
             "test_script": [
               "pm.test('Status code is 200 OK', function() {",
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Session is marked inactive', function() {",
+              "pm.test('Response confirms session ended', function() {",
               "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData.is_active).to.be.false;",
+              "    pm.expect(jsonData).to.have.property('status');",
+              "    pm.expect(jsonData.status).to.equal('ended');",
+              "    pm.expect(jsonData).to.have.property('room_name');",
+              "    pm.expect(jsonData.room_name).to.equal(pm.environment.get('voice_room_name'));",
               "});"
             ]
           },
-          "send_chat_message": {
-            "id": "eb5a3830-a783-fab6-110b-c84ef6445b93",
-            "name": "Send Chat Message",
-            "method": "POST",
-            "url": "{{api_base}}/chat/message",
-            "description": "Sends a chat message to AI agent and validates response",
-            "prerequest_script": [
-              "// Generate chat message payload",
-              "const chatMessage = {",
-              "    session_id: pm.environment.get('chat_session_id'),",
-              "    message: 'What should I eat for lunch today?',",
-              "    timestamp: new Date().toISOString()",
-              "};",
-              "pm.environment.set('chat_message', JSON.stringify(chatMessage));"
-            ],
+          "end_session_not_found": {
+            "id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+            "name": "End Session (Not Found)",
+            "method": "DELETE",
+            "url": "{{api_base}}/voice-sessions/nonexistent-room-12345",
+            "description": "Tests 404 error when ending non-existent session",
             "test_script": [
-              "pm.test('Status code is 200 OK', function() {",
-              "    pm.response.to.have.status(200);",
+              "pm.test('Status code is 404 Not Found', function() {",
+              "    pm.response.to.have.status(404);",
               "});",
               "",
-              "pm.test('Agent response is returned', function() {",
+              "pm.test('Error message indicates session not found', function() {",
               "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData).to.have.property('message_id');",
-              "    pm.expect(jsonData).to.have.property('role');",
-              "    pm.expect(jsonData).to.have.property('content');",
-              "    pm.expect(jsonData.role).to.equal('assistant');",
-              "    pm.expect(jsonData.content).to.be.a('string');",
-              "    pm.expect(jsonData.content.length).to.be.greaterThan(0);",
+              "    pm.expect(jsonData.detail.toLowerCase()).to.match(/session not found|not found/);",
               "});"
             ]
           },
-          "send_chat_message_unauthenticated": {
-            "id": "1209ebb4-af91-788c-b536-f461aaf60de8",
-            "name": "Send Chat Message (Unauthenticated)",
+          "start_voice_session_unauthenticated": {
+            "id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+            "name": "Start Voice Session (Unauthenticated)",
             "method": "POST",
-            "url": "{{api_base}}/chat/message",
-            "description": "Tests 401 error when sending chat message without JWT token",
+            "url": "{{api_base}}/voice-sessions/start",
+            "description": "Tests 401 error when starting session without authentication",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_type\": \"workout\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "prerequest_script": [
               "// Remove Authorization header for this request",
-              "pm.request.headers.remove('Authorization');",
-              "",
-              "// Generate chat message payload",
-              "const chatMessage = {",
-              "    session_id: pm.environment.get('chat_session_id'),",
-              "    message: 'This should fail without authentication',",
-              "    timestamp: new Date().toISOString()",
-              "};",
-              "pm.environment.set('unauthenticated_chat_message', JSON.stringify(chatMessage));"
+              "pm.request.headers.remove('Authorization');"
             ],
             "test_script": [
               "pm.test('Status code is 401 Unauthorized', function() {",
@@ -1101,60 +1243,154 @@
               "    pm.expect(jsonData.detail.toLowerCase()).to.match(/not authenticated|unauthorized|token|authentication/);",
               "});"
             ]
-          },
-          "get_chat_history": {
-            "id": "0d965b42-18c8-f0d8-654a-8f794834f043",
-            "name": "Get Chat History",
-            "method": "GET",
-            "url": "{{api_base}}/chat/history?session_id={{chat_session_id}}&limit=50&offset=0",
-            "description": "Retrieves chat history with pagination for a specific session",
+          }
+        }
+      },
+      "10_chat": {
+        "id": "c9fddfa5-e06c-4bce-9524-373065abe325",
+        "uid": "27659503-c9fddfa5-e06c-4bce-9524-373065abe325",
+        "name": "10 - Chat",
+        "requests": {
+          "send_chat_message": {
+            "id": "eb5a3830-a783-fab6-110b-c84ef6445b93",
+            "name": "Send Chat Message",
+            "method": "POST",
+            "url": "{{api_base}}/chat/chat",
+            "description": "Sends a chat message to AI agent and validates response",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What should I eat for lunch today?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "test_script": [
               "pm.test('Status code is 200 OK', function() {",
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Chat history is returned', function() {",
+              "pm.test('Agent response is returned', function() {",
               "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData).to.have.property('messages');",
-              "    pm.expect(jsonData.messages).to.be.an('array');",
+              "    pm.expect(jsonData).to.have.property('response');",
+              "    pm.expect(jsonData).to.have.property('agent_type');",
+              "    pm.expect(jsonData).to.have.property('conversation_id');",
+              "    pm.expect(jsonData).to.have.property('tools_used');",
+              "    pm.expect(jsonData.response).to.be.a('string');",
+              "    pm.expect(jsonData.response.length).to.be.greaterThan(0);",
               "});",
               "",
-              "pm.test('Pagination metadata is present', function() {",
-              "    const jsonData = pm.response.json();",
-              "    pm.expect(jsonData).to.have.property('total');",
-              "    pm.expect(jsonData).to.have.property('limit');",
-              "    pm.expect(jsonData).to.have.property('offset');",
+              "pm.test('Response time is acceptable', function() {",
+              "    pm.expect(pm.response.responseTime).to.be.below(5000);",
               "});"
             ]
           },
-          "get_chat_history_with_pagination": {
-            "id": "fc49443c-9d2c-6136-efe6-8bc9fa2ee200",
-            "name": "Get Chat History with Pagination",
-            "method": "GET",
-            "url": "{{api_base}}/chat/history?session_id={{chat_session_id}}&limit={{history_limit}}&offset={{history_offset}}",
-            "description": "Tests pagination by retrieving a specific page of chat messages",
-            "prerequest_script": [
-              "// Set pagination parameters",
-              "pm.environment.set('history_limit', 10);",
-              "pm.environment.set('history_offset', 0);"
-            ],
+          "send_chat_message_with_agent_type": {
+            "id": "59afbb5c-638a-ec46-9c5c-0bc9c80346cf",
+            "name": "Send Chat Message with Agent Type",
+            "method": "POST",
+            "url": "{{api_base}}/chat/chat",
+            "description": "Sends a chat message with explicit agent type",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Create a workout plan for me\",\n  \"agent_type\": \"workout\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "test_script": [
               "pm.test('Status code is 200 OK', function() {",
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Correct page of messages is returned', function() {",
+              "pm.test('Correct agent type is used', function() {",
               "    const jsonData = pm.response.json();",
-              "    const limit = parseInt(pm.environment.get('history_limit'));",
-              "    pm.expect(jsonData.messages.length).to.be.at.most(limit);",
+              "    pm.expect(jsonData.agent_type).to.equal('workout');",
+              "});"
+            ]
+          },
+          "send_chat_message_invalid_agent_type": {
+            "id": "d7d827d5-08e5-de11-e1eb-9065d5cb002f",
+            "name": "Send Chat Message with Invalid Agent Type",
+            "method": "POST",
+            "url": "{{api_base}}/chat/chat",
+            "description": "Tests 400 error when using invalid agent type",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Test message\",\n  \"agent_type\": \"invalid_agent\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "test_script": [
+              "pm.test('Status code is 400 Bad Request', function() {",
+              "    pm.response.to.have.status(400);",
               "});",
               "",
-              "pm.test('Pagination values match request', function() {",
+              "pm.test('Error indicates invalid agent type', function() {",
               "    const jsonData = pm.response.json();",
-              "    const requestedLimit = parseInt(pm.environment.get('history_limit'));",
-              "    const requestedOffset = parseInt(pm.environment.get('history_offset'));",
-              "    pm.expect(jsonData.limit).to.equal(requestedLimit);",
-              "    pm.expect(jsonData.offset).to.equal(requestedOffset);",
+              "    pm.expect(jsonData.detail.toLowerCase()).to.match(/invalid|agent_type/);",
+              "});"
+            ]
+          },
+          "send_chat_message_empty": {
+            "id": "1209ebb4-af91-788c-b536-f461aaf60de8",
+            "name": "Send Empty Chat Message",
+            "method": "POST",
+            "url": "{{api_base}}/chat/chat",
+            "description": "Tests 422 validation error when sending empty message",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "test_script": [
+              "pm.test('Status code is 422 Unprocessable Entity', function() {",
+              "    pm.response.to.have.status(422);",
+              "});",
+              "",
+              "pm.test('Error indicates validation failure', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('detail');",
+              "});"
+            ]
+          },
+          "send_chat_message_unauthenticated": {
+            "id": "0d965b42-18c8-f0d8-654a-8f794834f043",
+            "name": "Send Chat Message (Unauthenticated)",
+            "method": "POST",
+            "url": "{{api_base}}/chat/chat",
+            "description": "Tests 401 error when sending chat message without JWT token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"This should fail without authentication\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "prerequest_script": [
+              "// Remove Authorization header for this request",
+              "pm.request.headers.remove('Authorization');"
+            ],
+            "test_script": [
+              "pm.test('Status code is 401 Unauthorized', function() {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('Error indicates authentication required', function() {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.detail.toLowerCase()).to.match(/not authenticated|unauthorized|token|authentication/);",
               "});"
             ]
           }
@@ -1205,7 +1441,8 @@
     "history_offset": "Pagination offset for chat history (default: 0)",
     "dish_id": "Dish ID for testing",
     "user_diet_type": "User's dietary preference type (e.g., vegetarian, vegan, balanced)",
-    "excluded_ingredients": "JSON array or comma-separated list of ingredients to exclude"
+    "excluded_ingredients": "JSON array or comma-separated list of ingredients to exclude",
+    "voice_room_name": "LiveKit room name for voice session testing"
   },
   "schema_validation_added": {
     "note": "Schema validation test scripts have been added to key successful requests",

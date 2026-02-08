@@ -749,102 +749,103 @@ async function testShoppingListEndpoints() {
 async function testChatEndpoints() {
     console.log('\n=== Testing Chat Endpoints ===\n');
     
-    let sessionId = '';
-    
-    // 1. Start Chat Session
+    // 1. Send Chat Message
     try {
-        const response = await makeRequest('POST', '/chat/sessions', null, {
-            'Authorization': `Bearer ${jwtToken}`
-        });
-        
-        logTest(
-            'POST /chat/sessions',
-            response.status === 200 || response.status === 201,
-            '200/201 OK',
-            `${response.status}`
-        );
-        
-        if ((response.status === 200 || response.status === 201) && response.data.session_id) {
-            sessionId = response.data.session_id;
-        }
-    } catch (error) {
-        logTest('POST /chat/sessions', false, '200/201', 'Error', error.message);
-    }
-    
-    // 2. Alternative Session Start
-    try {
-        const response = await makeRequest('POST', '/chat/session/start', {
-            session_type: "general",
-            context_data: {}
+        const response = await makeRequest('POST', '/chat/chat', {
+            message: "Hello, this is a test message"
         }, {
             'Authorization': `Bearer ${jwtToken}`
         });
         
         logTest(
-            'POST /chat/session/start',
-            response.status === 200 || response.status === 201,
-            '200/201 OK',
+            'POST /chat/chat',
+            response.status === 200,
+            '200 OK',
             `${response.status}`
         );
         
-        if ((response.status === 200 || response.status === 201) && response.data.session_id) {
-            sessionId = response.data.session_id;
+        if (response.status === 200) {
+            logTest(
+                'POST /chat/chat - Response Structure',
+                response.data.response && response.data.agent_type && response.data.conversation_id,
+                'Has response, agent_type, conversation_id',
+                `response: ${!!response.data.response}, agent_type: ${!!response.data.agent_type}, conversation_id: ${!!response.data.conversation_id}`
+            );
         }
     } catch (error) {
-        logTest('POST /chat/session/start', false, '200/201', 'Error', error.message);
+        logTest('POST /chat/chat', false, '200', 'Error', error.message);
     }
     
-    // 3. Send Chat Message
+    // 2. Send Chat Message with Agent Type
     try {
-        const response = await makeRequest('POST', '/chat/message', {
-            message: "Hello, this is a test message",
-            session_id: sessionId || undefined
+        const response = await makeRequest('POST', '/chat/chat', {
+            message: "Create a workout plan for me",
+            agent_type: "workout"
         }, {
             'Authorization': `Bearer ${jwtToken}`
         });
         
         logTest(
-            'POST /chat/message',
-            response.status === 200 || response.status === 201,
-            '200/201 OK',
-            `${response.status}`
-        );
-    } catch (error) {
-        logTest('POST /chat/message', false, '200/201', 'Error', error.message);
-    }
-    
-    // 4. Get Chat History
-    try {
-        const response = await makeRequest('GET', '/chat/history?limit=10&offset=0', null, {
-            'Authorization': `Bearer ${jwtToken}`
-        });
-        
-        logTest(
-            'GET /chat/history',
+            'POST /chat/chat - With Agent Type',
             response.status === 200,
             '200 OK',
             `${response.status}`
         );
     } catch (error) {
-        logTest('GET /chat/history', false, '200', 'Error', error.message);
+        logTest('POST /chat/chat - With Agent Type', false, '200', 'Error', error.message);
     }
     
-    // 5. End Chat Session
-    if (sessionId) {
-        try {
-            const response = await makeRequest('DELETE', `/chat/session/${sessionId}`, null, {
-                'Authorization': `Bearer ${jwtToken}`
-            });
-            
-            logTest(
-                'DELETE /chat/session/{session_id}',
-                response.status === 200 || response.status === 204,
-                '200/204 OK',
-                `${response.status}`
-            );
-        } catch (error) {
-            logTest('DELETE /chat/session/{session_id}', false, '200/204', 'Error', error.message);
-        }
+    // 3. Send Chat Message with Invalid Agent Type
+    try {
+        const response = await makeRequest('POST', '/chat/chat', {
+            message: "Test message",
+            agent_type: "invalid_agent"
+        }, {
+            'Authorization': `Bearer ${jwtToken}`
+        });
+        
+        logTest(
+            'POST /chat/chat - Invalid Agent Type',
+            response.status === 400,
+            '400 Bad Request',
+            `${response.status}`
+        );
+    } catch (error) {
+        logTest('POST /chat/chat - Invalid Agent Type', false, '400', 'Error', error.message);
+    }
+    
+    // 4. Send Empty Chat Message
+    try {
+        const response = await makeRequest('POST', '/chat/chat', {
+            message: ""
+        }, {
+            'Authorization': `Bearer ${jwtToken}`
+        });
+        
+        logTest(
+            'POST /chat/chat - Empty Message',
+            response.status === 422,
+            '422 Unprocessable Entity',
+            `${response.status}`
+        );
+    } catch (error) {
+        logTest('POST /chat/chat - Empty Message', false, '422', 'Error', error.message);
+    }
+    
+    // 5. Send Chat Message Unauthenticated
+    try {
+        const response = await makeRequest('POST', '/chat/chat', {
+            message: "This should fail without authentication"
+        });
+        
+        logTest(
+            'POST /chat/chat - Unauthenticated',
+            response.status === 401,
+            '401 Unauthorized',
+            `${response.status}`
+        );
+    } catch (error) {
+        logTest('POST /chat/chat - Unauthenticated', false, '401', 'Error', error.message);
     }
 }
 

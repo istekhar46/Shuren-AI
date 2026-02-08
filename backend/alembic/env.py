@@ -47,6 +47,7 @@ from app.models.chat import (
     ChatSession,
     ChatMessage
 )
+from app.models.conversation import ConversationMessage
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

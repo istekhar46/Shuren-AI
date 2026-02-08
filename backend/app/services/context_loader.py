@@ -182,20 +182,48 @@ async def _load_current_meal(db: AsyncSession, user_uuid: UUID) -> Dict:
     return {}
 
 
-async def _load_conversation_history(db: AsyncSession, user_uuid: UUID) -> List[Dict]:
+async def _load_conversation_history(
+    db: AsyncSession,
+    user_uuid: UUID,
+    limit: int = 10
+) -> List[Dict]:
     """
-    Load recent conversation history for user (placeholder).
+    Load recent conversation history for user.
     
-    TODO: Implement in Sub-Doc 3 (Text Chat API)
-    This will load the last N messages from the conversation history
-    to provide context for agent responses.
+    Queries the conversation_messages table to retrieve the most recent
+    messages for context in agent interactions. Messages are returned
+    in chronological order (oldest to newest).
     
     Args:
         db: Async database session
         user_uuid: User's UUID
+        limit: Maximum number of messages to load (default: 10)
     
     Returns:
-        List[Dict]: Conversation messages (currently empty placeholder)
+        List[Dict]: Conversation messages in chronological order, each with:
+            - role: "user" or "assistant"
+            - content: Message text
+            - agent_type: Agent that handled the message (None for user messages)
     """
-    # Placeholder implementation
-    return []
+    from app.models.conversation import ConversationMessage
+    
+    # Query conversation_messages table
+    stmt = (
+        select(ConversationMessage)
+        .where(ConversationMessage.user_id == user_uuid)
+        .order_by(ConversationMessage.created_at.desc())
+        .limit(limit)
+    )
+    
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+    
+    # Reverse to chronological order and format
+    return [
+        {
+            "role": msg.role,
+            "content": msg.content,
+            "agent_type": msg.agent_type
+        }
+        for msg in reversed(messages)
+    ]

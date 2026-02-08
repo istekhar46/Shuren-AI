@@ -119,12 +119,51 @@ class MealTemplateService:
         for schedule_data in meals_by_schedule.values():
             primary_dish = schedule_data['primary']
             if primary_dish:
+                # Convert dish to dict for proper serialization
+                primary_dish_dict = {
+                    'id': primary_dish.id,
+                    'name': primary_dish.name,
+                    'name_hindi': primary_dish.name_hindi,
+                    'meal_type': primary_dish.meal_type,
+                    'cuisine_type': primary_dish.cuisine_type,
+                    'calories': int(primary_dish.calories),
+                    'protein_g': float(primary_dish.protein_g),
+                    'carbs_g': float(primary_dish.carbs_g),
+                    'fats_g': float(primary_dish.fats_g),
+                    'prep_time_minutes': primary_dish.prep_time_minutes,
+                    'cook_time_minutes': primary_dish.cook_time_minutes,
+                    'difficulty_level': primary_dish.difficulty_level,
+                    'is_vegetarian': primary_dish.is_vegetarian,
+                    'is_vegan': primary_dish.is_vegan
+                }
+                
+                # Convert alternative dishes to dicts
+                alternative_dishes_dicts = [
+                    {
+                        'id': alt.id,
+                        'name': alt.name,
+                        'name_hindi': alt.name_hindi,
+                        'meal_type': alt.meal_type,
+                        'cuisine_type': alt.cuisine_type,
+                        'calories': int(alt.calories),
+                        'protein_g': float(alt.protein_g),
+                        'carbs_g': float(alt.carbs_g),
+                        'fats_g': float(alt.fats_g),
+                        'prep_time_minutes': alt.prep_time_minutes,
+                        'cook_time_minutes': alt.cook_time_minutes,
+                        'difficulty_level': alt.difficulty_level,
+                        'is_vegetarian': alt.is_vegetarian,
+                        'is_vegan': alt.is_vegan
+                    }
+                    for alt in schedule_data['alternatives']
+                ]
+                
                 meals.append({
                     'meal_name': schedule_data['meal_schedule'].meal_name,
                     'scheduled_time': schedule_data['meal_schedule'].scheduled_time,
                     'day_of_week': day_of_week,
-                    'primary_dish': primary_dish,
-                    'alternative_dishes': schedule_data['alternatives']
+                    'primary_dish': primary_dish_dict,
+                    'alternative_dishes': alternative_dishes_dicts
                 })
                 
                 total_calories += float(primary_dish.calories)

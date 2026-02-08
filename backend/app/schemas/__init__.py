@@ -44,11 +44,10 @@ from .meal import (
     MealScheduleUpdate,
 )
 from .chat import (
-    ChatMessageRequest,
-    ChatMessageResponse,
-    ChatSessionCreate,
-    ChatSessionResponse,
+    ChatRequest,
+    ChatResponse,
     ChatHistoryResponse,
+    MessageDict,
 )
 from .dish import (
     DishBase,
@@ -118,11 +117,10 @@ __all__ = [
     "MealScheduleResponse",
     "MealScheduleUpdate",
     # Chat schemas
-    "ChatMessageRequest",
-    "ChatMessageResponse",
-    "ChatSessionCreate",
-    "ChatSessionResponse",
+    "ChatRequest",
+    "ChatResponse",
     "ChatHistoryResponse",
+    "MessageDict",
     # Dish schemas
     "IngredientBase",
     "IngredientResponse",

@@ -1,0 +1,77 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\EthaN\Desktop\shuren AI\backend
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1, hypothesis-6.151.4, langsmith-0.6.8, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 390 items
+
+tests\test_auth_endpoints.py ..............                              [  3%]
+tests\test_chat_endpoints.py ............                                [  6%]
+tests\test_chat_properties.py ........FFFF.......FFF                     [ 12%]
+tests\test_chat_schemas.py ...                                           [ 13%]
+tests\test_config.py ......                                              [ 14%]
+tests\test_context_loader.py ...........                                 [ 17%]
+tests\test_data_privacy_properties.py .FF....                            [ 19%]
+tests\test_data_validation_properties.py ...............                 [ 23%]
+tests\test_database_foundation.py .........                              [ 25%]
+tests\test_deps.py ........                                              [ 27%]
+tests\test_diet_planner_agent.py ............FF.                         [ 31%]
+tests\test_dish_endpoints.py ..................                          [ 35%]
+tests\test_dish_service.py ......................                        [ 41%]
+tests\test_fixtures.py .....                                             [ 42%]
+tests\test_general_assistant_agent.py .........FF.....                   [ 46%]
+tests\test_integration_e2e.py .sFF                                       [ 47%]
+tests\test_integration_profile_locking.py .ss.                           [ 48%]
+tests\test_langchain_foundation.py ....FF.....FF.......                  [ 54%]
+tests\test_meal_service.py ........                                      [ 56%]
+tests\test_meal_template_endpoints.py .................                  [ 60%]
+tests\test_meal_template_properties.py ..........                        [ 63%]
+tests\test_meal_template_service.py F..F.FFFF.......F..FF.....           [ 69%]
+tests\test_onboarding_endpoints.py ......                                [ 71%]
+tests\test_onboarding_service.py .....................                   [ 76%]
+tests\test_orchestrator_warmup.py ....                                   [ 77%]
+tests\test_profile_service.py ....                                       [ 78%]
+tests\test_scheduler_agent.py ...............                            [ 82%]
+tests\test_security.py .................                                 [ 86%]
+tests\test_shopping_list_endpoints.py ..........                         [ 89%]
+tests\test_shopping_list_service.py ..........                           [ 92%]
+tests\test_timestamp_and_versioning.py .........                         [ 94%]
+tests\test_voice_sessions.py .......                                     [ 96%]
+tests\test_voice_sessions_properties.py ....                             [ 97%]
+tests\test_workout_endpoints.py ...........                              [100%]
+
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_integration_e2e.py:240: Meal plan schema/model mismatch - schema expects fields not in database model
+SKIPPED [1] tests\test_integration_profile_locking.py:140: Meal plan schema/model mismatch - requires fixing meal plan API
+SKIPPED [1] tests\test_integration_profile_locking.py:221: Meal plan schema/model mismatch - requires fixing meal plan API
+FAILED tests/test_chat_properties.py::TestAgentRoutingConsistency::test_explicit_agent_routing_matches_request
+FAILED tests/test_chat_properties.py::TestAgentRoutingConsistency::test_routing_consistency_across_multiple_agents
+FAILED tests/test_chat_properties.py::TestAgentRoutingConsistency::test_agent_routing_with_various_message_lengths
+FAILED tests/test_chat_properties.py::TestAgentRoutingConsistency::test_agent_routing_persistence_in_database
+FAILED tests/test_chat_properties.py::TestUserDataIsolation::test_history_deletion_isolation
+FAILED tests/test_chat_properties.py::TestUserDataIsolation::test_multi_user_isolation
+FAILED tests/test_chat_properties.py::TestUserDataIsolation::test_jwt_token_determines_access
+FAILED tests/test_data_privacy_properties.py::TestSoftDeleteCascade::test_soft_delete_cascades_to_preferences
+FAILED tests/test_data_privacy_properties.py::TestDeletedRecordExclusion::test_deleted_users_excluded_from_queries
+FAILED tests/test_diet_planner_agent.py::test_diet_planner_process_text - goo...
+FAILED tests/test_diet_planner_agent.py::test_diet_planner_process_voice - go...
+FAILED tests/test_general_assistant_agent.py::test_general_assistant_process_text
+FAILED tests/test_general_assistant_agent.py::test_general_assistant_process_voice
+FAILED tests/test_integration_e2e.py::TestChatConversationE2E::test_complete_chat_conversation_flow
+FAILED tests/test_integration_e2e.py::TestChatConversationE2E::test_chat_history_pagination
+FAILED tests/test_langchain_foundation.py::test_test_agent_text_response - go...
+FAILED tests/test_langchain_foundation.py::test_test_agent_voice_response - g...
+FAILED tests/test_langchain_foundation.py::test_agent_orchestrator_routing - ...
+FAILED tests/test_langchain_foundation.py::test_orchestrator_voice_mode - goo...
+FAILED tests/test_meal_template_service.py::TestGetActiveTemplate::test_get_active_template_success
+FAILED tests/test_meal_template_service.py::TestGetTodayMeals::test_get_today_meals_success
+FAILED tests/test_meal_template_service.py::TestGetTodayMeals::test_get_today_meals_nutritional_totals
+FAILED tests/test_meal_template_service.py::TestGetTodayMeals::test_get_today_meals_sorted_by_time
+FAILED tests/test_meal_template_service.py::TestGetNextMeal::test_get_next_meal_found
+FAILED tests/test_meal_template_service.py::TestGetNextMeal::test_get_next_meal_none_remaining
+FAILED tests/test_meal_template_service.py::TestSwapDish::test_swap_dish_success
+FAILED tests/test_meal_template_service.py::TestSwapDish::test_swap_dish_invalid_meal_name
+FAILED tests/test_meal_template_service.py::TestSwapDish::test_swap_dish_invalid_dish_id
+==== 28 failed, 359 passed, 3 skipped, 235 warnings in 5784.76s (1:36:24) =====

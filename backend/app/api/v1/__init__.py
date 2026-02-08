@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import chat, dishes, meal_templates, shopping_list
+from app.api.v1.endpoints import chat, dishes, meal_templates, shopping_list, voice_sessions
 
 # Create v1 API router
 api_router = APIRouter()
@@ -33,4 +33,11 @@ api_router.include_router(
     chat.router,
     prefix="/chat",
     tags=["Chat"]
+)
+
+# Include voice sessions router
+api_router.include_router(
+    voice_sessions.router,
+    prefix="/voice-sessions",
+    tags=["voice-sessions"]
 )

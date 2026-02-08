@@ -116,7 +116,9 @@ class TestGetTodayMeals:
                     "primary_dish": {
                         "id": str(uuid4()),
                         "name": "Egg Omelette",
+                        "name_hindi": "अंडे का आमलेट",
                         "meal_type": "breakfast",
+                        "cuisine_type": "continental",
                         "calories": 350,
                         "protein_g": 25,
                         "carbs_g": 30,
@@ -131,7 +133,9 @@ class TestGetTodayMeals:
                 }
             ],
             "total_calories": 2200,
-            "total_protein_g": 165
+            "total_protein_g": 165,
+            "total_carbs_g": 250,
+            "total_fats_g": 60
         }
         
         with patch('app.api.v1.endpoints.meal_templates.MealTemplateService') as MockService:
@@ -175,7 +179,9 @@ class TestGetNextMeal:
             "primary_dish": {
                 "id": str(uuid4()),
                 "name": "Grilled Chicken",
+                "name_hindi": "ग्रिल्ड चिकन",
                 "meal_type": "lunch",
+                "cuisine_type": "continental",
                 "calories": 550,
                 "protein_g": 45,
                 "carbs_g": 40,

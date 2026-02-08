@@ -415,3 +415,131 @@ async def test_load_agent_context_include_history_parameter(db_session: AsyncSes
     # Load context with include_history=False
     context_without_history = await load_agent_context(db_session, str(user.id), include_history=False)
     assert context_without_history.conversation_history == []
+
+
+@pytest.mark.asyncio
+async def test_load_conversation_history_with_messages(db_session: AsyncSession):
+    """Test that conversation history is loaded correctly when messages exist."""
+    from app.models.conversation import ConversationMessage
+    
+    # Create user and profile
+    user = User(
+        id=uuid4(),
+        email="conversation@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Conversation User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create conversation messages
+    msg1 = ConversationMessage(
+        id=uuid4(),
+        user_id=user.id,
+        role="user",
+        content="What's my workout today?",
+        agent_type=None,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(msg1)
+    
+    msg2 = ConversationMessage(
+        id=uuid4(),
+        user_id=user.id,
+        role="assistant",
+        content="Today is leg day! Here's your workout...",
+        agent_type="workout",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(msg2)
+    
+    msg3 = ConversationMessage(
+        id=uuid4(),
+        user_id=user.id,
+        role="user",
+        content="What should I eat for lunch?",
+        agent_type=None,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(msg3)
+    
+    await db_session.commit()
+    
+    # Load context with history
+    context = await load_agent_context(db_session, str(user.id), include_history=True)
+    
+    # Verify conversation history is loaded
+    assert len(context.conversation_history) == 3
+    
+    # Verify messages are in chronological order
+    assert context.conversation_history[0]["role"] == "user"
+    assert context.conversation_history[0]["content"] == "What's my workout today?"
+    assert context.conversation_history[0]["agent_type"] is None
+    
+    assert context.conversation_history[1]["role"] == "assistant"
+    assert context.conversation_history[1]["content"] == "Today is leg day! Here's your workout..."
+    assert context.conversation_history[1]["agent_type"] == "workout"
+    
+    assert context.conversation_history[2]["role"] == "user"
+    assert context.conversation_history[2]["content"] == "What should I eat for lunch?"
+    assert context.conversation_history[2]["agent_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_conversation_history_limit(db_session: AsyncSession):
+    """Test that conversation history respects the limit parameter."""
+    from app.models.conversation import ConversationMessage
+    
+    # Create user and profile
+    user = User(
+        id=uuid4(),
+        email="historylimit@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="History Limit User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create 15 conversation messages
+    for i in range(15):
+        msg = ConversationMessage(
+            id=uuid4(),
+            user_id=user.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"Message {i}",
+            agent_type="general" if i % 2 == 1 else None,
+            created_at=datetime.now(timezone.utc)
+        )
+        db_session.add(msg)
+    
+    await db_session.commit()
+    
+    # Load context with history (default limit is 10)
+    context = await load_agent_context(db_session, str(user.id), include_history=True)
+    
+    # Verify only last 10 messages are loaded
+    assert len(context.conversation_history) == 10
+    
+    # Verify they are the most recent messages (5-14)
+    assert context.conversation_history[0]["content"] == "Message 5"
+    assert context.conversation_history[-1]["content"] == "Message 14"

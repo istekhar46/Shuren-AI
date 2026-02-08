@@ -1,8 +1,8 @@
 """
 Tests for chat endpoints.
 
-Validates chat message sending, session management, history retrieval,
-and session ending functionality.
+Validates direct chat messaging, streaming, history retrieval,
+and history deletion functionality.
 """
 
 import pytest
@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.chat import router
 from app.models.user import User
-from app.models.chat import ChatSession, ChatMessage
-from app.schemas.chat import ChatMessageResponse, ChatHistoryResponse
+from app.models.conversation import ConversationMessage
+from app.schemas.chat import ChatResponse, MessageDict, ChatHistoryResponse
 
 
 @pytest.fixture
@@ -44,29 +44,14 @@ def mock_user():
 
 
 @pytest.fixture
-def mock_chat_session(mock_user):
-    """Create a mock chat session."""
-    return ChatSession(
+def mock_conversation_message(mock_user):
+    """Create a mock conversation message."""
+    return ConversationMessage(
         id=uuid4(),
         user_id=mock_user.id,
-        session_type='general',
-        status='active',
-        context_data={},
-        started_at=datetime.now(),
-        last_activity_at=datetime.now()
-    )
-
-
-@pytest.fixture
-def mock_chat_message(mock_chat_session):
-    """Create a mock chat message."""
-    return ChatMessage(
-        id=uuid4(),
-        session_id=mock_chat_session.id,
         role='assistant',
         content='Test response',
-        agent_type='conversational',
-        message_metadata={},
+        agent_type='general',
         created_at=datetime.now()
     )
 
@@ -99,313 +84,248 @@ def client(app):
     return TestClient(app)
 
 
-class TestSendMessage:
-    """Tests for POST /api/v1/chat/message endpoint."""
+class TestChatEndpoint:
+    """Tests for POST /api/v1/chat/chat endpoint."""
     
-    def test_send_message_success(self, client, mock_db, mock_chat_message):
-        """Test successful message sending."""
-        mock_response = ChatMessageResponse(
-            id=mock_chat_message.id,
-            session_id=mock_chat_message.session_id,
-            role=mock_chat_message.role,
-            content=mock_chat_message.content,
-            agent_type=mock_chat_message.agent_type,
-            created_at=mock_chat_message.created_at
-        )
-        
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.send_message = AsyncMock(return_value=mock_response)
+    def test_chat_success(self, client, mock_db, mock_user):
+        """Test successful chat message."""
+        # Mock AgentOrchestrator and context loading
+        with patch('app.api.v1.endpoints.chat.load_agent_context') as mock_context, \
+             patch('app.api.v1.endpoints.chat.AgentOrchestrator') as MockOrchestrator:
+            
+            mock_context.return_value = {"user_id": str(mock_user.id)}
+            
+            mock_orchestrator = MockOrchestrator.return_value
+            mock_response = MagicMock()
+            mock_response.content = "Here's your workout plan"
+            mock_response.agent_type = "workout"
+            mock_response.tools_used = ["get_workout_plan"]
+            mock_orchestrator.route_query = AsyncMock(return_value=mock_response)
             
             response = client.post(
-                "/api/v1/chat/message",
+                "/api/v1/chat/chat",
+                json={"message": "What should I do today?"}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["response"] == "Here's your workout plan"
+            assert data["agent_type"] == "workout"
+            assert data["conversation_id"] == str(mock_user.id)
+            assert "tools_used" in data
+    
+    def test_chat_with_agent_type(self, client, mock_db, mock_user):
+        """Test chat with explicit agent type."""
+        with patch('app.api.v1.endpoints.chat.load_agent_context') as mock_context, \
+             patch('app.api.v1.endpoints.chat.AgentOrchestrator') as MockOrchestrator:
+            
+            mock_context.return_value = {"user_id": str(mock_user.id)}
+            
+            mock_orchestrator = MockOrchestrator.return_value
+            mock_response = MagicMock()
+            mock_response.content = "Here's your meal plan"
+            mock_response.agent_type = "diet"
+            mock_response.tools_used = []
+            mock_orchestrator.route_query = AsyncMock(return_value=mock_response)
+            
+            response = client.post(
+                "/api/v1/chat/chat",
                 json={
-                    "message": "Hello, how can I improve my workout?",
-                    "session_type": "workout"
+                    "message": "What should I eat?",
+                    "agent_type": "diet"
                 }
             )
             
             assert response.status_code == 200
             data = response.json()
-            assert data["content"] == "Test response"
-            assert data["role"] == "assistant"
-            assert "session_id" in data
+            assert data["agent_type"] == "diet"
     
-    def test_send_message_with_session_id(self, client, mock_db, mock_chat_message):
-        """Test sending message to existing session."""
-        session_id = uuid4()
-        mock_response = ChatMessageResponse(
-            id=mock_chat_message.id,
-            session_id=session_id,
-            role=mock_chat_message.role,
-            content=mock_chat_message.content,
-            agent_type=mock_chat_message.agent_type,
-            created_at=mock_chat_message.created_at
-        )
-        
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.send_message = AsyncMock(return_value=mock_response)
+    def test_chat_invalid_agent_type(self, client):
+        """Test chat with invalid agent type."""
+        with patch('app.api.v1.endpoints.chat.load_agent_context') as mock_context:
+            mock_context.return_value = {"user_id": "test"}
             
             response = client.post(
-                "/api/v1/chat/message",
+                "/api/v1/chat/chat",
                 json={
-                    "message": "Follow-up question",
-                    "session_id": str(session_id)
+                    "message": "Hello",
+                    "agent_type": "invalid_type"
                 }
             )
             
-            assert response.status_code == 200
+            # Pydantic validation returns 422 for invalid enum values
+            assert response.status_code == 422
             data = response.json()
-            assert data["session_id"] == str(session_id)
+            # Check that validation error mentions the field
+            assert "agent_type" in str(data).lower() or "detail" in data
     
-    def test_send_message_validation_error(self, client, mock_db):
-        """Test message validation (empty message)."""
+    def test_chat_validation_error(self, client):
+        """Test chat with empty message."""
         response = client.post(
-            "/api/v1/chat/message",
-            json={
-                "message": ""
-            }
+            "/api/v1/chat/chat",
+            json={"message": ""}
         )
         
         assert response.status_code == 422
 
 
-class TestCreateChatSession:
-    """Tests for POST /api/v1/chat/sessions endpoint."""
+class TestChatStreamEndpoint:
+    """Tests for POST /api/v1/chat/stream endpoint."""
     
-    def test_create_session_success(self, client, mock_db, mock_chat_session):
-        """Test successful session creation with request body."""
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
+    def test_stream_success(self, client, mock_db, mock_user):
+        """Test successful streaming chat."""
+        with patch('app.api.v1.endpoints.chat.load_agent_context') as mock_context, \
+             patch('app.api.v1.endpoints.chat.AgentOrchestrator') as MockOrchestrator:
+            
+            mock_context.return_value = {"user_id": str(mock_user.id)}
+            
+            mock_orchestrator = MockOrchestrator.return_value
+            mock_agent = MagicMock()
+            
+            # Mock streaming response
+            async def mock_stream(message):
+                yield "Hello "
+                yield "there!"
+            
+            mock_agent.stream_response = mock_stream
+            mock_orchestrator._classify_query = AsyncMock(return_value=MagicMock(value="general"))
+            mock_orchestrator._get_or_create_agent = MagicMock(return_value=mock_agent)
             
             response = client.post(
-                "/api/v1/chat/sessions",
-                json={
-                    "session_type": "workout",
-                    "context_data": {"goal": "strength"}
-                }
+                "/api/v1/chat/stream",
+                json={"message": "Hello"}
             )
             
-            assert response.status_code == 201
-            data = response.json()
-            assert data["session_type"] == "general"
-            assert data["status"] == "active"
-            assert "id" in data
-            assert "started_at" in data
-            assert "last_activity_at" in data
-            assert data["ended_at"] is None
-    
-    def test_create_session_no_body(self, client, mock_db, mock_chat_session):
-        """Test session creation without request body defaults to 'general' type."""
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
-            
-            response = client.post("/api/v1/chat/sessions")
-            
-            assert response.status_code == 201
-            data = response.json()
-            assert "id" in data
-            assert data["status"] == "active"
-            # Verify the service was called with default "general" type
-            mock_service.create_session.assert_called_once()
-            call_args = mock_service.create_session.call_args
-            assert call_args[0][1].session_type == "general"
-    
-    def test_create_session_with_context_data(self, client, mock_db, mock_chat_session):
-        """Test session creation with context data."""
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
-            
-            response = client.post(
-                "/api/v1/chat/sessions",
-                json={
-                    "session_type": "meal",
-                    "context_data": {"meal_plan_id": "123e4567-e89b-12d3-a456-426614174000"}
-                }
-            )
-            
-            assert response.status_code == 201
-            data = response.json()
-            assert "id" in data
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
 
-class TestStartSession:
-    """Tests for POST /api/v1/chat/session/start endpoint."""
-    
-    def test_start_session_success(self, client, mock_db, mock_chat_session):
-        """Test successful session creation."""
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
-            
-            response = client.post(
-                "/api/v1/chat/session/start",
-                json={
-                    "session_type": "workout",
-                    "context_data": {"goal": "strength"}
-                }
-            )
-            
-            assert response.status_code == 201
-            data = response.json()
-            assert data["session_type"] == "general"
-            assert data["status"] == "active"
-            assert "id" in data
-            assert "started_at" in data
-    
-    def test_start_session_default_type(self, client, mock_db, mock_chat_session):
-        """Test session creation with default type."""
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.create_session = AsyncMock(return_value=mock_chat_session)
-            
-            response = client.post(
-                "/api/v1/chat/session/start",
-                json={}
-            )
-            
-            assert response.status_code == 201
-            data = response.json()
-            assert "id" in data
-
-
-class TestGetHistory:
+class TestGetHistoryEndpoint:
     """Tests for GET /api/v1/chat/history endpoint."""
     
-    def test_get_history_success(self, client, mock_db, mock_chat_message):
+    def test_get_history_success(self, client, mock_db, mock_user):
         """Test successful history retrieval."""
-        mock_response = ChatMessageResponse(
-            id=mock_chat_message.id,
-            session_id=mock_chat_message.session_id,
-            role=mock_chat_message.role,
-            content=mock_chat_message.content,
-            agent_type=mock_chat_message.agent_type,
-            created_at=mock_chat_message.created_at
-        )
+        # Mock database query results
+        mock_messages = [
+            ConversationMessage(
+                id=uuid4(),
+                user_id=mock_user.id,
+                role="user",
+                content="Hello",
+                agent_type=None,
+                created_at=datetime.now()
+            ),
+            ConversationMessage(
+                id=uuid4(),
+                user_id=mock_user.id,
+                role="assistant",
+                content="Hi there!",
+                agent_type="general",
+                created_at=datetime.now()
+            )
+        ]
         
-        mock_history = ChatHistoryResponse(
-            messages=[mock_response],
-            total=1,
-            limit=50,
-            offset=0
-        )
+        # Mock count query
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 2
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.get_history = AsyncMock(return_value=mock_history)
-            
-            response = client.get("/api/v1/chat/history")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert "messages" in data
-            assert len(data["messages"]) == 1
-            assert data["total"] == 1
-            assert data["limit"] == 50
-            assert data["offset"] == 0
+        # Mock messages query
+        mock_messages_result = MagicMock()
+        mock_messages_result.scalars.return_value.all.return_value = list(reversed(mock_messages))
+        
+        mock_db.execute.side_effect = [mock_count_result, mock_messages_result]
+        
+        response = client.get("/api/v1/chat/history")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "messages" in data
+        assert "total" in data
+        assert data["total"] == 2
+        assert len(data["messages"]) == 2
     
-    def test_get_history_with_session_filter(self, client, mock_db, mock_chat_message):
-        """Test history retrieval filtered by session."""
-        session_id = uuid4()
-        mock_response = ChatMessageResponse(
-            id=mock_chat_message.id,
-            session_id=session_id,
-            role=mock_chat_message.role,
-            content=mock_chat_message.content,
-            agent_type=mock_chat_message.agent_type,
-            created_at=mock_chat_message.created_at
-        )
+    def test_get_history_with_limit(self, client, mock_db, mock_user):
+        """Test history retrieval with limit parameter."""
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 100
         
-        mock_history = ChatHistoryResponse(
-            messages=[mock_response],
-            total=1,
-            limit=50,
-            offset=0
-        )
+        mock_messages_result = MagicMock()
+        mock_messages_result.scalars.return_value.all.return_value = []
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.get_history = AsyncMock(return_value=mock_history)
-            
-            response = client.get(f"/api/v1/chat/history?session_id={session_id}")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data["messages"]) == 1
+        mock_db.execute.side_effect = [mock_count_result, mock_messages_result]
+        
+        response = client.get("/api/v1/chat/history?limit=10")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 100
     
-    def test_get_history_with_pagination(self, client, mock_db):
-        """Test history retrieval with pagination."""
-        mock_history = ChatHistoryResponse(
-            messages=[],
-            total=100,
-            limit=10,
-            offset=20
-        )
+    def test_get_history_empty(self, client, mock_db, mock_user):
+        """Test history retrieval with no messages."""
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 0
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.get_history = AsyncMock(return_value=mock_history)
-            
-            response = client.get("/api/v1/chat/history?limit=10&offset=20")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data["limit"] == 10
-            assert data["offset"] == 20
-            assert data["total"] == 100
+        mock_messages_result = MagicMock()
+        mock_messages_result.scalars.return_value.all.return_value = []
+        
+        mock_db.execute.side_effect = [mock_count_result, mock_messages_result]
+        
+        response = client.get("/api/v1/chat/history")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
+        assert len(data["messages"]) == 0
 
 
-class TestEndSession:
-    """Tests for DELETE /api/v1/chat/session/{session_id} endpoint."""
+class TestDeleteHistoryEndpoint:
+    """Tests for DELETE /api/v1/chat/history endpoint."""
     
-    def test_end_session_success(self, client, mock_db):
-        """Test successful session ending."""
-        session_id = uuid4()
+    def test_delete_history_success(self, client, mock_db, mock_user):
+        """Test successful history deletion."""
+        response = client.delete("/api/v1/chat/history")
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.end_session = AsyncMock(return_value=None)
-            
-            response = client.delete(f"/api/v1/chat/session/{session_id}")
-            
-            assert response.status_code == 204
-            assert response.content == b''
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "cleared"
+        
+        # Verify delete was called
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+
+class TestChatEndpointsAuthentication:
+    """Tests for authentication requirements on chat endpoints."""
     
-    def test_end_session_not_found(self, client, mock_db):
-        """Test ending non-existent session returns 404."""
-        from fastapi import HTTPException
+    def test_chat_requires_authentication(self):
+        """Test that chat endpoint requires authentication."""
+        test_app = FastAPI()
+        test_app.include_router(router, prefix="/api/v1/chat", tags=["chat"])
+        client = TestClient(test_app)
         
-        session_id = uuid4()
+        response = client.post(
+            "/api/v1/chat/chat",
+            json={"message": "Hello"}
+        )
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.end_session = AsyncMock(
-                side_effect=HTTPException(status_code=404, detail="Chat session not found")
-            )
-            
-            response = client.delete(f"/api/v1/chat/session/{session_id}")
-            
-            assert response.status_code == 404
+        assert response.status_code in [401, 403]
     
-    def test_end_session_unauthorized(self, client, mock_db):
-        """Test ending another user's session returns 403."""
-        from fastapi import HTTPException
+    def test_history_requires_authentication(self):
+        """Test that history endpoint requires authentication."""
+        test_app = FastAPI()
+        test_app.include_router(router, prefix="/api/v1/chat", tags=["chat"])
+        client = TestClient(test_app)
         
-        session_id = uuid4()
+        response = client.get("/api/v1/chat/history")
         
-        with patch('app.api.v1.endpoints.chat.ChatService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.end_session = AsyncMock(
-                side_effect=HTTPException(
-                    status_code=403,
-                    detail="Not authorized to access this chat session"
-                )
-            )
-            
-            response = client.delete(f"/api/v1/chat/session/{session_id}")
-            
-            assert response.status_code == 403
+        assert response.status_code in [401, 403]
+    
+    def test_delete_history_requires_authentication(self):
+        """Test that delete history endpoint requires authentication."""
+        test_app = FastAPI()
+        test_app.include_router(router, prefix="/api/v1/chat", tags=["chat"])
+        client = TestClient(test_app)
+        
+        response = client.delete("/api/v1/chat/history")
+        
+        assert response.status_code in [401, 403]

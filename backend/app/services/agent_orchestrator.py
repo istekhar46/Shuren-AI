@@ -21,15 +21,15 @@ class AgentType(str, Enum):
     specific types of user queries and interactions.
     """
     
-    # Specialized Agents (to be implemented in Sub-Doc 2)
-    WORKOUT_PLANNING = "workout_planning"
-    DIET_PLANNING = "diet_planning"
-    SUPPLEMENT_GUIDANCE = "supplement_guidance"
-    TRACKING_ADJUSTMENT = "tracking_adjustment"
-    SCHEDULING_REMINDER = "scheduling_reminder"
-    CONVERSATIONAL_GENERAL = "conversational_general"
+    # Specialized Agents
+    WORKOUT = "workout"
+    DIET = "diet"
+    SUPPLEMENT = "supplement"
+    TRACKER = "tracker"
+    SCHEDULER = "scheduler"
+    GENERAL = "general"
     
-    # Test Agent (for framework validation)
+    # Test Agent (for framework validation and backward compatibility)
     TEST = "test"
 
 
@@ -80,6 +80,43 @@ class AgentOrchestrator:
         
         # Track last agent type used for context continuity
         self.last_agent_type: Optional[AgentType] = None
+    
+    def _init_classifier_llm(self):
+        """
+        Initialize a fast classifier LLM for query routing.
+        
+        Uses the configured classifier model for fast, low-latency query classification.
+        The classifier uses a low temperature (0.1) for consistent routing decisions.
+        
+        If CLASSIFIER_MODEL is set to a Gemini model, uses Google's API.
+        Otherwise, defaults to Anthropic Claude Haiku for fast classification.
+        
+        The classifier model is configurable via CLASSIFIER_MODEL setting, allowing
+        flexibility to use different models based on performance and cost requirements.
+        
+        Returns:
+            Chat model instance configured for fast query routing
+        """
+        from langchain_anthropic import ChatAnthropic
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from app.core.config import settings
+        
+        # Check if classifier model is a Gemini model
+        if "gemini" in settings.CLASSIFIER_MODEL.lower():
+            return ChatGoogleGenerativeAI(
+                model=settings.CLASSIFIER_MODEL,
+                google_api_key=settings.GOOGLE_API_KEY,
+                temperature=settings.CLASSIFIER_TEMPERATURE,
+                max_output_tokens=10
+            )
+        else:
+            # Default to Anthropic Claude Haiku
+            return ChatAnthropic(
+                model=settings.CLASSIFIER_MODEL,
+                anthropic_api_key=settings.ANTHROPIC_API_KEY,
+                temperature=settings.CLASSIFIER_TEMPERATURE,
+                max_tokens=10
+            )
     
     async def route_query(
         self,
@@ -164,9 +201,9 @@ class AgentOrchestrator:
         """
         Classify a user query to determine the appropriate agent type.
         
-        This is a placeholder implementation that always returns AgentType.TEST.
-        The actual classification logic using the classifier LLM will be implemented
-        in Sub-Doc 2 (Specialized Agents).
+        Uses a fast classifier LLM (Claude Haiku) to analyze the query and route
+        it to the most appropriate specialized agent. The classifier uses a low
+        temperature (0.1) for consistent routing decisions.
         
         In voice mode, classifications are cached by the first 50 characters of the
         query to avoid repeated LLM calls and improve latency.
@@ -175,32 +212,73 @@ class AgentOrchestrator:
             query: User's query text
         
         Returns:
-            AgentType: The classified agent type (currently always TEST)
-        
-        TODO: Sub-Doc 2 - Implement actual query classification using classifier LLM
-        TODO: Sub-Doc 2 - Add classification logic for all specialized agents
-        TODO: Sub-Doc 2 - Use Claude Haiku with temperature=0.1 for fast routing
+            AgentType: The classified agent type, defaults to GENERAL on failure
         
         Example:
             >>> agent_type = await orchestrator._classify_query("What workout should I do?")
-            >>> assert agent_type == AgentType.TEST  # Placeholder behavior
+            >>> assert agent_type == AgentType.WORKOUT
         """
         # Create cache key from first 50 characters of query
         cache_key = query[:50].lower().strip()
         
         # Check classification cache
         if cache_key in self._classification_cache:
+            logger.debug(f"Using cached classification for query: {cache_key}")
             return self._classification_cache[cache_key]
         
-        # Placeholder: Always return TEST agent type
-        # TODO: Sub-Doc 2 - Replace with actual classifier LLM call
-        classified_type = AgentType.TEST
+        # Initialize classifier LLM
+        classifier = self._init_classifier_llm()
         
-        # Cache result in voice mode for performance
-        if self.mode == "voice":
-            self._classification_cache[cache_key] = classified_type
+        # Build classification messages
+        from langchain_core.messages import SystemMessage, HumanMessage
         
-        return classified_type
+        classification_prompt = """Classify this fitness query into ONE category:
+- workout: Exercise plans, form, demonstrations, logging sets, workout routines, training
+- diet: Meal plans, nutrition, recipes, food substitutions, calories, macros, eating
+- supplement: Supplement guidance and information, vitamins, protein powder
+- tracker: Progress tracking, adherence, metrics, weight tracking, measurements
+- scheduler: Schedule changes, reminders, timing, rescheduling workouts or meals
+- general: Motivation, casual conversation, general questions, greetings
+
+Respond with ONLY the category name."""
+        
+        messages = [
+            SystemMessage(content=classification_prompt),
+            HumanMessage(content=query)
+        ]
+        
+        try:
+            # Call classifier LLM
+            result = await classifier.ainvoke(messages)
+            agent_type_str = result.content.strip().lower()
+            
+            logger.debug(f"Classifier returned: {agent_type_str} for query: {query[:50]}")
+            
+            # Parse response to AgentType enum
+            try:
+                classified_type = AgentType(agent_type_str)
+            except ValueError:
+                # Default to GENERAL on classification failure
+                logger.warning(
+                    f"Unknown agent type from classifier: {agent_type_str}, "
+                    f"defaulting to GENERAL for query: {query[:50]}"
+                )
+                classified_type = AgentType.GENERAL
+            
+            # Cache result in voice mode for performance
+            if self.mode == "voice":
+                self._classification_cache[cache_key] = classified_type
+                logger.debug(f"Cached classification: {classified_type.value} for key: {cache_key}")
+            
+            return classified_type
+            
+        except Exception as e:
+            # Log error and default to GENERAL
+            logger.error(
+                f"Classification failed for query '{query[:50]}': {e}. "
+                f"Defaulting to GENERAL agent."
+            )
+            return AgentType.GENERAL
 
     def _get_or_create_agent(self, agent_type: AgentType, context: "AgentContext"):
         """
@@ -244,8 +322,8 @@ class AgentOrchestrator:
         class implementations and instantiates them with the provided context
         and database session.
         
-        Currently only the TEST agent is implemented. Specialized agents will
-        be added in Sub-Doc 2.
+        All 6 specialized agents are now implemented along with the TestAgent
+        for backward compatibility.
         
         Args:
             agent_type: Type of agent to create
@@ -257,31 +335,29 @@ class AgentOrchestrator:
         Raises:
             ValueError: If agent_type is not supported
         
-        TODO: Sub-Doc 2 - Add WorkoutPlanningAgent
-        TODO: Sub-Doc 2 - Add DietPlanningAgent
-        TODO: Sub-Doc 2 - Add SupplementGuidanceAgent
-        TODO: Sub-Doc 2 - Add TrackingAdjustmentAgent
-        TODO: Sub-Doc 2 - Add SchedulingReminderAgent
-        TODO: Sub-Doc 2 - Add ConversationalGeneralAgent
-        
         Example:
-            >>> agent = orchestrator._create_agent(AgentType.TEST, context)
-            >>> assert isinstance(agent, TestAgent)
+            >>> agent = orchestrator._create_agent(AgentType.WORKOUT, context)
+            >>> assert isinstance(agent, WorkoutPlannerAgent)
         """
         # Import agents here to avoid circular dependencies
         from app.agents.test_agent import TestAgent
+        from app.agents.workout_planner import WorkoutPlannerAgent
+        from app.agents.diet_planner import DietPlannerAgent
+        from app.agents.supplement_guide import SupplementGuideAgent
+        from app.agents.tracker import TrackerAgent
+        from app.agents.scheduler import SchedulerAgent
+        from app.agents.general_assistant import GeneralAssistantAgent
         
         # Define agent mapping
         # Maps AgentType enum values to their corresponding agent classes
         agent_map = {
-            AgentType.TEST: TestAgent,
-            # TODO: Sub-Doc 2 - Add specialized agents
-            # AgentType.WORKOUT_PLANNING: WorkoutPlanningAgent,
-            # AgentType.DIET_PLANNING: DietPlanningAgent,
-            # AgentType.SUPPLEMENT_GUIDANCE: SupplementGuidanceAgent,
-            # AgentType.TRACKING_ADJUSTMENT: TrackingAdjustmentAgent,
-            # AgentType.SCHEDULING_REMINDER: SchedulingReminderAgent,
-            # AgentType.CONVERSATIONAL_GENERAL: ConversationalGeneralAgent,
+            AgentType.WORKOUT: WorkoutPlannerAgent,
+            AgentType.DIET: DietPlannerAgent,
+            AgentType.SUPPLEMENT: SupplementGuideAgent,
+            AgentType.TRACKER: TrackerAgent,
+            AgentType.SCHEDULER: SchedulerAgent,
+            AgentType.GENERAL: GeneralAssistantAgent,
+            AgentType.TEST: TestAgent,  # Keep for backward compatibility
         }
         
         # Get agent class from map

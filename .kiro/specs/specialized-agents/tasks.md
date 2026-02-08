@@ -221,8 +221,8 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Verify calculated percentage matches expected value
     - Run 100 iterations minimum
 
-- [ ] 5. Implement Scheduling and Reminder Agent
-  - [ ] 5.1 Create SchedulerAgent class extending BaseAgent
+- [x] 5. Implement Scheduling and Reminder Agent
+  - [x] 5.1 Create SchedulerAgent class extending BaseAgent
     - Create `backend/app/agents/scheduler.py`
     - Implement `process_text()` method with tool calling
     - Implement `process_voice()` method for concise responses
@@ -230,27 +230,27 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Implement `_system_prompt()` with scheduling focus
     - _Requirements: 5.6, 5.7_
   
-  - [ ] 5.2 Implement get_upcoming_schedule tool
+  - [x] 5.2 Implement get_upcoming_schedule tool
     - Create `@tool` decorated async function
     - Query upcoming workouts and meals from database
     - Return schedule as JSON string
     - _Requirements: 5.1_
   
-  - [ ] 5.3 Implement reschedule_workout tool
+  - [x] 5.3 Implement reschedule_workout tool
     - Create `@tool` decorated async function
     - Update workout schedule in database
     - Handle schedule conflicts
     - Return confirmation message
     - _Requirements: 5.2, 5.5_
   
-  - [ ] 5.4 Implement update_reminder_preferences tool
+  - [x] 5.4 Implement update_reminder_preferences tool
     - Create `@tool` decorated async function
     - Update user's reminder settings in database
     - Commit changes
     - Return confirmation message
     - _Requirements: 5.3_
   
-  - [ ] 5.5 Implement get_tools() method for SchedulerAgent
+  - [x] 5.5 Implement get_tools() method for SchedulerAgent
     - Return list of all 3 scheduling tools
     - Ensure tools have access to db_session
     - _Requirements: 5.1, 5.2, 5.3_
@@ -271,8 +271,8 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Verify conflicts are detected and handled
     - Run 100 iterations minimum
 
-- [ ] 6. Implement General Assistant Agent
-  - [ ] 6.1 Create GeneralAssistantAgent class extending BaseAgent
+- [x] 6. Implement General Assistant Agent
+  - [x] 6.1 Create GeneralAssistantAgent class extending BaseAgent
     - Create `backend/app/agents/general_assistant.py`
     - Implement `process_text()` method with tool calling
     - Implement `process_voice()` method for conversational responses
@@ -280,37 +280,38 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Implement `_system_prompt()` with friendly, supportive tone
     - _Requirements: 6.3, 6.5, 6.6, 6.7_
   
-  - [ ] 6.2 Implement get_user_stats tool
+  - [x] 6.2 Implement get_user_stats tool
     - Create `@tool` decorated async function
     - Query general user statistics from database
     - Return stats as JSON string
     - _Requirements: 6.4_
   
-  - [ ] 6.3 Implement provide_motivation tool
+  - [x] 6.3 Implement provide_motivation tool
     - Create `@tool` decorated async function
     - Use context and progress data to generate motivation
     - Return encouraging message
     - _Requirements: 6.2_
   
-  - [ ] 6.4 Implement get_tools() method for GeneralAssistantAgent
+  - [x] 6.4 Implement get_tools() method for GeneralAssistantAgent
     - Return list of both general tools
     - Ensure tools have access to db_session and context
     - _Requirements: 6.2, 6.4_
   
-  - [ ]* 6.5 Write unit tests for GeneralAssistantAgent
+  - [x] 6.5 Write unit tests for GeneralAssistantAgent
+
     - Test each tool with valid inputs
     - Test text mode processing
     - Test voice mode processing
     - Test system prompt has friendly tone
     - _Requirements: 10.1, 10.4_
 
-- [ ] 7. Update Agent Orchestrator with Classification
-  - [ ] 7.1 Update AgentType enum in agent_orchestrator.py
+- [-] 7. Update Agent Orchestrator with Classification
+  - [x] 7.1 Update AgentType enum in agent_orchestrator.py
     - Add WORKOUT, DIET, SUPPLEMENT, TRACKER, SCHEDULER, GENERAL
     - Keep TEST for backward compatibility
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
   
-  - [ ] 7.2 Implement _classify_query method with LLM classification
+  - [x] 7.2 Implement _classify_query method with LLM classification
     - Add classification system prompt
     - Call classifier LLM (Claude Haiku) with query
     - Parse response to AgentType enum
@@ -318,7 +319,7 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Default to GENERAL on classification failure
     - _Requirements: 7.7, 7.8, 7.9_
   
-  - [ ] 7.3 Update _create_agent method with all agent types
+  - [x] 7.3 Update _create_agent method with all agent types
     - Import all 6 specialized agents
     - Add all agents to agent_map dictionary
     - Keep TestAgent for backward compatibility
@@ -336,7 +337,7 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Test fallback to GENERAL on uncertain classification
     - _Requirements: 10.2, 10.6_
 
-- [ ] 8. Checkpoint - Verify all agents work independently
+- [x] 8. Checkpoint - Verify all agents work independently
   - Ensure all tests pass for individual agents
   - Verify each agent can process text and voice queries
   - Verify all tools work correctly
@@ -465,7 +466,7 @@ The implementation builds on the completed Phase 2 Sub-Doc 1 (LangChain Foundati
     - Run 100 queries per agent
     - _Requirements: 9.2_
 
-- [ ] 12. Final Checkpoint - Ensure all tests pass
+- [x] 12. Final Checkpoint - Ensure all tests pass
   - Run all unit tests: `poetry run pytest backend/tests/test_*_agent.py -v`
   - Run all integration tests: `poetry run pytest backend/tests/test_agent_routing.py -v`
   - Run all property tests: `poetry run pytest backend/tests/test_agent_properties.py -v`

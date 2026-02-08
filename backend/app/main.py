@@ -105,16 +105,10 @@ app.include_router(
     tags=["Meals"]
 )
 
-# Include v1 API router (meal templates, shopping list, dishes)
+# Include v1 API router (meal templates, shopping list, dishes, chat)
 app.include_router(
     v1.api_router,
     prefix="/api/v1"
-)
-
-app.include_router(
-    chat.router,
-    prefix="/api/v1/chat",
-    tags=["Chat"]
 )
 
 

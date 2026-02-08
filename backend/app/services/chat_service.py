@@ -10,13 +10,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.chat import ChatMessage, ChatSession
-from app.schemas.chat import (
-    ChatHistoryResponse,
-    ChatMessageRequest,
-    ChatMessageResponse,
-    ChatSessionCreate,
-    ChatSessionResponse,
-)
+
+# TODO: These schemas need to be created for the session-based chat implementation
+# from app.schemas.chat import (
+#     ChatHistoryResponse,
+#     ChatMessageRequest,
+#     ChatMessageResponse,
+#     ChatSessionCreate,
+#     ChatSessionResponse,
+# )
+
+# Temporary placeholder types until schemas are created
+from typing import Any
+ChatHistoryResponse = Any
+ChatMessageRequest = Any
+ChatMessageResponse = Any
+ChatSessionCreate = Any
+ChatSessionResponse = Any
 
 
 class ChatService:

@@ -203,7 +203,7 @@ class TestGetShoppingList:
             
             assert response.status_code == 404
             data = response.json()
-            assert "not found" in data["detail"].lower()
+            assert "no active meal template found" in data["detail"].lower()
     
     def test_get_shopping_list_multiple_categories(self, client, mock_db, mock_user):
         """Test shopping list with multiple ingredient categories."""

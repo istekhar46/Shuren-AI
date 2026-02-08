@@ -1,134 +1,186 @@
-"""Chat Pydantic schemas"""
+"""Chat API Pydantic schemas for text-based chat interactions"""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
-class ChatMessageRequest(BaseModel):
+class ChatRequest(BaseModel):
     """
-    Schema for sending a chat message.
+    Schema for sending a chat message to the AI assistant.
     
-    Used to send a message to an AI agent. Can optionally specify a session
-    to continue an existing conversation, or create a new session.
+    The message will be processed by the appropriate specialized agent,
+    either through automatic classification or explicit agent_type selection.
     """
     message: str = Field(
         ...,
         min_length=1,
-        max_length=5000,
-        description="Message content to send to the AI agent (1-5000 characters)"
+        max_length=2000,
+        description="Message content to send to the AI assistant (1-2000 characters)"
     )
-    session_id: Optional[UUID] = Field(
+    agent_type: Optional[str] = Field(
         None,
-        description="Optional session ID to continue existing conversation. If not provided, creates or retrieves active session."
+        description="Optional explicit agent type: workout, diet, supplement, tracker, scheduler, general"
     )
-    session_type: Optional[str] = Field(
-        default='general',
-        description="Session type: general, workout, meal, supplement, tracking. Used when creating new session."
-    )
-    context_data: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional context data for the session (e.g., current workout day, meal plan ID)"
-    )
+    
+    @field_validator('agent_type')
+    @classmethod
+    def validate_agent_type(cls, v: Optional[str]) -> Optional[str]:
+        """Validate agent_type is one of the allowed values"""
+        if v is not None:
+            allowed_types = {'workout', 'diet', 'supplement', 'tracker', 'scheduler', 'general'}
+            if v not in allowed_types:
+                raise ValueError(
+                    f"Invalid agent_type '{v}'. Must be one of: {', '.join(sorted(allowed_types))}"
+                )
+        return v
     
     class Config:
         json_schema_extra = {
             "example": {
                 "message": "What exercises should I do today?",
-                "session_type": "workout",
-                "context_data": {
-                    "current_workout_day": 1
-                }
+                "agent_type": "workout"
             }
         }
 
 
-class ChatSessionCreate(BaseModel):
+class ChatResponse(BaseModel):
     """
-    Schema for creating a new chat session.
+    Schema for chat response from the AI assistant.
     
-    Used to explicitly create a new conversation context with the AI agent.
-    Session type determines which specialized agent will handle the conversation.
+    Contains the agent's response along with metadata about which agent
+    handled the request and what tools were used during processing.
     """
-    session_type: str = Field(
-        default='general',
-        description="Session type: general, workout, meal, supplement, tracking. Determines which AI agent handles the conversation."
+    response: str = Field(
+        ...,
+        description="The agent's response text"
     )
-    context_data: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional context data to initialize the session (e.g., workout_plan_id, meal_plan_id)"
+    agent_type: str = Field(
+        ...,
+        description="Type of agent that handled this request (workout, diet, supplement, tracker, scheduler, general)"
+    )
+    conversation_id: str = Field(
+        ...,
+        description="User ID serving as conversation identifier"
+    )
+    tools_used: List[str] = Field(
+        default_factory=list,
+        description="List of tools/functions called by the agent during processing"
     )
     
     class Config:
         json_schema_extra = {
             "example": {
-                "session_type": "workout",
-                "context_data": {
-                    "workout_plan_id": "123e4567-e89b-12d3-a456-426614174000"
-                }
+                "response": "Based on your fitness level and goals, I recommend starting with...",
+                "agent_type": "workout",
+                "conversation_id": "user-123",
+                "tools_used": ["get_workout_plan", "calculate_calories"]
+            }
+        }
+
+
+class MessageDict(BaseModel):
+    """
+    Schema for a single message in conversation history.
+    
+    Represents either a user message or an assistant response with
+    associated metadata.
+    """
+    role: str = Field(
+        ...,
+        description="Message role: 'user' or 'assistant'"
+    )
+    content: str = Field(
+        ...,
+        description="Message content text"
+    )
+    agent_type: Optional[str] = Field(
+        None,
+        description="Type of agent that generated this message (only for assistant messages)"
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Timestamp when the message was created"
+    )
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "role": "user",
+                "content": "What should I eat for breakfast?",
+                "agent_type": None,
+                "created_at": "2026-02-06T10:30:00Z"
             }
         }
 
 
 class ChatMessageResponse(BaseModel):
     """
-    Schema for chat message response.
+    Schema for individual chat message response.
     
-    Represents a single message in a conversation, either from the user
-    or from the AI agent.
+    Used for returning single message data in chat operations,
+    particularly for session-based messaging and test mocking.
     """
-    id: UUID = Field(..., description="Unique identifier for this message")
-    session_id: UUID = Field(..., description="Session this message belongs to")
-    role: str = Field(..., description="Message role: user, assistant, or system")
+    id: UUID = Field(..., description="Unique message identifier")
+    session_id: UUID = Field(..., description="Chat session identifier")
+    role: str = Field(..., description="Message role: 'user' or 'assistant'")
     content: str = Field(..., description="Message content text")
     agent_type: Optional[str] = Field(
         None,
-        description="Type of AI agent that generated this message (for assistant messages): workout_planning, diet_planning, supplement_guidance, tracking_adjustment, scheduling_reminder, conversational"
+        description="Agent type for assistant messages"
     )
-    created_at: datetime = Field(..., description="Timestamp when the message was created")
+    created_at: datetime = Field(..., description="Message creation timestamp")
     
     class Config:
         from_attributes = True
-
-
-class ChatSessionResponse(BaseModel):
-    """
-    Schema for chat session response.
-    
-    Represents a conversation context between the user and AI agent,
-    including session metadata and status.
-    """
-    id: UUID = Field(..., description="Unique identifier for this session")
-    session_type: str = Field(..., description="Session type: general, workout, meal, supplement, tracking")
-    status: str = Field(..., description="Session status: active, completed, abandoned")
-    started_at: datetime = Field(..., description="Timestamp when the session was started")
-    ended_at: Optional[datetime] = Field(None, description="Timestamp when the session was ended (null if still active)")
-    last_activity_at: datetime = Field(..., description="Timestamp of last message in this session")
-    
-    class Config:
-        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "session_id": "123e4567-e89b-12d3-a456-426614174001",
+                "role": "assistant",
+                "content": "Based on your fitness level, I recommend...",
+                "agent_type": "workout",
+                "created_at": "2026-02-06T10:30:00Z"
+            }
+        }
 
 
 class ChatHistoryResponse(BaseModel):
     """
-    Schema for chat history response with pagination.
+    Schema for chat history response.
     
-    Contains a list of messages with pagination metadata. Messages are
-    returned in chronological order (oldest to newest).
+    Contains a list of messages in chronological order along with
+    the total count of messages in the user's conversation history.
     """
-    messages: List[ChatMessageResponse] = Field(..., description="List of messages in chronological order")
-    total: int = Field(..., description="Total number of messages available (across all pages)")
-    limit: int = Field(..., description="Maximum number of messages returned in this response")
-    offset: int = Field(..., description="Number of messages skipped (for pagination)")
+    messages: List[MessageDict] = Field(
+        ...,
+        description="List of messages in chronological order (oldest to newest)"
+    )
+    total: int = Field(
+        ...,
+        description="Total number of messages in the user's conversation history"
+    )
     
     class Config:
         json_schema_extra = {
             "example": {
-                "messages": [],
-                "total": 42,
-                "limit": 50,
-                "offset": 0
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What should I eat for breakfast?",
+                        "agent_type": None,
+                        "created_at": "2026-02-06T10:30:00Z"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Based on your meal plan, I recommend...",
+                        "agent_type": "diet",
+                        "created_at": "2026-02-06T10:30:05Z"
+                    }
+                ],
+                "total": 42
             }
         }
