@@ -8,46 +8,46 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
 
 ## Tasks
 
-- [ ] 1. Install LiveKit Agents SDK and dependencies
+- [x] 1. Install LiveKit Agents SDK and dependencies
   - Add livekit-agents with deepgram, openai, and cartesia plugins using Poetry
   - Add langchain-openai and langchain-google-genai for multi-provider support
   - Verify all dependencies resolve correctly
   - _Requirements: 1.1, 1.2_
 
-- [ ] 2. Update configuration for voice services
-  - [ ] 2.1 Add voice service configuration to app/core/config.py
+- [x] 2. Update configuration for voice services
+  - [x] 2.1 Add voice service configuration to app/core/config.py
     - Add DEEPGRAM_API_KEY, CARTESIA_API_KEY settings
     - Add VOICE_CONTEXT_CACHE_TTL (default 3600)
     - Add VOICE_MAX_RESPONSE_TOKENS (default 150)
     - Add VOICE_LLM_PROVIDER setting (openai, anthropic, google)
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
   
-  - [ ] 2.2 Update .env.example with voice service variables
+  - [x] 2.2 Update .env.example with voice service variables
     - Add DEEPGRAM_API_KEY placeholder
     - Add CARTESIA_API_KEY placeholder
     - Add VOICE_LLM_PROVIDER with default value
     - Add VOICE_CONTEXT_CACHE_TTL and VOICE_MAX_RESPONSE_TOKENS
     - _Requirements: 2.6, 2.7_
 
-- [ ] 3. Create WorkoutLog database model
-  - [ ] 3.1 Create app/models/workout_log.py
+- [x] 3. Create WorkoutLog database model
+  - [x] 3.1 Create app/models/workout_log.py
     - Define WorkoutLog model with id, user_id, exercise, reps, weight_kg, logged_at, created_at
     - Add indexes on user_id and logged_at
     - Add relationship to User model
     - _Requirements: 7.4_
   
-  - [ ]* 3.2 Create database migration for workout_logs table
+  - [x] 3.2 Create database migration for workout_logs table
     - Generate Alembic migration: `poetry run alembic revision --autogenerate -m "add workout_logs table"`
     - Review and apply migration: `poetry run alembic upgrade head`
     - _Requirements: 7.4_
 
-- [ ] 4. Implement FitnessVoiceAgent class
-  - [ ] 4.1 Create app/livekit_agents/ directory and __init__.py
+- [x] 4. Implement FitnessVoiceAgent class
+  - [x] 4.1 Create app/livekit_agents/ directory and __init__.py
     - Create directory structure
     - Add __init__.py with module docstring
     - _Requirements: 3.1_
   
-  - [ ] 4.2 Create app/livekit_agents/voice_agent_worker.py with FitnessVoiceAgent class
+  - [x] 4.2 Create app/livekit_agents/voice_agent_worker.py with FitnessVoiceAgent class
     - Import LiveKit agents SDK and required dependencies
     - Define FitnessVoiceAgent class inheriting from Agent
     - Implement __init__ with user_id and agent_type parameters
@@ -55,14 +55,14 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Initialize _log_queue and _log_worker_task attributes
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
   
-  - [ ] 4.3 Implement initialize_orchestrator method
+  - [x] 4.3 Implement initialize_orchestrator method
     - Load user context using load_agent_context
     - Initialize AgentOrchestrator with db_session and mode="voice"
     - Call orchestrator.warm_up() to pre-warm LLM connection
     - Log initialization completion
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
   
-  - [ ] 4.4 Implement _get_base_instructions method
+  - [x] 4.4 Implement _get_base_instructions method
     - Accept agent_type parameter
     - Return instructions tailored to agent_type
     - Include role description, capabilities, and behavioral guidelines
@@ -70,8 +70,8 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Instruct to use ask_specialist_agent for complex queries
     - _Requirements: 3.5, 20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7, 20.8_
 
-- [ ] 5. Implement function tools
-  - [ ] 5.1 Implement get_todays_workout function tool
+- [x] 5. Implement function tools
+  - [x] 5.1 Implement get_todays_workout function tool
     - Decorate with @function_tool()
     - Accept RunContext parameter
     - Return workout data from self.user_context.current_workout_plan
@@ -79,7 +79,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Handle case where context not loaded
     - _Requirements: 5.1, 5.2_
   
-  - [ ] 5.2 Implement get_todays_meals function tool
+  - [x] 5.2 Implement get_todays_meals function tool
     - Decorate with @function_tool()
     - Accept RunContext parameter
     - Return meal data from self.user_context.current_meal_plan
@@ -87,7 +87,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Handle case where context not loaded
     - _Requirements: 5.3, 5.4_
   
-  - [ ] 5.3 Implement log_workout_set function tool
+  - [x] 5.3 Implement log_workout_set function tool
     - Decorate with @function_tool()
     - Accept RunContext, exercise, reps, weight parameters
     - Create log entry dict with timestamp
@@ -95,7 +95,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Return immediate confirmation message
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
   
-  - [ ] 5.4 Implement ask_specialist_agent function tool
+  - [x] 5.4 Implement ask_specialist_agent function tool
     - Decorate with @function_tool()
     - Accept RunContext, query, specialist parameters
     - Validate specialist is one of: workout, diet, supplement
@@ -104,13 +104,13 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Handle orchestrator errors with friendly message
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
-- [ ] 6. Implement background log worker
-  - [ ] 6.1 Implement start_log_worker method
+- [x] 6. Implement background log worker
+  - [x] 6.1 Implement start_log_worker method
     - Create asyncio task for _log_worker
     - Store task in self._log_worker_task
     - _Requirements: 7.2_
   
-  - [ ] 6.2 Implement _log_worker method
+  - [x] 6.2 Implement _log_worker method
     - Create infinite loop with try/except
     - Await log entry from self._log_queue
     - Create async database session
@@ -121,13 +121,13 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Log errors and continue processing on exception
     - _Requirements: 7.3, 7.4, 7.6_
   
-  - [ ] 6.3 Implement cleanup method
+  - [x] 6.3 Implement cleanup method
     - Cancel self._log_worker_task if exists
     - Await task with CancelledError handling
     - _Requirements: 14.3, 14.4_
 
-- [ ] 7. Implement agent session configuration
-  - [ ] 7.1 Create _get_configured_llm helper function
+- [x] 7. Implement agent session configuration
+  - [x] 7.1 Create _get_configured_llm helper function
     - Check settings.VOICE_LLM_PROVIDER
     - Return openai.LLM with gpt-4o if provider is "openai"
     - Return configured LLM for anthropic provider (may need custom integration)
@@ -136,13 +136,13 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Set temperature to 0.7 for all providers
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5_
   
-  - [ ] 7.2 Configure STT with Deepgram in entrypoint
+  - [x] 7.2 Configure STT with Deepgram in entrypoint
     - Create deepgram.STT instance
     - Set model to "nova-2-general"
     - Set language to "en-US"
     - _Requirements: 10.1, 10.2_
   
-  - [ ] 7.3 Configure TTS with Cartesia in entrypoint
+  - [x] 7.3 Configure TTS with Cartesia in entrypoint
     - Create cartesia.TTS instance
     - Set model to "sonic-english"
     - Set voice_id to "fitness-coach-male"
@@ -150,8 +150,8 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Set speed to 1.1
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [ ] 8. Implement agent worker entrypoint
-  - [ ] 8.1 Implement entrypoint function
+- [x] 8. Implement agent worker entrypoint
+  - [x] 8.1 Implement entrypoint function
     - Accept JobContext parameter
     - Extract metadata from ctx.room.metadata
     - Parse user_id and agent_type from metadata
@@ -159,13 +159,13 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Log agent session start
     - _Requirements: 9.1, 9.2, 9.3_
   
-  - [ ] 8.2 Initialize agent and pre-load context in entrypoint
+  - [x] 8.2 Initialize agent and pre-load context in entrypoint
     - Create FitnessVoiceAgent instance
     - Call agent.initialize_orchestrator() before connecting
     - Call agent.start_log_worker() before connecting
     - _Requirements: 9.4, 9.5, 9.6_
   
-  - [ ] 8.3 Connect to room and start session in entrypoint
+  - [x] 8.3 Connect to room and start session in entrypoint
     - Call await ctx.connect()
     - Create AgentSession with STT, TTS, and LLM
     - Call await session.start(room=ctx.room, agent=agent)
@@ -173,13 +173,13 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Await session.wait_for_completion()
     - _Requirements: 9.7_
   
-  - [ ] 8.4 Implement cleanup in entrypoint
+  - [x] 8.4 Implement cleanup in entrypoint
     - Call agent.cleanup() after session completes
     - Log session end
     - _Requirements: 14.1, 14.2, 14.5_
 
-- [ ] 9. Implement main worker process
-  - [ ] 9.1 Add main block to voice_agent_worker.py
+- [x] 9. Implement main worker process
+  - [x] 9.1 Add main block to voice_agent_worker.py
     - Check if __name__ == "__main__"
     - Call agents.cli.run_app with WorkerOptions
     - Set entrypoint_fnc to entrypoint function
@@ -187,8 +187,8 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Set worker_type to agents.WorkerType.ROOM
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.6_
 
-- [ ] 10. Create Dockerfile for voice agent
-  - [ ] 10.1 Create backend/Dockerfile.agent
+- [x] 10. Create Dockerfile for voice agent
+  - [x] 10.1 Create backend/Dockerfile.agent
     - Use python:3.11-slim as base image
     - Install gcc for compiling dependencies
     - Copy and install from requirements-agent.txt (or use Poetry)
@@ -196,8 +196,8 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Set CMD to run voice_agent_worker.py
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
 
-- [ ] 11. Update Docker Compose configuration
-  - [ ] 11.1 Add livekit_agent service to docker-compose.yml
+- [x] 11. Update Docker Compose configuration
+  - [x] 11.1 Add livekit_agent service to docker-compose.yml
     - Set build context to ./backend with Dockerfile.agent
     - Add LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET env vars
     - Add DATABASE_URL and REDIS_URL env vars
@@ -207,19 +207,19 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Set replicas to 2 in deploy section
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.6, 16.7, 16.8, 16.9_
 
-- [ ] 12. Checkpoint - Verify voice agent worker runs
+- [x] 12. Checkpoint - Verify voice agent worker runs
   - Start voice agent worker locally: `poetry run python backend/app/livekit_agents/voice_agent_worker.py`
   - Verify worker connects to LiveKit
   - Verify no startup errors
   - Stop worker gracefully
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Write integration tests
-  - [ ]* 13.1 Create backend/tests/test_voice_agent_integration.py
+- [x] 13. Write integration tests
+  - [x]* 13.1 Create backend/tests/test_voice_agent_integration.py
     - Import required test fixtures and dependencies
     - _Requirements: 17.1_
   
-  - [ ]* 13.2 Write test for voice agent initialization
+  - [x]* 13.2 Write test for voice agent initialization
     - Create FitnessVoiceAgent with test user
     - Call initialize_orchestrator()
     - Assert orchestrator is not None
@@ -227,7 +227,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Assert user_context.user_id matches test user
     - _Requirements: 17.5, 17.6_
   
-  - [ ]* 13.3 Write test for get_todays_workout tool
+  - [x]* 13.3 Write test for get_todays_workout tool
     - Create FitnessVoiceAgent with test user
     - Call initialize_orchestrator()
     - Create mock RunContext
@@ -236,7 +236,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Assert result length > 0
     - _Requirements: 17.2, 17.7_
   
-  - [ ]* 13.4 Write test for log_workout_set tool
+  - [x]* 13.4 Write test for log_workout_set tool
     - Create FitnessVoiceAgent with test user
     - Call start_log_worker()
     - Create mock RunContext
@@ -246,7 +246,7 @@ The voice agent will achieve <2 second latency by pre-loading user context and o
     - Call cleanup()
     - _Requirements: 17.3, 17.8_
   
-  - [ ]* 13.5 Write test for ask_specialist_agent tool
+  - [x]* 13.5 Write test for ask_specialist_agent tool
     - Create FitnessVoiceAgent with test user
     - Call initialize_orchestrator()
     - Create mock RunContext

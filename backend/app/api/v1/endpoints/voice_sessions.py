@@ -152,8 +152,19 @@ async def get_session_status(
         # Get LiveKit API client
         livekit_api = get_livekit_api()
         
-        # Fetch room information
-        room = await livekit_api.room.get_room(room_name)
+        # Fetch room information using list_rooms with filter
+        response = await livekit_api.room.list_rooms(
+            api.ListRoomsRequest(names=[room_name])
+        )
+        
+        # Check if room exists
+        if not response.rooms:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        room = response.rooms[0]
         
         # Parse room metadata
         try:
@@ -244,8 +255,19 @@ async def end_session(
         # Get LiveKit API client
         livekit_api = get_livekit_api()
         
-        # Fetch room to verify ownership
-        room = await livekit_api.room.get_room(room_name)
+        # Fetch room to verify ownership using list_rooms with filter
+        response = await livekit_api.room.list_rooms(
+            api.ListRoomsRequest(names=[room_name])
+        )
+        
+        # Check if room exists
+        if not response.rooms:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        room = response.rooms[0]
         
         # Parse room metadata
         try:
@@ -261,7 +283,9 @@ async def end_session(
             )
         
         # Delete the room
-        await livekit_api.room.delete_room(room_name)
+        await livekit_api.room.delete_room(
+            api.DeleteRoomRequest(room=room_name)
+        )
         
         # Log session termination
         logger.info(
@@ -324,11 +348,11 @@ async def list_active_sessions(
         livekit_api = get_livekit_api()
         
         # List all rooms
-        rooms = await livekit_api.room.list_rooms(api.ListRoomsRequest())
+        response = await livekit_api.room.list_rooms(api.ListRoomsRequest())
         
         # Filter and build session list
         sessions = []
-        for room in rooms:
+        for room in response.rooms:
             try:
                 # Parse room metadata
                 metadata = json.loads(room.metadata) if room.metadata else {}

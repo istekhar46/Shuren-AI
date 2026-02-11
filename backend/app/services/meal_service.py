@@ -30,7 +30,7 @@ class MealService:
         """
         self.db = db
     
-    async def get_meal_plan(self, user_id: UUID) -> MealPlan:
+    async def get_meal_plan(self, user_id: UUID) -> MealPlan | None:
         """Retrieve meal plan for user.
         
         Queries meal plan through user profile relationship.
@@ -39,10 +39,10 @@ class MealService:
             user_id: User's unique identifier
             
         Returns:
-            MealPlan with all nutritional targets
+            MealPlan with all nutritional targets, or None if not found
             
         Raises:
-            HTTPException: 404 if meal plan not found
+            HTTPException: 404 if user profile not found
         """
         result = await self.db.execute(
             select(UserProfile)
@@ -60,12 +60,7 @@ class MealService:
                 detail="User profile not found"
             )
         
-        if not profile.meal_plan:
-            raise HTTPException(
-                status_code=404,
-                detail="Meal plan not found for user"
-            )
-        
+        # Return None if no meal plan (not an error)
         return profile.meal_plan
     
     async def get_meal_schedule(self, user_id: UUID) -> list[MealSchedule]:

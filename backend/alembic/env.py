@@ -48,6 +48,7 @@ from app.models.chat import (
     ChatMessage
 )
 from app.models.conversation import ConversationMessage
+from app.models.workout_log import WorkoutLog
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

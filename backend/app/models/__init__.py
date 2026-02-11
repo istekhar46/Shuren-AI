@@ -19,6 +19,7 @@ from app.models.workout import (
     WorkoutExercise,
     ExerciseLibrary,
 )
+from app.models.workout_log import WorkoutLog
 from app.models.chat import (
     ChatSession,
     ChatMessage,
@@ -51,6 +52,7 @@ __all__ = [
     "WorkoutDay",
     "WorkoutExercise",
     "ExerciseLibrary",
+    "WorkoutLog",
     "ChatSession",
     "ChatMessage",
     "ConversationMessage",

@@ -32,41 +32,39 @@ router = APIRouter()
 
 @router.get(
     "/plan",
-    response_model=MealPlanResponse,
+    response_model=MealPlanResponse | None,
     status_code=status.HTTP_200_OK,
     summary="Get meal plan",
     responses={
         200: {
-            "description": "Meal plan retrieved successfully",
+            "description": "Meal plan retrieved successfully or null if not configured",
             "content": {
                 "application/json": {
-                    "example": {
-                        "id": "123e4567-e89b-12d3-a456-426614174000",
-                        "meals_per_day": 4,
-                        "daily_calories_target": 2500,
-                        "daily_calories_min": 2300,
-                        "daily_calories_max": 2700,
-                        "protein_grams_target": 180.0,
-                        "carbs_grams_target": 280.0,
-                        "fats_grams_target": 70.0,
-                        "protein_percentage": 30.0,
-                        "carbs_percentage": 45.0,
-                        "fats_percentage": 25.0,
-                        "plan_rationale": "Balanced macros for muscle gain",
-                        "is_locked": True,
-                        "created_at": "2026-01-15T10:00:00Z",
-                        "updated_at": "2026-01-15T10:00:00Z"
-                    }
-                }
-            }
-        },
-        404: {
-            "description": "Meal plan not found",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Meal plan not found for user",
-                        "error_code": "MEAL_PLAN_NOT_FOUND"
+                    "examples": {
+                        "with_plan": {
+                            "summary": "Meal plan configured",
+                            "value": {
+                                "id": "123e4567-e89b-12d3-a456-426614174000",
+                                "meals_per_day": 4,
+                                "daily_calories_target": 2500,
+                                "daily_calories_min": 2300,
+                                "daily_calories_max": 2700,
+                                "protein_grams_target": 180.0,
+                                "carbs_grams_target": 280.0,
+                                "fats_grams_target": 70.0,
+                                "protein_percentage": 30.0,
+                                "carbs_percentage": 45.0,
+                                "fats_percentage": 25.0,
+                                "plan_rationale": "Balanced macros for muscle gain",
+                                "is_locked": True,
+                                "created_at": "2026-01-15T10:00:00Z",
+                                "updated_at": "2026-01-15T10:00:00Z"
+                            }
+                        },
+                        "no_plan": {
+                            "summary": "No meal plan configured",
+                            "value": None
+                        }
                     }
                 }
             }
@@ -76,22 +74,21 @@ router = APIRouter()
 async def get_meal_plan(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> MealPlanResponse:
+) -> MealPlanResponse | None:
     """
     Get current user's meal plan.
     
     Retrieves the complete meal plan including calories, macros, and meal count.
-    Uses the existing meal_plans table for optimal performance (< 100ms response time).
+    Returns null if no meal plan is configured yet.
     
     Args:
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
     Returns:
-        MealPlanResponse with complete nutritional targets
+        MealPlanResponse with complete nutritional targets, or None if not configured
         
     Raises:
-        HTTPException(404): If meal plan not found
         HTTPException(401): If authentication fails (handled by dependency)
     """
     # Initialize meal service

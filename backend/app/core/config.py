@@ -119,6 +119,22 @@ class Settings(BaseSettings):
     LIVEKIT_WORKER_NUM_IDLE: int = 2
     """Number of idle agent workers to maintain."""
     
+    # Voice Service Configuration
+    DEEPGRAM_API_KEY: Optional[str] = None
+    """Deepgram API key for Speech-to-Text (required for voice agents)."""
+    
+    CARTESIA_API_KEY: Optional[str] = None
+    """Cartesia API key for Text-to-Speech (required for voice agents)."""
+    
+    VOICE_CONTEXT_CACHE_TTL: int = 3600
+    """Voice agent context cache TTL in seconds (default: 3600 = 1 hour)."""
+    
+    VOICE_MAX_RESPONSE_TOKENS: int = 150
+    """Maximum tokens for voice responses to keep them concise (default: 150)."""
+    
+    VOICE_LLM_PROVIDER: str = "google"
+    """LLM provider for voice agent function calling (openai, anthropic, google)."""
+    
     @property
     def async_database_url(self) -> str:
         """

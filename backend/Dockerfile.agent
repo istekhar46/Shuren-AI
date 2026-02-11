@@ -1,0 +1,42 @@
+# Voice Agent Worker Dockerfile
+# Uses Python 3.11-slim for minimal image size
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+# gcc: Required for compiling Python packages with C extensions
+# build-essential: Additional build tools for dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+ENV POETRY_VERSION=1.8.2 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies (production only, no dev dependencies)
+RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
+
+# Copy application code
+COPY . .
+
+# Set Python path to include app directory
+ENV PYTHONPATH=/app
+
+# Expose port (if needed for health checks)
+EXPOSE 8080
+
+# Run the voice agent worker
+CMD ["python", "-m", "app.livekit_agents.voice_agent_worker"]

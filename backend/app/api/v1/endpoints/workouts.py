@@ -178,33 +178,32 @@ async def get_workout_day(
 
 @router.get(
     "/today",
-    response_model=WorkoutDayResponse,
+    response_model=WorkoutDayResponse | None,
     status_code=status.HTTP_200_OK,
     summary="Get today's workout",
     responses={
         200: {
-            "description": "Today's workout retrieved successfully",
+            "description": "Today's workout retrieved successfully or null if no workout scheduled",
             "content": {
                 "application/json": {
-                    "example": {
-                        "id": "223e4567-e89b-12d3-a456-426614174001",
-                        "day_number": 1,
-                        "day_name": "Upper Body Push",
-                        "muscle_groups": ["chest", "shoulders", "triceps"],
-                        "workout_type": "strength",
-                        "description": "Focus on pushing movements",
-                        "estimated_duration_minutes": 60,
-                        "exercises": []
-                    }
-                }
-            }
-        },
-        404: {
-            "description": "No workout scheduled for today",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "No workout scheduled for today"
+                    "examples": {
+                        "with_workout": {
+                            "summary": "Workout scheduled for today",
+                            "value": {
+                                "id": "223e4567-e89b-12d3-a456-426614174001",
+                                "day_number": 1,
+                                "day_name": "Upper Body Push",
+                                "muscle_groups": ["chest", "shoulders", "triceps"],
+                                "workout_type": "strength",
+                                "description": "Focus on pushing movements",
+                                "estimated_duration_minutes": 60,
+                                "exercises": []
+                            }
+                        },
+                        "no_workout": {
+                            "summary": "No workout scheduled for today",
+                            "value": None
+                        }
                     }
                 }
             }
@@ -214,22 +213,21 @@ async def get_workout_day(
 async def get_today_workout(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> WorkoutDayResponse:
+) -> WorkoutDayResponse | None:
     """
     Get today's workout based on workout schedule and current day.
     
     Returns the workout scheduled for today based on the user's workout schedule
-    and the current day of the week. Returns 404 if no workout is scheduled today.
+    and the current day of the week. Returns null if no workout is scheduled today.
     
     Args:
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
     Returns:
-        WorkoutDayResponse with today's workout details
+        WorkoutDayResponse with today's workout details, or None if no workout scheduled
         
     Raises:
-        HTTPException(404): If no workout scheduled for today
         HTTPException(401): If authentication fails (handled by dependency)
     """
     # Initialize workout service
@@ -238,13 +236,7 @@ async def get_today_workout(
     # Get today's workout
     workout_day = await workout_service.get_today_workout(current_user.id)
     
-    if not workout_day:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No workout scheduled for today"
-        )
-    
-    # Return response
+    # Return workout or None (no 404 error)
     return workout_day
 
 
