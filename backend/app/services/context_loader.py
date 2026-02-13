@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 async def load_agent_context(
     db: AsyncSession,
     user_id: str,
-    include_history: bool = True
+    include_history: bool = True,
+    onboarding_mode: bool = False
 ) -> AgentContext:
     """
     Load user data from database and assemble into AgentContext.
@@ -41,10 +42,17 @@ async def load_agent_context(
     This function queries the user's profile and related data from the database,
     then assembles it into an immutable AgentContext object for agent interactions.
     
+    Context Loading Behavior:
+    - During onboarding (onboarding_mode=True): Loads partial context with what's
+      been collected so far. Profile may not be complete or locked yet.
+    - Post-onboarding (onboarding_mode=False): Loads full context including all
+      preferences, plans, and tracking data.
+    
     Args:
         db: Async database session
         user_id: User's unique identifier (UUID as string)
         include_history: Whether to load conversation history (default: True)
+        onboarding_mode: Whether this is during onboarding (default: False)
     
     Returns:
         AgentContext: Immutable context object with all user data
@@ -53,7 +61,11 @@ async def load_agent_context(
         ValueError: If user profile not found in database
     
     Example:
-        >>> context = await load_agent_context(db, "user-123", include_history=True)
+        >>> # During onboarding - partial context
+        >>> context = await load_agent_context(db, "user-123", onboarding_mode=True)
+        >>> 
+        >>> # Post-onboarding - full context
+        >>> context = await load_agent_context(db, "user-123", onboarding_mode=False)
         >>> print(context.fitness_level)
         'beginner'
     """
@@ -64,6 +76,7 @@ async def load_agent_context(
         raise ValueError(f"Invalid user_id format: {user_id}") from e
     
     # Query UserProfile with eager loading of relationships
+    # During onboarding, profile may not exist yet or may be incomplete
     stmt = (
         select(UserProfile)
         .where(UserProfile.user_id == user_uuid)
@@ -82,6 +95,13 @@ async def load_agent_context(
     # Raise error if profile not found
     if not profile:
         raise ValueError(f"User profile not found: {user_id}")
+    
+    # Log context loading mode
+    logger.debug(
+        f"Loading context for user {user_id}: "
+        f"onboarding_mode={onboarding_mode}, "
+        f"profile_locked={profile.is_locked}"
+    )
     
     # Extract fitness level (default to 'beginner' if not set)
     fitness_level = profile.fitness_level or "beginner"
@@ -120,10 +140,16 @@ async def load_agent_context(
     # Load current meal plan (placeholder for Sub-Doc 2)
     current_meal_plan = await _load_current_meal(db, user_uuid)
     
-    # Load conversation history (placeholder for Sub-Doc 3)
+    # Load conversation history
+    # During onboarding: Load onboarding-specific conversation history
+    # Post-onboarding: Load full conversation history
     conversation_history = []
     if include_history:
-        conversation_history = await _load_conversation_history(db, user_uuid)
+        conversation_history = await _load_conversation_history(
+            db, 
+            user_uuid,
+            onboarding_mode=onboarding_mode
+        )
     
     # Build and return AgentContext
     context = AgentContext(
@@ -138,7 +164,13 @@ async def load_agent_context(
         loaded_at=datetime.utcnow()
     )
     
-    logger.info(f"Loaded context for user {user_id}")
+    logger.info(
+        f"Loaded context for user {user_id}: "
+        f"onboarding_mode={onboarding_mode}, "
+        f"fitness_level={fitness_level}, "
+        f"primary_goal={primary_goal}, "
+        f"history_messages={len(conversation_history)}"
+    )
     
     return context
 
@@ -185,7 +217,8 @@ async def _load_current_meal(db: AsyncSession, user_uuid: UUID) -> Dict:
 async def _load_conversation_history(
     db: AsyncSession,
     user_uuid: UUID,
-    limit: int = 10
+    limit: int = 10,
+    onboarding_mode: bool = False
 ) -> List[Dict]:
     """
     Load recent conversation history for user.
@@ -194,10 +227,14 @@ async def _load_conversation_history(
     messages for context in agent interactions. Messages are returned
     in chronological order (oldest to newest).
     
+    During onboarding, this loads onboarding-specific conversation history.
+    Post-onboarding, this loads the full conversation history.
+    
     Args:
         db: Async database session
         user_uuid: User's UUID
         limit: Maximum number of messages to load (default: 10)
+        onboarding_mode: Whether this is during onboarding (default: False)
     
     Returns:
         List[Dict]: Conversation messages in chronological order, each with:

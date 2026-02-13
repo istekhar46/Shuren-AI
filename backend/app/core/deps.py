@@ -87,11 +87,15 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"}
         )
     
-    # Fetch user from database
+    # Fetch user from database with eager loading of onboarding_state
     # Use select() with where clause to filter by id and check for soft-delete
+    from sqlalchemy.orm import selectinload
+    
     stmt = select(User).where(
         User.id == user_id,
         User.deleted_at.is_(None)
+    ).options(
+        selectinload(User.onboarding_state)  # Eagerly load onboarding_state to avoid lazy loading issues
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

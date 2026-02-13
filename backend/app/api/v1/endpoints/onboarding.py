@@ -9,13 +9,14 @@ This module provides REST API endpoints for:
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.onboarding import (
+    OnboardingProgressResponse,
     OnboardingStateResponse,
     OnboardingStepRequest,
     OnboardingStepResponse
@@ -25,6 +26,53 @@ from app.services.onboarding_service import OnboardingService, OnboardingValidat
 
 
 router = APIRouter()
+
+
+@router.get("/progress", response_model=OnboardingProgressResponse, status_code=status.HTTP_200_OK)
+async def get_onboarding_progress(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> OnboardingProgressResponse:
+    """
+    Get rich onboarding progress metadata for UI indicators.
+    
+    Provides detailed progress information including current state,
+    completed states, state metadata, and completion percentage.
+    
+    Args:
+        current_user: Authenticated user from get_current_user dependency
+        db: Database session from dependency injection
+        
+    Returns:
+        OnboardingProgressResponse with current state, completed states,
+        state metadata, completion percentage, and can_complete flag
+        
+    Raises:
+        HTTPException(404): If onboarding state not found
+        HTTPException(401): If authentication fails (handled by dependency)
+    """
+    # Initialize onboarding service
+    onboarding_service = OnboardingService(db)
+    
+    # Get progress
+    try:
+        progress = await onboarding_service.get_progress(current_user.id)
+    except OnboardingValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message
+        )
+    
+    return OnboardingProgressResponse(
+        current_state=progress.current_state,
+        total_states=progress.total_states,
+        completed_states=progress.completed_states,
+        current_state_info=progress.current_state_info,
+        next_state_info=progress.next_state_info,
+        is_complete=progress.is_complete,
+        completion_percentage=progress.completion_percentage,
+        can_complete=progress.can_complete
+    )
 
 
 @router.get("/state", response_model=OnboardingStateResponse, status_code=status.HTTP_200_OK)
@@ -74,27 +122,46 @@ async def get_onboarding_state(
 async def save_onboarding_step(
     step_request: OnboardingStepRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_agent_context: Annotated[str | None, Header(alias="X-Agent-Context")] = None
 ) -> OnboardingStepResponse:
     """
     Save onboarding step data with validation.
     
     Validates step data according to step-specific requirements,
     saves to the onboarding state, and advances the current step.
+    Optionally logs agent context for debugging and analytics.
     
     Args:
         step_request: OnboardingStepRequest with step number and data
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
+        x_agent_context: Optional agent context from X-Agent-Context header
         
     Returns:
-        OnboardingStepResponse with current_step, is_complete, and success message
+        OnboardingStepResponse with current_step, is_complete, message, and next_state_info
         
     Raises:
-        HTTPException(400): If step data is invalid
+        HTTPException(400): If step data is invalid (includes field information)
         HTTPException(422): If request validation fails (handled by FastAPI)
         HTTPException(401): If authentication fails (handled by dependency)
     """
+    import logging
+    from app.services.onboarding_service import STATE_METADATA
+    
+    logger = logging.getLogger(__name__)
+    
+    # Log agent context if provided
+    if x_agent_context:
+        logger.info(
+            f"Onboarding step {step_request.step} called by agent: {x_agent_context}",
+            extra={
+                "user_id": str(current_user.id),
+                "agent": x_agent_context,
+                "step": step_request.step
+            }
+        )
+    
     # Initialize onboarding service
     onboarding_service = OnboardingService(db)
     
@@ -103,18 +170,30 @@ async def save_onboarding_step(
         onboarding_state = await onboarding_service.save_onboarding_step(
             user_id=current_user.id,
             step=step_request.step,
-            data=step_request.data
+            data=step_request.data,
+            agent_type=x_agent_context  # Pass agent context for history tracking
         )
     except OnboardingValidationError as e:
+        # Return structured validation error with field information
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message
+            detail={
+                "message": e.message,
+                "field": e.field if hasattr(e, 'field') else None,
+                "error_code": "VALIDATION_ERROR"
+            }
         )
+    
+    # Get next state info
+    next_state = step_request.step + 1 if step_request.step < 9 else None
+    next_state_info = STATE_METADATA.get(next_state) if next_state else None
     
     return OnboardingStepResponse(
         current_step=onboarding_state.current_step,
         is_complete=onboarding_state.is_complete,
-        message=f"Step {step_request.step} saved successfully"
+        message=f"Step {step_request.step} saved successfully",
+        next_state=next_state,
+        next_state_info=next_state_info
     )
 
 

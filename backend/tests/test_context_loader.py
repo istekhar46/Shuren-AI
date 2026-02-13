@@ -543,3 +543,255 @@ async def test_load_conversation_history_limit(db_session: AsyncSession):
     # Verify they are the most recent messages (5-14)
     assert context.conversation_history[0]["content"] == "Message 5"
     assert context.conversation_history[-1]["content"] == "Message 14"
+
+
+
+@pytest.mark.asyncio
+async def test_load_agent_context_onboarding_mode_parameter(db_session: AsyncSession):
+    """Test that onboarding_mode parameter is accepted and logged."""
+    # Create user and profile
+    user = User(
+        id=uuid4(),
+        email="onboarding_mode@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Onboarding Mode User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    await db_session.commit()
+    
+    # Load context with onboarding_mode=True
+    context_onboarding = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=True
+    )
+    assert isinstance(context_onboarding, AgentContext)
+    assert context_onboarding.user_id == str(user.id)
+    
+    # Load context with onboarding_mode=False
+    context_post_onboarding = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=False
+    )
+    assert isinstance(context_post_onboarding, AgentContext)
+    assert context_post_onboarding.user_id == str(user.id)
+
+
+@pytest.mark.asyncio
+async def test_load_agent_context_partial_context_during_onboarding(db_session: AsyncSession):
+    """Test that partial context is loaded during onboarding."""
+    # Create user with incomplete profile (onboarding in progress)
+    user = User(
+        id=uuid4(),
+        email="partial_context@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Partial Context User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    # Create profile that's not locked (onboarding not complete)
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,  # Not locked = onboarding in progress
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Add partial data - only fitness goal, no other preferences yet
+    goal = FitnessGoal(
+        id=uuid4(),
+        profile_id=profile.id,
+        goal_type="fat_loss",
+        priority=1,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(goal)
+    
+    await db_session.commit()
+    
+    # Load context with onboarding_mode=True
+    context = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=True
+    )
+    
+    # Verify partial context is loaded
+    assert context.fitness_level == "beginner"
+    assert context.primary_goal == "fat_loss"
+    assert context.secondary_goal is None
+    assert context.energy_level == "medium"  # Default
+    
+    # Verify plans are empty (not created yet during onboarding)
+    assert context.current_workout_plan == {}
+    assert context.current_meal_plan == {}
+
+
+@pytest.mark.asyncio
+async def test_load_agent_context_full_context_post_onboarding(db_session: AsyncSession):
+    """Test that full context is loaded post-onboarding."""
+    # Create user with complete profile (onboarding complete)
+    user = User(
+        id=uuid4(),
+        email="full_context@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="Full Context User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    # Create locked profile (onboarding complete)
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=True,  # Locked = onboarding complete
+        fitness_level="intermediate",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Add complete data
+    primary_goal = FitnessGoal(
+        id=uuid4(),
+        profile_id=profile.id,
+        goal_type="muscle_gain",
+        target_weight_kg=80.0,
+        priority=1,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(primary_goal)
+    
+    secondary_goal = FitnessGoal(
+        id=uuid4(),
+        profile_id=profile.id,
+        goal_type="fat_loss",
+        priority=2,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(secondary_goal)
+    
+    lifestyle = LifestyleBaseline(
+        id=uuid4(),
+        profile_id=profile.id,
+        energy_level=7,
+        stress_level=5,
+        sleep_quality=8,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(lifestyle)
+    
+    await db_session.commit()
+    
+    # Load context with onboarding_mode=False
+    context = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=False
+    )
+    
+    # Verify full context is loaded
+    assert context.fitness_level == "intermediate"
+    assert context.primary_goal == "muscle_gain"
+    assert context.secondary_goal == "fat_loss"
+    assert context.energy_level == "medium"
+    
+    # Plans would be loaded here (currently placeholders)
+    assert isinstance(context.current_workout_plan, dict)
+    assert isinstance(context.current_meal_plan, dict)
+
+
+@pytest.mark.asyncio
+async def test_load_agent_context_conversation_history_with_onboarding_mode(db_session: AsyncSession):
+    """Test that conversation history loading respects onboarding_mode."""
+    from app.models.conversation import ConversationMessage
+    
+    # Create user and profile
+    user = User(
+        id=uuid4(),
+        email="history_onboarding@example.com",
+        hashed_password=hash_password("password123"),
+        full_name="History Onboarding User",
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(user)
+    
+    profile = UserProfile(
+        id=uuid4(),
+        user_id=user.id,
+        is_locked=False,
+        fitness_level="beginner",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(profile)
+    
+    # Create conversation messages
+    msg1 = ConversationMessage(
+        id=uuid4(),
+        user_id=user.id,
+        role="user",
+        content="What's my fitness level?",
+        agent_type=None,
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(msg1)
+    
+    msg2 = ConversationMessage(
+        id=uuid4(),
+        user_id=user.id,
+        role="assistant",
+        content="You're a beginner. Let's start with basics.",
+        agent_type="workout",
+        created_at=datetime.now(timezone.utc)
+    )
+    db_session.add(msg2)
+    
+    await db_session.commit()
+    
+    # Load context during onboarding
+    context_onboarding = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=True
+    )
+    
+    # Verify conversation history is loaded
+    assert len(context_onboarding.conversation_history) == 2
+    assert context_onboarding.conversation_history[0]["role"] == "user"
+    assert context_onboarding.conversation_history[1]["role"] == "assistant"
+    
+    # Load context post-onboarding
+    context_post = await load_agent_context(
+        db_session, 
+        str(user.id), 
+        include_history=True,
+        onboarding_mode=False
+    )
+    
+    # Verify conversation history is loaded
+    assert len(context_post.conversation_history) == 2
+    assert context_post.conversation_history[0]["role"] == "user"
+    assert context_post.conversation_history[1]["role"] == "assistant"

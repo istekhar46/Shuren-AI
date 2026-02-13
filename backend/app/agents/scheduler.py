@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
+from app.agents.onboarding_tools import call_onboarding_step
 from app.models.preferences import WorkoutSchedule, MealSchedule, HydrationPreference
 from app.models.profile import UserProfile
 
@@ -474,7 +475,72 @@ class SchedulerAgent(BaseAgent):
                     "error": "An unexpected error occurred. Please try again."
                 })
         
-        return [get_upcoming_schedule, reschedule_workout, update_reminder_preferences]
+        # Create onboarding tools using @tool decorator
+        @tool
+        async def save_meal_schedule_tool(meals: list) -> str:
+            """Save meal timing schedule during onboarding (State 6).
+            
+            Args:
+                meals: List of meal objects with meal_name, scheduled_time, and optional enable_notifications
+                       Example: [
+                           {"meal_name": "Breakfast", "scheduled_time": "08:00", "enable_notifications": true},
+                           {"meal_name": "Lunch", "scheduled_time": "13:00"}
+                       ]
+                       scheduled_time format: "HH:MM" (24-hour format)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_meal_schedule(meals)
+            return json.dumps(result)
+        
+        @tool
+        async def save_workout_schedule_tool(workouts: list) -> str:
+            """Save workout schedule during onboarding (State 7).
+            
+            Args:
+                workouts: List of workout objects with day_of_week, scheduled_time, and optional enable_notifications
+                          Example: [
+                              {"day_of_week": 1, "scheduled_time": "07:00", "enable_notifications": true},
+                              {"day_of_week": 3, "scheduled_time": "07:00"}
+                          ]
+                          day_of_week: 0=Monday, 1=Tuesday, ..., 6=Sunday
+                          scheduled_time format: "HH:MM" (24-hour format)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_workout_schedule(workouts)
+            return json.dumps(result)
+        
+        @tool
+        async def save_hydration_schedule_tool(
+            daily_water_target_ml: int,
+            reminder_frequency_minutes: int
+        ) -> str:
+            """Save hydration preferences during onboarding (State 8).
+            
+            Args:
+                daily_water_target_ml: Daily water intake goal in ml (500-10000)
+                reminder_frequency_minutes: How often to remind in minutes (15-480)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_hydration_schedule(
+                daily_water_target_ml=daily_water_target_ml,
+                reminder_frequency_minutes=reminder_frequency_minutes
+            )
+            return json.dumps(result)
+        
+        return [
+            get_upcoming_schedule,
+            reschedule_workout,
+            update_reminder_preferences,
+            save_meal_schedule_tool,
+            save_workout_schedule_tool,
+            save_hydration_schedule_tool
+        ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
         """
@@ -522,3 +588,97 @@ Available Tools:
             base_prompt += "\n\nIMPORTANT: Provide detailed schedule information with markdown formatting for text interaction. Use headers, lists, and emphasis to improve readability."
         
         return base_prompt
+
+    async def save_meal_schedule(
+        self,
+        meals: list[dict]
+    ) -> dict:
+        """Save meal timing schedule (State 6).
+        
+        This tool is used during onboarding to capture when the user wants
+        to eat their meals throughout the day. This information is used for
+        meal reminders and planning.
+        
+        Args:
+            meals: List of meal objects with meal_name, scheduled_time, and optional enable_notifications
+                   Example: [
+                       {"meal_name": "Breakfast", "scheduled_time": "08:00", "enable_notifications": true},
+                       {"meal_name": "Lunch", "scheduled_time": "13:00", "enable_notifications": true}
+                   ]
+                   scheduled_time format: "HH:MM" (24-hour format)
+        
+        Returns:
+            Success/error response dict with structure:
+            - success (bool): Whether the operation succeeded
+            - message (str): Success message or error description
+            - current_state (int): Current onboarding state (if success)
+            - next_state (int|None): Next state number (if success)
+            - error (str): Error message (if failed)
+            - field (str): Field that caused error (if validation failed)
+            - error_code (str): Error code for categorization (if failed)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=6,
+            data={"meals": meals},
+            agent_type="scheduler"
+        )
+    
+    async def save_workout_schedule(
+        self,
+        workouts: list[dict]
+    ) -> dict:
+        """Save workout schedule (State 7).
+        
+        This tool is used during onboarding to capture when the user wants
+        to work out during the week. This information is used for workout
+        reminders and planning.
+        
+        Args:
+            workouts: List of workout objects with day_of_week, scheduled_time, and optional enable_notifications
+                      Example: [
+                          {"day_of_week": 1, "scheduled_time": "07:00", "enable_notifications": true},
+                          {"day_of_week": 3, "scheduled_time": "07:00", "enable_notifications": true}
+                      ]
+                      day_of_week: 0=Monday, 1=Tuesday, ..., 6=Sunday
+                      scheduled_time format: "HH:MM" (24-hour format)
+        
+        Returns:
+            Success/error response dict (see save_meal_schedule for structure)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=7,
+            data={"workouts": workouts},
+            agent_type="scheduler"
+        )
+    
+    async def save_hydration_schedule(
+        self,
+        daily_water_target_ml: int,
+        reminder_frequency_minutes: int
+    ) -> dict:
+        """Save hydration preferences (State 8).
+        
+        This tool is used during onboarding to capture the user's daily
+        water intake goal and how often they want to be reminded to drink water.
+        
+        Args:
+            daily_water_target_ml: Daily water intake goal in ml (500-10000)
+            reminder_frequency_minutes: How often to remind in minutes (15-480)
+        
+        Returns:
+            Success/error response dict (see save_meal_schedule for structure)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=8,
+            data={
+                "daily_water_target_ml": daily_water_target_ml,
+                "reminder_frequency_minutes": reminder_frequency_minutes
+            },
+            agent_type="scheduler"
+        )

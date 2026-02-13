@@ -10,8 +10,11 @@ from app.db.base import BaseModel
 class OnboardingState(BaseModel):
     """Onboarding state entity tracking user progress through onboarding flow.
     
-    Tracks the current step (0-11) and stores step data in JSONB format.
+    Tracks the current step (0-9) and stores step data in JSONB format.
     Each user has exactly one onboarding state.
+    
+    The agent_history field tracks which agents handled each state transition
+    for debugging and analytics purposes.
     """
     
     __tablename__ = "onboarding_states"
@@ -29,6 +32,9 @@ class OnboardingState(BaseModel):
     
     # Step data stored as JSONB for flexibility
     step_data = Column(JSONB, default=dict, nullable=False)
+    
+    # Agent routing history - tracks which agents handled each state
+    agent_history = Column(JSONB, default=list, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="onboarding_state")

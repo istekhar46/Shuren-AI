@@ -262,24 +262,76 @@ async def google_auth(
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def get_me(
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> UserResponse:
     """
-    Get current authenticated user information.
+    Get current authenticated user information with access control.
     
     Requires valid JWT token in Authorization header.
+    Returns user data including access control information based on
+    onboarding completion status.
     
     Args:
         current_user: User object from get_current_user dependency
+        db: Database session from dependency injection
         
     Returns:
-        UserResponse with user data (id, email, full_name, oauth_provider, is_active, created_at)
+        UserResponse with user data, onboarding_completed status, and access_control
     """
+    from app.schemas.auth import AccessControl
+    from app.services.onboarding_service import OnboardingService
+    
+    # Build access control object based on onboarding status
+    if current_user.onboarding_completed:
+        # All features unlocked for completed users
+        access_control = AccessControl(
+            can_access_dashboard=True,
+            can_access_workouts=True,
+            can_access_meals=True,
+            can_access_chat=True,
+            can_access_profile=True,
+            locked_features=[],
+            unlock_message=None,
+            onboarding_progress=None
+        )
+    else:
+        # Get onboarding progress for incomplete users
+        onboarding_service = OnboardingService(db)
+        try:
+            progress = await onboarding_service.get_progress(current_user.id)
+            onboarding_progress = {
+                "current_state": progress.current_state,
+                "total_states": progress.total_states,
+                "completion_percentage": progress.completion_percentage
+            }
+        except Exception:
+            # If progress can't be loaded, provide minimal info
+            onboarding_progress = {
+                "current_state": 0,
+                "total_states": 9,
+                "completion_percentage": 0
+            }
+        
+        # Only chat is accessible during onboarding
+        access_control = AccessControl(
+            can_access_dashboard=False,
+            can_access_workouts=False,
+            can_access_meals=False,
+            can_access_chat=True,  # Always true
+            can_access_profile=False,
+            locked_features=["dashboard", "workouts", "meals", "profile"],
+            unlock_message="Complete onboarding to unlock all features",
+            onboarding_progress=onboarding_progress
+        )
+    
     return UserResponse(
         id=str(current_user.id),
         email=current_user.email,
         full_name=current_user.full_name,
         oauth_provider=current_user.oauth_provider,
         is_active=current_user.is_active,
+        onboarding_completed=current_user.onboarding_completed,
+        access_control=access_control,
         created_at=current_user.created_at
     )

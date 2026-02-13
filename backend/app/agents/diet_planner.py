@@ -8,7 +8,7 @@ queries including meal plans, recipes, substitutions, and nutritional informatio
 import json
 import logging
 from datetime import datetime, date
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Literal
 
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
+from app.agents.onboarding_tools import call_onboarding_step
 from app.models.dish import Dish, DishIngredient, Ingredient
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule, DietaryPreference
@@ -659,7 +660,69 @@ class DietPlannerAgent(BaseAgent):
                     "error": "An unexpected error occurred. Please try again."
                 })
         
-        return [get_current_meal_plan, suggest_meal_substitution, get_recipe_details, calculate_nutrition]
+        # Create onboarding tools using @tool decorator
+        @tool
+        async def save_dietary_preferences_tool(
+            diet_type: str,
+            allergies: list,
+            intolerances: list,
+            dislikes: list
+        ) -> str:
+            """Save dietary preferences and restrictions during onboarding (State 4).
+            
+            Args:
+                diet_type: Type of diet - must be "omnivore", "vegetarian", "vegan", "pescatarian", "keto", or "paleo"
+                allergies: Food allergies list (can be empty)
+                intolerances: Food intolerances list (can be empty)
+                dislikes: Foods user dislikes list (can be empty)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_dietary_preferences(
+                diet_type=diet_type,
+                allergies=allergies,
+                intolerances=intolerances,
+                dislikes=dislikes
+            )
+            return json.dumps(result)
+        
+        @tool
+        async def save_meal_plan_tool(
+            daily_calorie_target: int,
+            protein_percentage: float,
+            carbs_percentage: float,
+            fats_percentage: float
+        ) -> str:
+            """Save meal plan with calorie and macro targets during onboarding (State 5).
+            
+            Args:
+                daily_calorie_target: Daily calorie goal (1000-5000)
+                protein_percentage: Protein % of calories (0-100)
+                carbs_percentage: Carbs % of calories (0-100)
+                fats_percentage: Fats % of calories (0-100)
+                
+            Note: Percentages must sum to 100
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_meal_plan(
+                daily_calorie_target=daily_calorie_target,
+                protein_percentage=protein_percentage,
+                carbs_percentage=carbs_percentage,
+                fats_percentage=fats_percentage
+            )
+            return json.dumps(result)
+        
+        return [
+            get_current_meal_plan,
+            suggest_meal_substitution,
+            get_recipe_details,
+            calculate_nutrition,
+            save_dietary_preferences_tool,
+            save_meal_plan_tool
+        ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
         """
@@ -721,3 +784,82 @@ Available Tools:
             base_prompt += "\n\nIMPORTANT: Provide detailed nutritional breakdowns with markdown formatting for text interaction. Use headers, lists, and emphasis to improve readability."
         
         return base_prompt
+
+    async def save_dietary_preferences(
+        self,
+        diet_type: Literal["omnivore", "vegetarian", "vegan", "pescatarian", "keto", "paleo"],
+        allergies: list[str],
+        intolerances: list[str],
+        dislikes: list[str]
+    ) -> dict:
+        """Save dietary preferences and restrictions (State 4).
+        
+        This tool is used during onboarding to capture the user's dietary
+        preferences, allergies, intolerances, and food dislikes. This information
+        ensures meal plans are safe and aligned with user preferences.
+        
+        Args:
+            diet_type: Type of diet user follows
+            allergies: Food allergies (can be empty list)
+            intolerances: Food intolerances (can be empty list)
+            dislikes: Foods user dislikes (can be empty list)
+        
+        Returns:
+            Success/error response dict with structure:
+            - success (bool): Whether the operation succeeded
+            - message (str): Success message or error description
+            - current_state (int): Current onboarding state (if success)
+            - next_state (int|None): Next state number (if success)
+            - error (str): Error message (if failed)
+            - field (str): Field that caused error (if validation failed)
+            - error_code (str): Error code for categorization (if failed)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=4,
+            data={
+                "diet_type": diet_type,
+                "allergies": allergies,
+                "intolerances": intolerances,
+                "dislikes": dislikes
+            },
+            agent_type="diet_planning"
+        )
+    
+    async def save_meal_plan(
+        self,
+        daily_calorie_target: int,
+        protein_percentage: float,
+        carbs_percentage: float,
+        fats_percentage: float
+    ) -> dict:
+        """Save meal plan with calorie and macro targets (State 5).
+        
+        This tool is used during onboarding to capture the user's nutritional
+        targets including daily calorie goal and macronutrient distribution.
+        The percentages must sum to 100.
+        
+        Args:
+            daily_calorie_target: Daily calorie goal (1000-5000)
+            protein_percentage: Protein % of calories (0-100)
+            carbs_percentage: Carbs % of calories (0-100)
+            fats_percentage: Fats % of calories (0-100)
+            
+        Note: Percentages must sum to 100 (±0.01 tolerance)
+        
+        Returns:
+            Success/error response dict (see save_dietary_preferences for structure)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=5,
+            data={
+                "daily_calorie_target": daily_calorie_target,
+                "protein_percentage": protein_percentage,
+                "carbs_percentage": carbs_percentage,
+                "fats_percentage": fats_percentage
+            },
+            agent_type="diet_planning"
+        )

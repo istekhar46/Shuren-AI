@@ -1,7 +1,7 @@
 """Chat API Pydantic schemas for text-based chat interactions"""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -182,5 +182,81 @@ class ChatHistoryResponse(BaseModel):
                     }
                 ],
                 "total": 42
+            }
+        }
+
+
+
+class OnboardingChatRequest(BaseModel):
+    """
+    Schema for sending a chat message during onboarding.
+    
+    The message will be processed by the appropriate specialized agent
+    based on the current onboarding state.
+    """
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Message content to send to the AI assistant (1-2000 characters)"
+    )
+    current_state: int = Field(
+        ...,
+        ge=1,
+        le=9,
+        description="Current onboarding state number (1-9)"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "I'm a beginner",
+                "current_state": 1
+            }
+        }
+
+
+class OnboardingChatResponse(BaseModel):
+    """
+    Schema for chat response during onboarding.
+    
+    Contains the agent's response along with metadata about state updates
+    and progress information.
+    """
+    response: str = Field(
+        ...,
+        description="The agent's response text"
+    )
+    agent_type: str = Field(
+        ...,
+        description="Type of agent that handled this request (workout, diet, scheduler, supplement)"
+    )
+    state_updated: bool = Field(
+        ...,
+        description="Whether the onboarding state was updated during this interaction"
+    )
+    new_state: int | None = Field(
+        None,
+        description="New state number if state was updated, None otherwise"
+    )
+    progress: dict[str, Any] = Field(
+        ...,
+        description="Current onboarding progress information"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "response": "Great! As a beginner, I'll create a plan that...",
+                "agent_type": "workout",
+                "state_updated": True,
+                "new_state": 2,
+                "progress": {
+                    "current_state": 2,
+                    "total_states": 9,
+                    "completed_states": [1],
+                    "completion_percentage": 11,
+                    "is_complete": False
+                }
             }
         }

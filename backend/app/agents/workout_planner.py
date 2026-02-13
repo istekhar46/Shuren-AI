@@ -8,7 +8,7 @@ including exercise plans, form guidance, demonstrations, and workout logging.
 import json
 import logging
 from datetime import datetime, date
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Literal
 
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
+from app.agents.onboarding_tools import call_onboarding_step
 from app.models.workout import WorkoutPlan, WorkoutDay, WorkoutExercise, ExerciseLibrary
 from app.models.preferences import WorkoutSchedule
 
@@ -435,7 +436,73 @@ class WorkoutPlannerAgent(BaseAgent):
                     "error": "Unable to generate workout modifications. Please try again."
                 })
         
-        return [get_current_workout, show_exercise_demo, log_set_completion, suggest_workout_modification]
+        # Create onboarding tools using @tool decorator
+        @tool
+        async def save_fitness_level_tool(fitness_level: str) -> str:
+            """Save user's fitness level during onboarding (State 1).
+            
+            Args:
+                fitness_level: User's current fitness level - must be "beginner", "intermediate", or "advanced"
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_fitness_level(fitness_level)
+            return json.dumps(result)
+        
+        @tool
+        async def save_fitness_goals_tool(goals: list) -> str:
+            """Save user's fitness goals during onboarding (State 2).
+            
+            Args:
+                goals: List of goal objects with goal_type and priority
+                       Example: [{"goal_type": "fat_loss", "priority": 1}]
+                       Valid goal_types: "fat_loss", "muscle_gain", "general_fitness"
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_fitness_goals(goals)
+            return json.dumps(result)
+        
+        @tool
+        async def save_workout_constraints_tool(
+            equipment: list,
+            injuries: list,
+            limitations: list,
+            target_weight_kg: float = None,
+            target_body_fat_percentage: float = None
+        ) -> str:
+            """Save workout constraints and optional targets during onboarding (State 3).
+            
+            Args:
+                equipment: Available equipment list (e.g., ["dumbbells", "resistance_bands"])
+                injuries: Current injuries list (can be empty)
+                limitations: Physical limitations list (can be empty)
+                target_weight_kg: Optional target weight in kg (30-300)
+                target_body_fat_percentage: Optional target body fat % (1-50)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            result = await self.save_workout_constraints(
+                equipment=equipment,
+                injuries=injuries,
+                limitations=limitations,
+                target_weight_kg=target_weight_kg,
+                target_body_fat_percentage=target_body_fat_percentage
+            )
+            return json.dumps(result)
+        
+        return [
+            get_current_workout,
+            show_exercise_demo,
+            log_set_completion,
+            suggest_workout_modification,
+            save_fitness_level_tool,
+            save_fitness_goals_tool,
+            save_workout_constraints_tool
+        ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
         """
@@ -486,3 +553,102 @@ Available Tools:
             base_prompt += "\n\nIMPORTANT: Provide detailed explanations with markdown formatting for text interaction. Use headers, lists, and emphasis to improve readability."
         
         return base_prompt
+
+    async def save_fitness_level(
+        self,
+        fitness_level: Literal["beginner", "intermediate", "advanced"]
+    ) -> dict:
+        """Save user's fitness level (State 1).
+        
+        This tool is used during onboarding to capture the user's current
+        fitness level, which determines workout intensity and progression.
+        
+        Args:
+            fitness_level: User's current fitness level
+        
+        Returns:
+            Success/error response dict with structure:
+            - success (bool): Whether the operation succeeded
+            - message (str): Success message or error description
+            - current_state (int): Current onboarding state (if success)
+            - next_state (int|None): Next state number (if success)
+            - error (str): Error message (if failed)
+            - field (str): Field that caused error (if validation failed)
+            - error_code (str): Error code for categorization (if failed)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=1,
+            data={"fitness_level": fitness_level},
+            agent_type="workout_planning"
+        )
+    
+    async def save_fitness_goals(
+        self,
+        goals: list[dict]
+    ) -> dict:
+        """Save user's fitness goals (State 2).
+        
+        This tool is used during onboarding to capture the user's fitness
+        goals, which guide workout plan creation and progression tracking.
+        
+        Args:
+            goals: List of goal objects with goal_type and priority
+                   Example: [{"goal_type": "fat_loss", "priority": 1}]
+                   Valid goal_types: "fat_loss", "muscle_gain", "general_fitness"
+        
+        Returns:
+            Success/error response dict (see save_fitness_level for structure)
+        """
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=2,
+            data={"goals": goals},
+            agent_type="workout_planning"
+        )
+    
+    async def save_workout_constraints(
+        self,
+        equipment: list[str],
+        injuries: list[str],
+        limitations: list[str],
+        target_weight_kg: float | None = None,
+        target_body_fat_percentage: float | None = None
+    ) -> dict:
+        """Save workout constraints and optional targets (State 3).
+        
+        This tool is used during onboarding to capture equipment availability,
+        physical constraints, and optional target metrics. This information
+        ensures workouts are safe and appropriate for the user.
+        
+        Args:
+            equipment: Available equipment (e.g., ["dumbbells", "resistance_bands"])
+            injuries: Current injuries (can be empty list)
+            limitations: Physical limitations (can be empty list)
+            target_weight_kg: Optional target weight (30-300 kg)
+            target_body_fat_percentage: Optional target body fat % (1-50)
+        
+        Returns:
+            Success/error response dict (see save_fitness_level for structure)
+        """
+        data = {
+            "equipment": equipment,
+            "injuries": injuries,
+            "limitations": limitations
+        }
+        
+        if target_weight_kg is not None:
+            data["target_weight_kg"] = target_weight_kg
+        
+        if target_body_fat_percentage is not None:
+            data["target_body_fat_percentage"] = target_body_fat_percentage
+        
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=3,
+            data=data,
+            agent_type="workout_planning"
+        )

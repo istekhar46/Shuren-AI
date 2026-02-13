@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
+from app.agents.onboarding_tools import call_onboarding_step
 
 logger = logging.getLogger(__name__)
 
@@ -417,7 +418,35 @@ class SupplementGuideAgent(BaseAgent):
                     "disclaimer": "This is not medical advice. Consult a healthcare professional."
                 })
         
-        return [get_supplement_info, check_supplement_interactions]
+        # Create onboarding tool using @tool decorator
+        @tool
+        async def save_supplement_preferences_tool(
+            interested_in_supplements: bool,
+            current_supplements: list = None
+        ) -> str:
+            """Save supplement preferences during onboarding (State 9 - Optional).
+            
+            Args:
+                interested_in_supplements: Whether user wants supplement guidance
+                current_supplements: List of supplements currently taking (optional, can be empty)
+                
+            Returns:
+                JSON string with success/error response
+            """
+            if current_supplements is None:
+                current_supplements = []
+            
+            result = await self.save_supplement_preferences(
+                interested_in_supplements=interested_in_supplements,
+                current_supplements=current_supplements
+            )
+            return json.dumps(result)
+        
+        return [
+            get_supplement_info,
+            check_supplement_interactions,
+            save_supplement_preferences_tool
+        ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
         """
@@ -484,3 +513,42 @@ IMPORTANT REMINDERS:
             base_prompt += "\n\nTEXT MODE: Provide detailed information with markdown formatting. Include prominent disclaimers at the beginning or end of responses. Use headers, lists, and emphasis to improve readability and highlight important safety information."
         
         return base_prompt
+
+    async def save_supplement_preferences(
+        self,
+        interested_in_supplements: bool,
+        current_supplements: list[str] = None
+    ) -> dict:
+        """Save supplement preferences (State 9 - Optional).
+        
+        This tool is used during onboarding to capture whether the user is
+        interested in supplement guidance and what supplements they currently take.
+        This is an optional state in the onboarding flow.
+        
+        Args:
+            interested_in_supplements: Whether user wants supplement guidance
+            current_supplements: List of supplements currently taking (optional, can be empty)
+        
+        Returns:
+            Success/error response dict with structure:
+            - success (bool): Whether the operation succeeded
+            - message (str): Success message or error description
+            - current_state (int): Current onboarding state (if success)
+            - next_state (int|None): Next state number or None if complete (if success)
+            - error (str): Error message (if failed)
+            - field (str): Field that caused error (if validation failed)
+            - error_code (str): Error code for categorization (if failed)
+        """
+        if current_supplements is None:
+            current_supplements = []
+        
+        return await call_onboarding_step(
+            db=self.db_session,
+            user_id=self.context.user_id,
+            step=9,
+            data={
+                "interested_in_supplements": interested_in_supplements,
+                "current_supplements": current_supplements
+            },
+            agent_type="supplement"
+        )

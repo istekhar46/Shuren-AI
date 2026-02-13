@@ -22,10 +22,18 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.conversation import ConversationMessage
 from app.models.user import User
-from app.schemas.chat import ChatHistoryResponse, ChatRequest, ChatResponse, MessageDict
+from app.schemas.chat import (
+    ChatHistoryResponse,
+    ChatRequest,
+    ChatResponse,
+    MessageDict,
+    OnboardingChatRequest,
+    OnboardingChatResponse
+)
 from app.services.agent_orchestrator import AgentOrchestrator, AgentType
 from app.services.chat_service import ChatService
 from app.services.context_loader import load_agent_context
+from app.services.onboarding_service import OnboardingService, STATE_TO_AGENT_MAP
 
 
 router = APIRouter()
@@ -41,9 +49,9 @@ async def chat(
     """
     Send a message to the AI assistant and receive a complete response.
     
-    This endpoint processes user messages through the agent orchestration system,
-    which automatically routes queries to the appropriate specialized agent or
-    uses an explicitly specified agent type.
+    This endpoint processes user messages through the agent orchestration system.
+    Only available to users who have completed onboarding. All queries are routed
+    to the general agent for completed users.
     
     The conversation is persisted to the database for context continuity and
     history retrieval.
@@ -57,29 +65,53 @@ async def chat(
         ChatResponse with agent's response, agent_type, conversation_id, and tools_used
         
     Raises:
+        HTTPException(403): If user has not completed onboarding or requests non-general agent
         HTTPException(401): If user is not authenticated (handled by dependency)
         HTTPException(422): If validation fails (handled by FastAPI/Pydantic)
-        HTTPException(400): If agent_type is invalid
         HTTPException(500): If agent processing fails
     """
     start_time = time.time()
     user_id = str(current_user.id)
     
     try:
-        # Parse optional agent_type from request
-        agent_type = None
-        if request.agent_type:
+        # Check onboarding status - must be completed to access chat
+        if not current_user.onboarding_completed:
+            # Get onboarding progress for helpful error message
+            from app.services.onboarding_service import OnboardingService
+            onboarding_service = OnboardingService(db)
             try:
-                agent_type = AgentType(request.agent_type)
-            except ValueError:
-                logger.info(
-                    f"Invalid agent_type '{request.agent_type}' provided by user {user_id}"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid agent_type '{request.agent_type}'. "
-                           f"Must be one of: workout, diet, supplement, tracker, scheduler, general"
-                )
+                progress = await onboarding_service.get_progress(current_user.id)
+                onboarding_progress = {
+                    "current_state": progress.current_state,
+                    "completion_percentage": progress.completion_percentage
+                }
+            except Exception:
+                onboarding_progress = None
+            
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": "Complete onboarding to access this feature",
+                    "error_code": "ONBOARDING_REQUIRED",
+                    "redirect": "/onboarding",
+                    "onboarding_progress": onboarding_progress
+                }
+            )
+        
+        # If explicit agent_type provided, reject if not "general"
+        if request.agent_type and request.agent_type != "general":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": "Only general agent available after onboarding",
+                    "error_code": "AGENT_NOT_ALLOWED",
+                    "requested_agent": request.agent_type,
+                    "allowed_agent": "general"
+                }
+            )
+        
+        # Force general agent for all completed users
+        agent_type = AgentType.GENERAL
         
         # Load user context
         try:
@@ -98,13 +130,21 @@ async def chat(
         # Initialize AgentOrchestrator in text mode
         orchestrator = AgentOrchestrator(db_session=db, mode="text")
         
-        # Call orchestrator.route_query() with user context
+        # Call orchestrator.route_query() with onboarding_mode=False
         try:
             response = await orchestrator.route_query(
                 user_id=user_id,
                 query=request.message,
                 agent_type=agent_type,
-                voice_mode=False
+                voice_mode=False,
+                onboarding_mode=False
+            )
+        except ValueError as e:
+            # Handle access control errors from orchestrator
+            logger.error(f"Orchestrator error for user {user_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(e)
             )
         except Exception as e:
             logger.error(
@@ -156,12 +196,171 @@ async def chat(
         )
         
     except HTTPException:
-        # Re-raise HTTP exceptions (401, 400, 500)
+        # Re-raise HTTP exceptions (401, 403, 500)
         raise
     except Exception as e:
         # Catch any unexpected errors
         logger.error(
             f"Unexpected error in chat endpoint for user {user_id}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
+        )
+
+
+@router.post("/onboarding", response_model=OnboardingChatResponse, status_code=status.HTTP_200_OK)
+async def chat_onboarding(
+    request: OnboardingChatRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> OnboardingChatResponse:
+    """
+    Handle chat-based onboarding with specialized agent routing.
+    
+    This endpoint processes user messages during onboarding, routing them
+    to the appropriate specialized agent based on the current onboarding state.
+    The agent can save onboarding data via function tools, advancing the state.
+    
+    Args:
+        request: OnboardingChatRequest with message and current_state
+        current_user: Authenticated user from JWT token
+        db: Database session from dependency injection
+        
+    Returns:
+        OnboardingChatResponse with agent's response, agent_type, state_updated flag,
+        new_state (if updated), and progress information
+        
+    Raises:
+        HTTPException(403): If user has already completed onboarding
+        HTTPException(400): If current_state doesn't match backend state
+        HTTPException(401): If authentication fails (handled by dependency)
+        HTTPException(500): If agent processing fails
+    """
+    start_time = time.time()
+    user_id = str(current_user.id)
+    
+    try:
+        # 1. Verify user is not onboarding_completed
+        if current_user.onboarding_completed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Onboarding already completed"
+            )
+        
+        # 2. Load onboarding state
+        onboarding_service = OnboardingService(db)
+        state = await onboarding_service.get_onboarding_state(current_user.id)
+        
+        if not state:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Onboarding state not found"
+            )
+        
+        # 3. Verify current_state matches
+        if state.current_step != request.current_state:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"State mismatch. Current: {state.current_step}, Requested: {request.current_state}"
+            )
+        
+        # 4. Route to appropriate agent based on current_state
+        agent_type = STATE_TO_AGENT_MAP.get(request.current_state)
+        if not agent_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid state number: {request.current_state}"
+            )
+        
+        # 5. Initialize AgentOrchestrator in text mode
+        orchestrator = AgentOrchestrator(db_session=db, mode="text")
+        
+        # 6. Process query with agent in onboarding mode
+        try:
+            agent_response = await orchestrator.route_query(
+                user_id=user_id,
+                query=request.message,
+                agent_type=agent_type,
+                voice_mode=False,
+                onboarding_mode=True
+            )
+        except ValueError as e:
+            # Handle access control errors from orchestrator
+            logger.error(f"Orchestrator error for user {user_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(e)
+            )
+        except Exception as e:
+            logger.error(
+                f"Agent processing failed for user {user_id}, "
+                f"query: {request.message[:50]}, error: {e}",
+                exc_info=True
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to process message"
+            )
+        
+        # 7. Check if state was updated (agent called save function)
+        updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+        state_updated = updated_state.current_step > state.current_step
+        
+        # 8. Get progress
+        progress = await onboarding_service.get_progress(current_user.id)
+        
+        # 9. Save conversation messages
+        user_message = ConversationMessage(
+            user_id=current_user.id,
+            role="user",
+            content=request.message,
+            agent_type=None
+        )
+        db.add(user_message)
+        
+        assistant_message = ConversationMessage(
+            user_id=current_user.id,
+            role="assistant",
+            content=agent_response.content,
+            agent_type=agent_response.agent_type
+        )
+        db.add(assistant_message)
+        
+        await db.commit()
+        
+        # Calculate response time
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        
+        # Log successful request
+        logger.info(
+            f"Onboarding chat processed: user={user_id}, agent={agent_response.agent_type}, "
+            f"state={request.current_state}, state_updated={state_updated}, time={elapsed_ms}ms"
+        )
+        
+        return OnboardingChatResponse(
+            response=agent_response.content,
+            agent_type=agent_response.agent_type,
+            state_updated=state_updated,
+            new_state=updated_state.current_step if state_updated else None,
+            progress={
+                "current_state": progress.current_state,
+                "total_states": progress.total_states,
+                "completed_states": progress.completed_states,
+                "completion_percentage": progress.completion_percentage,
+                "is_complete": progress.is_complete,
+                "can_complete": progress.can_complete
+            }
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Catch any unexpected errors
+        logger.error(
+            f"Unexpected error in onboarding chat endpoint for user {user_id}: {e}",
             exc_info=True
         )
         raise HTTPException(

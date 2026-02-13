@@ -1,7 +1,7 @@
 """Authentication Pydantic schemas"""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -31,6 +31,36 @@ class TokenResponse(BaseModel):
     user_id: str
 
 
+class AccessControl(BaseModel):
+    """Schema for user access control based on onboarding status"""
+    can_access_dashboard: bool
+    can_access_workouts: bool
+    can_access_meals: bool
+    can_access_chat: bool
+    can_access_profile: bool
+    locked_features: list[str]
+    unlock_message: str | None = None
+    onboarding_progress: dict[str, Any] | None = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "can_access_dashboard": False,
+                "can_access_workouts": False,
+                "can_access_meals": False,
+                "can_access_chat": True,
+                "can_access_profile": False,
+                "locked_features": ["dashboard", "workouts", "meals", "profile"],
+                "unlock_message": "Complete onboarding to unlock all features",
+                "onboarding_progress": {
+                    "current_state": 3,
+                    "total_states": 9,
+                    "completion_percentage": 33
+                }
+            }
+        }
+
+
 class UserResponse(BaseModel):
     """Schema for user data response"""
     id: str
@@ -38,6 +68,8 @@ class UserResponse(BaseModel):
     full_name: str
     oauth_provider: Optional[str] = None
     is_active: bool
+    onboarding_completed: bool
+    access_control: AccessControl
     created_at: datetime
     
     class Config:

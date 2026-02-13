@@ -22,14 +22,121 @@ from app.models.preferences import (
     WorkoutSchedule,
 )
 from app.models.profile import UserProfile, UserProfileVersion
+from app.schemas.onboarding import StateInfo
+from app.services.agent_orchestrator import AgentType
 
 logger = logging.getLogger(__name__)
 
 
+# State metadata for 9-state onboarding flow
+# Provides rich metadata for each onboarding state including name, description,
+# agent type, and required fields. Used by progress endpoint and UI rendering.
+# This consolidates the previous 11-step flow into 9 states:
+# - Old step 1 (basic info) removed (moved to registration)
+# - Old steps 4 & 5 merged into new state 3
+# - Remaining steps renumbered 1-9
+STATE_METADATA = {
+    1: StateInfo(
+        state_number=1,
+        name="Fitness Level Assessment",
+        agent="workout_planning",
+        description="Tell us about your current fitness level",
+        required_fields=["fitness_level"]
+    ),
+    2: StateInfo(
+        state_number=2,
+        name="Primary Fitness Goals",
+        agent="workout_planning",
+        description="What are your fitness goals?",
+        required_fields=["goals"]
+    ),
+    3: StateInfo(
+        state_number=3,
+        name="Workout Preferences & Constraints",
+        agent="workout_planning",
+        description="Tell us about your equipment, injuries, and limitations",
+        required_fields=["equipment", "injuries", "limitations"]
+    ),
+    4: StateInfo(
+        state_number=4,
+        name="Diet Preferences & Restrictions",
+        agent="diet_planning",
+        description="Share your dietary preferences and restrictions",
+        required_fields=["diet_type", "allergies", "intolerances", "dislikes"]
+    ),
+    5: StateInfo(
+        state_number=5,
+        name="Fixed Meal Plan Selection",
+        agent="diet_planning",
+        description="Set your daily calorie and macro targets",
+        required_fields=["daily_calorie_target", "protein_percentage", "carbs_percentage", "fats_percentage"]
+    ),
+    6: StateInfo(
+        state_number=6,
+        name="Meal Timing Schedule",
+        agent="scheduler",
+        description="When do you want to eat your meals?",
+        required_fields=["meals"]
+    ),
+    7: StateInfo(
+        state_number=7,
+        name="Workout Schedule",
+        agent="scheduler",
+        description="When do you want to work out?",
+        required_fields=["workouts"]
+    ),
+    8: StateInfo(
+        state_number=8,
+        name="Hydration Schedule",
+        agent="scheduler",
+        description="Set your daily water intake goals",
+        required_fields=["daily_water_target_ml"]
+    ),
+    9: StateInfo(
+        state_number=9,
+        name="Supplement Preferences",
+        agent="supplement",
+        description="Tell us about your supplement preferences (optional)",
+        required_fields=["interested_in_supplements"]
+    ),
+}
+
+
+# State to Agent mapping for onboarding chat routing
+# Maps each onboarding state (1-9) to the specialized agent that handles it.
+# Used by POST /api/v1/chat/onboarding endpoint to route messages to the correct agent.
+STATE_TO_AGENT_MAP = {
+    1: AgentType.WORKOUT,      # State 1: Fitness Level Assessment
+    2: AgentType.WORKOUT,      # State 2: Primary Fitness Goals
+    3: AgentType.WORKOUT,      # State 3: Workout Preferences & Constraints (merged from old steps 4 & 5)
+    4: AgentType.DIET,         # State 4: Diet Preferences & Restrictions
+    5: AgentType.DIET,         # State 5: Fixed Meal Plan Selection
+    6: AgentType.SCHEDULER,    # State 6: Meal Timing Schedule
+    7: AgentType.SCHEDULER,    # State 7: Workout Schedule
+    8: AgentType.SCHEDULER,    # State 8: Hydration Schedule
+    9: AgentType.SUPPLEMENT,   # State 9: Supplement Preferences (optional)
+}
+
+
 class OnboardingValidationError(Exception):
-    """Exception raised when onboarding step validation fails."""
+    """Exception raised when onboarding step validation fails.
+    
+    This exception is raised by OnboardingService validators when
+    step data doesn't meet validation requirements. It includes
+    both a human-readable message and the field that caused the error.
+    
+    Attributes:
+        message: Human-readable error message
+        field: Name of the field that failed validation (optional)
+    """
     
     def __init__(self, message: str, field: str | None = None):
+        """Initialize validation error.
+        
+        Args:
+            message: Human-readable error message
+            field: Name of the field that failed validation (optional)
+        """
         self.message = message
         self.field = field
         super().__init__(self.message)
@@ -68,21 +175,105 @@ class OnboardingService:
         )
         return result.scalar_one_or_none()
     
+    async def get_progress(self, user_id: UUID) -> "OnboardingProgress":
+        """Get rich progress metadata for UI.
+        
+        Calculates completed states from step_data JSONB, retrieves state
+        metadata, calculates completion percentage, and determines if
+        onboarding can be completed.
+        
+        Args:
+            user_id: User's unique identifier
+            
+        Returns:
+            OnboardingProgress with current state, completed states,
+            state metadata, and completion percentage
+            
+        Raises:
+            OnboardingValidationError: If onboarding state not found
+        """
+        from app.schemas.onboarding import OnboardingProgress
+        
+        # Load onboarding state
+        state = await self.get_onboarding_state(user_id)
+        if not state:
+            raise OnboardingValidationError("Onboarding state not found")
+        
+        # Extract completed states from step_data (states 1-9)
+        completed = []
+        if state.step_data:
+            for i in range(1, 10):
+                if f"step_{i}" in state.step_data:
+                    completed.append(i)
+        
+        # Get current and next state metadata
+        current_info = STATE_METADATA[state.current_step]
+        next_state = state.current_step + 1 if state.current_step < 9 else None
+        next_info = STATE_METADATA.get(next_state) if next_state else None
+        
+        # Calculate completion percentage
+        percentage = int((len(completed) / 9) * 100)
+        
+        # Check if can complete (all 9 states done)
+        can_complete = len(completed) == 9
+        
+        return OnboardingProgress(
+            current_state=state.current_step,
+            total_states=9,
+            completed_states=completed,
+            current_state_info=current_info,
+            next_state_info=next_info,
+            is_complete=state.is_complete,
+            completion_percentage=percentage,
+            can_complete=can_complete
+        )
+    
+    async def can_complete_onboarding(self, user_id: UUID) -> bool:
+        """Check if all required states are complete.
+        
+        Verifies that all 9 states have data in step_data JSONB field.
+        
+        Args:
+            user_id: User's unique identifier
+            
+        Returns:
+            True if all 9 states have data, False otherwise
+            
+        Raises:
+            OnboardingValidationError: If onboarding state not found
+        """
+        state = await self.get_onboarding_state(user_id)
+        if not state:
+            raise OnboardingValidationError("Onboarding state not found")
+        
+        # Check if all 9 states have data
+        if not state.step_data:
+            return False
+        
+        for i in range(1, 10):
+            if f"step_{i}" not in state.step_data:
+                return False
+        
+        return True
+    
     async def save_onboarding_step(
         self,
         user_id: UUID,
         step: int,
-        data: dict[str, Any]
+        data: dict[str, Any],
+        agent_type: str | None = None
     ) -> OnboardingState:
         """Save onboarding step data with validation.
         
         Validates step data according to step-specific rules,
         saves to step_data JSONB field, and advances current_step.
+        Tracks agent routing history for analytics and debugging.
         
         Args:
             user_id: User's unique identifier
             step: Step number (1-11)
             data: Step data to validate and save
+            agent_type: Optional agent type that handled this state (for tracking)
             
         Returns:
             Updated OnboardingState
@@ -108,11 +299,41 @@ class OnboardingService:
         
         onboarding_state.step_data[f"step_{step}"] = data
         
-        # Advance current_step if this is the current or next step
-        if step >= onboarding_state.current_step:
+        # Track state change in agent_history if state is advancing
+        old_step = onboarding_state.current_step
+        if step > onboarding_state.current_step:
             onboarding_state.current_step = step
+            
+            # Record agent routing history
+            if agent_type:
+                if not onboarding_state.agent_history:
+                    onboarding_state.agent_history = []
+                
+                # Add history entry
+                from datetime import datetime, timezone
+                history_entry = {
+                    "state": step,
+                    "agent": agent_type,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "previous_state": old_step
+                }
+                onboarding_state.agent_history.append(history_entry)
+                
+                # Mark as modified for SQLAlchemy to detect JSONB change
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(onboarding_state, "agent_history")
+                
+                logger.info(
+                    f"Agent routing history updated: state {old_step} -> {step} via {agent_type}",
+                    extra={
+                        "user_id": str(user_id),
+                        "agent": agent_type,
+                        "old_state": old_step,
+                        "new_state": step
+                    }
+                )
         
-        # Mark as modified for SQLAlchemy to detect JSONB change
+        # Mark step_data as modified for SQLAlchemy to detect JSONB change
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(onboarding_state, "step_data")
         
@@ -122,27 +343,25 @@ class OnboardingService:
         return onboarding_state
     
     def _validate_step_data(self, step: int, data: dict[str, Any]) -> None:
-        """Validate step-specific data.
+        """Validate step-specific data for 9-state onboarding.
         
         Args:
-            step: Step number (1-11)
+            step: Step number (1-9)
             data: Step data to validate
             
         Raises:
             OnboardingValidationError: If validation fails
         """
         validators = {
-            1: self._validate_step_1_basic_info,
-            2: self._validate_step_2_fitness_level,
-            3: self._validate_step_3_fitness_goals,
-            4: self._validate_step_4_target_metrics,
-            5: self._validate_step_5_physical_constraints,
-            6: self._validate_step_6_dietary_preferences,
-            7: self._validate_step_7_meal_planning,
-            8: self._validate_step_8_meal_schedule,
-            9: self._validate_step_9_workout_schedule,
-            10: self._validate_step_10_hydration,
-            11: self._validate_step_11_lifestyle_baseline,
+            1: self._validate_step_2_fitness_level,           # State 1: Fitness Level
+            2: self._validate_step_3_fitness_goals,            # State 2: Fitness Goals
+            3: self._validate_state_3_workout_constraints,     # State 3: Workout Constraints (merged)
+            4: self._validate_step_6_dietary_preferences,      # State 4: Dietary Preferences
+            5: self._validate_step_7_meal_planning,            # State 5: Meal Plan
+            6: self._validate_step_8_meal_schedule,            # State 6: Meal Schedule
+            7: self._validate_step_9_workout_schedule,         # State 7: Workout Schedule
+            8: self._validate_step_10_hydration,               # State 8: Hydration
+            9: self._validate_state_9_supplements,             # State 9: Supplements (NEW)
         }
         
         validator = validators.get(step)
@@ -214,6 +433,42 @@ class OnboardingService:
                 raise OnboardingValidationError(
                     f"Goal type must be one of: {', '.join(valid_goal_types)}",
                     f"goals[{i}].goal_type"
+                )
+    
+    def _validate_state_3_workout_constraints(self, data: dict[str, Any]) -> None:
+        """Validate state 3: Workout constraints (merged from steps 4 & 5).
+        
+        Combines target metrics and physical constraints validation.
+        Validates equipment, injuries, limitations (required lists) and
+        optional target_weight_kg and target_body_fat_percentage.
+        """
+        # Validate equipment (required)
+        if "equipment" not in data or not isinstance(data["equipment"], list):
+            raise OnboardingValidationError("Equipment must be a list", "equipment")
+        
+        # Validate injuries (required, can be empty)
+        if "injuries" not in data or not isinstance(data["injuries"], list):
+            raise OnboardingValidationError("Injuries must be a list", "injuries")
+        
+        # Validate limitations (required, can be empty)
+        if "limitations" not in data or not isinstance(data["limitations"], list):
+            raise OnboardingValidationError("Limitations must be a list", "limitations")
+        
+        # Validate optional target metrics
+        if "target_weight_kg" in data and data["target_weight_kg"] is not None:
+            weight = data["target_weight_kg"]
+            if not isinstance(weight, (int, float)) or weight < 30 or weight > 300:
+                raise OnboardingValidationError(
+                    "Target weight must be between 30 and 300 kg",
+                    "target_weight_kg"
+                )
+        
+        if "target_body_fat_percentage" in data and data["target_body_fat_percentage"] is not None:
+            bf = data["target_body_fat_percentage"]
+            if not isinstance(bf, (int, float)) or bf < 1 or bf > 50:
+                raise OnboardingValidationError(
+                    "Target body fat percentage must be between 1 and 50",
+                    "target_body_fat_percentage"
                 )
     
     def _validate_step_4_target_metrics(self, data: dict[str, Any]) -> None:
@@ -472,7 +727,11 @@ class OnboardingService:
                 )
     
     def _validate_step_11_lifestyle_baseline(self, data: dict[str, Any]) -> None:
-        """Validate step 11: Lifestyle baseline."""
+        """Validate step 11: Lifestyle baseline (OLD - for backward compatibility).
+        
+        This validator is kept for backward compatibility with old 11-step data.
+        New 9-state onboarding uses _validate_state_9_supplements instead.
+        """
         required_fields = ["energy_level", "stress_level", "sleep_quality"]
         
         for field in required_fields:
@@ -485,11 +744,53 @@ class OnboardingService:
                     f"{field.replace('_', ' ').capitalize()} must be between 1 and 10",
                     field
                 )
+    
+    def _validate_state_9_supplements(self, data: dict[str, Any]) -> None:
+        """Validate state 9: Supplement preferences (NEW 9-state structure).
+        
+        State 9 is optional but validates supplement interest and current supplements.
+        
+        Args:
+            data: Step data containing supplement preferences
+            
+        Raises:
+            OnboardingValidationError: If validation fails
+        """
+        # interested_in_supplements is required
+        if "interested_in_supplements" not in data:
+            raise OnboardingValidationError(
+                "Missing required field: interested_in_supplements",
+                "interested_in_supplements"
+            )
+        
+        interested = data["interested_in_supplements"]
+        if not isinstance(interested, bool):
+            raise OnboardingValidationError(
+                "interested_in_supplements must be a boolean",
+                "interested_in_supplements"
+            )
+        
+        # current_supplements is optional but must be a list if provided
+        if "current_supplements" in data:
+            supplements = data["current_supplements"]
+            if not isinstance(supplements, list):
+                raise OnboardingValidationError(
+                    "current_supplements must be a list",
+                    "current_supplements"
+                )
+            
+            # Validate each supplement is a string
+            for i, supplement in enumerate(supplements):
+                if not isinstance(supplement, str):
+                    raise OnboardingValidationError(
+                        f"Supplement at index {i} must be a string",
+                        f"current_supplements[{i}]"
+                    )
 
     async def complete_onboarding(self, user_id: UUID) -> UserProfile:
         """Complete onboarding and create locked user profile.
         
-        Verifies all 11 steps are complete, creates UserProfile with all
+        Verifies all 9 states are complete, creates UserProfile with all
         related entities, creates initial ProfileVersion, and marks
         onboarding as complete.
         
@@ -507,56 +808,98 @@ class OnboardingService:
         if not onboarding_state:
             raise OnboardingValidationError("Onboarding state not found")
         
-        # Verify all steps are complete
-        if onboarding_state.current_step < 11:
+        # Verify all 9 states are complete
+        if onboarding_state.current_step < 9:
             raise OnboardingValidationError(
-                f"Onboarding incomplete. Current step: {onboarding_state.current_step}, required: 11"
+                f"Onboarding incomplete. Current step: {onboarding_state.current_step}, required: 9"
             )
         
         # Verify all step data exists
         step_data = onboarding_state.step_data
-        for step_num in range(1, 12):
+        for step_num in range(1, 10):
             if f"step_{step_num}" not in step_data:
                 raise OnboardingValidationError(f"Missing data for step {step_num}")
         
         # Start transaction
         try:
             # Create UserProfile
+            # State 1: Fitness Level
             profile = UserProfile(
                 user_id=user_id,
                 is_locked=True,
-                fitness_level=step_data["step_2"]["fitness_level"]
+                fitness_level=step_data["step_1"]["fitness_level"]
             )
             self.db.add(profile)
             await self.db.flush()  # Get profile.id
             
-            # Create FitnessGoals (step 3 and 4)
-            goals_data = step_data["step_3"]["goals"]
-            target_metrics = step_data.get("step_4", {})
+            # State 2: Fitness Goals
+            goals_data = step_data["step_2"]["goals"]
             
             for i, goal_data in enumerate(goals_data):
                 goal = FitnessGoal(
                     profile_id=profile.id,
                     goal_type=goal_data["goal_type"],
-                    target_weight_kg=target_metrics.get("target_weight_kg"),
-                    target_body_fat_percentage=target_metrics.get("target_body_fat_percentage"),
+                    target_weight_kg=None,  # Will be set from state 3 if provided
+                    target_body_fat_percentage=None,  # Will be set from state 3 if provided
                     priority=i + 1
                 )
                 self.db.add(goal)
             
-            # Create PhysicalConstraints (step 5)
-            constraints_data = step_data["step_5"].get("constraints", [])
-            for constraint_data in constraints_data:
+            # State 3: Workout Constraints (merged from old steps 4 & 5)
+            constraints_data = step_data["step_3"]
+            
+            # Update goals with target metrics if provided
+            if "target_weight_kg" in constraints_data or "target_body_fat_percentage" in constraints_data:
+                # Flush to get goal IDs
+                await self.db.flush()
+                
+                # Update first goal with targets
+                result = await self.db.execute(
+                    select(FitnessGoal)
+                    .where(FitnessGoal.profile_id == profile.id)
+                    .order_by(FitnessGoal.priority)
+                )
+                goals = result.scalars().all()
+                if goals:
+                    first_goal = goals[0]
+                    if "target_weight_kg" in constraints_data:
+                        first_goal.target_weight_kg = constraints_data["target_weight_kg"]
+                    if "target_body_fat_percentage" in constraints_data:
+                        first_goal.target_body_fat_percentage = constraints_data["target_body_fat_percentage"]
+            
+            # Create PhysicalConstraints from equipment, injuries, limitations
+            equipment_list = constraints_data.get("equipment", [])
+            for equipment in equipment_list:
                 constraint = PhysicalConstraint(
                     profile_id=profile.id,
-                    constraint_type=constraint_data["constraint_type"],
-                    description=constraint_data["description"],
-                    severity=constraint_data.get("severity")
+                    constraint_type="equipment",
+                    description=equipment,
+                    severity=None
                 )
                 self.db.add(constraint)
             
-            # Create DietaryPreference (step 6)
-            diet_data = step_data["step_6"]
+            injuries_list = constraints_data.get("injuries", [])
+            for injury in injuries_list:
+                constraint = PhysicalConstraint(
+                    profile_id=profile.id,
+                    constraint_type="injury",
+                    description=injury,
+                    severity="moderate"  # Default severity
+                )
+                self.db.add(constraint)
+            
+            limitations_list = constraints_data.get("limitations", [])
+            for limitation in limitations_list:
+                constraint = PhysicalConstraint(
+                    profile_id=profile.id,
+                    constraint_type="limitation",
+                    description=limitation,
+                    severity="moderate"  # Default severity
+                )
+                self.db.add(constraint)
+            
+            # State 4: Dietary Preferences
+            diet_data = step_data["step_4"]
             dietary_pref = DietaryPreference(
                 profile_id=profile.id,
                 diet_type=diet_data["diet_type"],
@@ -566,8 +909,8 @@ class OnboardingService:
             )
             self.db.add(dietary_pref)
             
-            # Create MealPlan (step 7)
-            meal_plan_data = step_data["step_7"]
+            # State 5: Meal Plan
+            meal_plan_data = step_data["step_5"]
             meal_plan = MealPlan(
                 profile_id=profile.id,
                 daily_calorie_target=meal_plan_data["daily_calorie_target"],
@@ -577,8 +920,8 @@ class OnboardingService:
             )
             self.db.add(meal_plan)
             
-            # Create MealSchedules (step 8)
-            meals_data = step_data["step_8"]["meals"]
+            # State 6: Meal Schedule
+            meals_data = step_data["step_6"]["meals"]
             for meal_data in meals_data:
                 # Parse time string to time object
                 time_str = meal_data["scheduled_time"]
@@ -595,8 +938,8 @@ class OnboardingService:
                 )
                 self.db.add(meal_schedule)
             
-            # Create WorkoutSchedules (step 9)
-            workouts_data = step_data["step_9"]["workouts"]
+            # State 7: Workout Schedule
+            workouts_data = step_data["step_7"]["workouts"]
             for workout_data in workouts_data:
                 # Parse time string to time object
                 time_str = workout_data["scheduled_time"]
@@ -613,8 +956,8 @@ class OnboardingService:
                 )
                 self.db.add(workout_schedule)
             
-            # Create HydrationPreference (step 10)
-            hydration_data = step_data["step_10"]
+            # State 8: Hydration
+            hydration_data = step_data["step_8"]
             hydration_pref = HydrationPreference(
                 profile_id=profile.id,
                 daily_water_target_ml=hydration_data["daily_water_target_ml"],
@@ -623,15 +966,9 @@ class OnboardingService:
             )
             self.db.add(hydration_pref)
             
-            # Create LifestyleBaseline (step 11)
-            lifestyle_data = step_data["step_11"]
-            lifestyle_baseline = LifestyleBaseline(
-                profile_id=profile.id,
-                energy_level=lifestyle_data["energy_level"],
-                stress_level=lifestyle_data["stress_level"],
-                sleep_quality=lifestyle_data["sleep_quality"]
-            )
-            self.db.add(lifestyle_baseline)
+            # State 9: Supplements (optional - no database entity, just stored in step_data)
+            # Supplements data is stored in step_data but doesn't create database entities
+            # It's used by the Supplement Guidance Agent for recommendations
             
             # Flush to ensure all entities are created
             await self.db.flush()
