@@ -524,3 +524,153 @@ class WorkoutService:
             await self.db.refresh(schedule)
         
         return workout_schedules
+    
+    @staticmethod
+    async def get_today_workout(
+        user_id: UUID,
+        db_session: AsyncSession
+    ) -> Optional[dict[str, Any]]:
+        """Get today's workout plan for a user.
+        
+        Static method for use by general agent delegation tools.
+        Returns dict format matching design spec.
+        
+        Args:
+            user_id: User's UUID
+            db_session: Database session
+            
+        Returns:
+            Dict with workout details or None if no workout scheduled
+            
+        Raises:
+            ValueError: If user profile not found
+        """
+        # Get user's profile to verify existence
+        profile_result = await db_session.execute(
+            select(UserProfile)
+            .where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            )
+            .options(selectinload(UserProfile.workout_schedules))
+        )
+        profile = profile_result.scalar_one_or_none()
+        
+        if not profile:
+            raise ValueError(f"User profile not found for user_id: {user_id}")
+        
+        # Get current day of week (0=Monday, 6=Sunday)
+        current_day = datetime.now().weekday()
+        
+        # Check if there's a workout scheduled for today
+        workout_scheduled_today = False
+        for schedule in profile.workout_schedules:
+            if schedule.day_of_week == current_day and schedule.deleted_at is None:
+                workout_scheduled_today = True
+                break
+        
+        if not workout_scheduled_today:
+            return None
+        
+        # Get workout plan with all relationships
+        workout_plan_result = await db_session.execute(
+            select(WorkoutPlan)
+            .where(
+                WorkoutPlan.user_id == user_id,
+                WorkoutPlan.deleted_at.is_(None)
+            )
+            .options(
+                selectinload(WorkoutPlan.workout_days)
+                .selectinload(WorkoutDay.exercises)
+                .selectinload(WorkoutExercise.exercise_library)
+            )
+        )
+        workout_plan = workout_plan_result.scalar_one_or_none()
+        
+        if not workout_plan:
+            return None
+        
+        # Find workout day matching today's day of week
+        # Map day_of_week (0-6) to day_number (1-7)
+        # Assuming day_number 1 = Monday, 7 = Sunday
+        day_number = current_day + 1
+        
+        workout_day = None
+        for day in workout_plan.workout_days:
+            if day.day_number == day_number and day.deleted_at is None:
+                workout_day = day
+                break
+        
+        if not workout_day:
+            return None
+        
+        # Build response dict matching design spec
+        exercises = []
+        for exercise in workout_day.exercises:
+            if exercise.deleted_at is None:
+                # Format reps string
+                if exercise.reps_target:
+                    reps_str = str(exercise.reps_target)
+                elif exercise.reps_min and exercise.reps_max:
+                    reps_str = f"{exercise.reps_min}-{exercise.reps_max}"
+                else:
+                    reps_str = str(exercise.reps_min or exercise.reps_max or 0)
+                
+                exercises.append({
+                    "name": exercise.exercise_library.exercise_name,
+                    "sets": exercise.sets,
+                    "reps": reps_str,
+                    "weight_kg": float(exercise.weight_kg) if exercise.weight_kg else None,
+                    "rest_seconds": exercise.rest_seconds,
+                    "notes": exercise.notes
+                })
+        
+        return {
+            "day_name": workout_day.day_name,
+            "workout_type": workout_day.workout_type,
+            "muscle_groups": workout_day.muscle_groups,
+            "estimated_duration_minutes": workout_day.estimated_duration_minutes,
+            "exercises": exercises
+        }
+    
+    @staticmethod
+    async def get_exercise_demo(
+        exercise_name: str,
+        db_session: AsyncSession
+    ) -> Optional[dict[str, Any]]:
+        """Get exercise demonstration details from library.
+        
+        Static method for use by general agent delegation tools.
+        Returns dict format matching design spec.
+        
+        Args:
+            exercise_name: Name of exercise (case-insensitive partial match)
+            db_session: Database session
+            
+        Returns:
+            Dict with exercise details or None if not found
+        """
+        # Query ExerciseLibrary with case-insensitive partial match
+        result = await db_session.execute(
+            select(ExerciseLibrary)
+            .where(
+                func.lower(ExerciseLibrary.exercise_name).contains(func.lower(exercise_name)),
+                ExerciseLibrary.deleted_at.is_(None)
+            )
+            .limit(1)
+        )
+        exercise = result.scalar_one_or_none()
+        
+        if not exercise:
+            return None
+        
+        # Build response dict matching design spec
+        return {
+            "exercise_name": exercise.exercise_name,
+            "gif_url": exercise.gif_url,
+            "video_url": exercise.video_url,
+            "description": exercise.description,
+            "instructions": exercise.instructions,
+            "difficulty_level": exercise.difficulty_level,
+            "primary_muscle_group": exercise.primary_muscle_group
+        }

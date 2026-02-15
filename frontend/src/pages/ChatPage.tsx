@@ -1,19 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useChat } from '../hooks/useChat';
-import { AgentSelector } from '../components/chat/AgentSelector';
 import { MessageList } from '../components/chat/MessageList';
 import { MessageInput } from '../components/chat/MessageInput';
 import { LoadingIndicator } from '../components/chat/LoadingIndicator';
-import type { AgentType } from '../types';
 
 export const ChatPage = () => {
   const location = useLocation();
-  const state = location.state as { prefillMessage?: string; agentType?: AgentType } | null;
+  const state = location.state as { prefillMessage?: string } | null;
   
-  const [selectedAgent, setSelectedAgent] = useState<AgentType>(
-    state?.agentType || 'general_assistant'
-  );
   const { messages, loading, error, sendMessage, clearMessages } = useChat();
   const [dismissedError, setDismissedError] = useState(false);
   const [initialMessage, setInitialMessage] = useState<string | null>(
@@ -30,7 +25,7 @@ export const ChatPage = () => {
 
   const handleSendMessage = async (message: string) => {
     setDismissedError(false);
-    await sendMessage(message, selectedAgent);
+    await sendMessage(message);
   };
 
   const handleDismissError = () => {
@@ -42,15 +37,8 @@ export const ChatPage = () => {
       {/* Header */}
       <div className="bg-white border-b border-gray-300 p-4 shadow-sm">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">AI Chat</h1>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <AgentSelector
-                value={selectedAgent}
-                onChange={setSelectedAgent}
-                disabled={loading}
-              />
-            </div>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">AI Chat</h1>
             <button
               onClick={clearMessages}
               disabled={loading || messages.length === 0}

@@ -1,28 +1,32 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useUser } from '../../contexts/UserContext';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requireOnboarding?: boolean;
+  requireOnboardingComplete?: boolean;
 }
 
 /**
  * ProtectedRoute component that ensures user is authenticated before accessing protected pages
  * Redirects to login page if user is not authenticated
- * Optionally checks if onboarding is completed
+ * Checks if onboarding is completed based on requireOnboardingComplete prop
  */
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
+  children, 
+  requireOnboardingComplete = true 
+}) => {
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { onboardingCompleted, loading: userLoading } = useUser();
+  const location = useLocation();
 
-  // Show loading state while checking authentication
-  if (loading) {
+  // Show loading state while checking authentication or user status
+  if (authLoading || userLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
+        <LoadingSpinner message="Loading..." size="lg" />
       </div>
     );
   }
@@ -32,10 +36,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // TODO: Add onboarding check when UserContext is implemented
-  // if (requireOnboarding && !user?.onboardingCompleted) {
-  //   return <Navigate to="/onboarding" replace />;
-  // }
+  // If onboarding is required and not complete, redirect to onboarding
+  if (requireOnboardingComplete && !onboardingCompleted) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  // If onboarding is complete and user is accessing /onboarding, redirect to dashboard
+  if (onboardingCompleted && location.pathname === '/onboarding') {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return <>{children}</>;
 };

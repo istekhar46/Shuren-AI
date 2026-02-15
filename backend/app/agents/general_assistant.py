@@ -22,6 +22,9 @@ from app.models.user import User
 from app.models.profile import UserProfile
 from app.models.workout import WorkoutPlan
 from app.models.preferences import FitnessGoal
+from app.services.workout_service import WorkoutService
+from app.services.meal_service import MealService
+from app.services.schedule_service import ScheduleService
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +333,247 @@ class GeneralAssistantAgent(BaseAgent):
                     "error": "Unable to generate motivation. Please try again."
                 })
         
-        return [get_user_stats, provide_motivation]
+        @tool
+        async def get_workout_info() -> str:
+            """Get today's workout plan for the user.
+            
+            Returns:
+                JSON string with workout details including exercises, sets, reps, and rest periods.
+                If no workout scheduled, returns a rest day message.
+            """
+            try:
+                result = await WorkoutService.get_today_workout(
+                    user_id=context.user_id,
+                    db_session=db_session
+                )
+                
+                if result is None:
+                    return json.dumps({
+                        "success": True,
+                        "data": {
+                            "message": "No workout scheduled for today. It's a rest day!"
+                        }
+                    })
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "general_assistant_agent"
+                    }
+                })
+                
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in get_workout_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to retrieve workout information. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in get_workout_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        @tool
+        async def get_meal_info() -> str:
+            """Get today's meal plan for the user.
+            
+            Returns:
+                JSON string with meal details including dishes, timing, and nutritional information.
+                If no meal plan configured, returns a helpful message.
+            """
+            try:
+                result = await MealService.get_today_meal_plan(
+                    user_id=context.user_id,
+                    db_session=db_session
+                )
+                
+                if result is None:
+                    return json.dumps({
+                        "success": True,
+                        "data": {
+                            "message": "No meal plan configured yet. Please complete your meal planning setup."
+                        }
+                    })
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "general_assistant_agent"
+                    }
+                })
+                
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in get_meal_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to retrieve meal information. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in get_meal_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        @tool
+        async def get_schedule_info() -> str:
+            """Get upcoming workout and meal schedules for the user.
+            
+            Returns:
+                JSON string with upcoming schedules including days, times, and notification settings.
+            """
+            try:
+                result = await ScheduleService.get_upcoming_schedule(
+                    user_id=context.user_id,
+                    db_session=db_session
+                )
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "general_assistant_agent"
+                    }
+                })
+                
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in get_schedule_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to retrieve schedule information. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in get_schedule_info: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        @tool
+        async def get_exercise_demo(exercise_name: str) -> str:
+            """Get exercise demonstration details from the exercise library.
+            
+            Args:
+                exercise_name: Name of the exercise to demonstrate
+            
+            Returns:
+                JSON string with GIF URL, video URL, instructions, and difficulty level.
+                If exercise not found, returns a helpful error message.
+            """
+            try:
+                result = await WorkoutService.get_exercise_demo(
+                    exercise_name=exercise_name,
+                    db_session=db_session
+                )
+                
+                if result is None:
+                    return json.dumps({
+                        "success": True,
+                        "data": {
+                            "message": f"Exercise '{exercise_name}' not found in library. Try a different name or check spelling."
+                        }
+                    })
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "general_assistant_agent"
+                    }
+                })
+                
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in get_exercise_demo: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to retrieve exercise demonstration. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in get_exercise_demo: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        @tool
+        async def get_recipe_details(dish_name: str) -> str:
+            """Get recipe details including ingredients and cooking instructions.
+            
+            Args:
+                dish_name: Name of the dish/recipe
+            
+            Returns:
+                JSON string with ingredients, cooking instructions, and nutritional information.
+                If recipe not found, returns a helpful error message.
+            """
+            try:
+                result = await MealService.get_recipe_details(
+                    dish_name=dish_name,
+                    db_session=db_session
+                )
+                
+                if result is None:
+                    return json.dumps({
+                        "success": True,
+                        "data": {
+                            "message": f"Recipe '{dish_name}' not found. Try a different dish name."
+                        }
+                    })
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "general_assistant_agent"
+                    }
+                })
+                
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in get_recipe_details: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to retrieve recipe details. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in get_recipe_details: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        return [
+            get_user_stats, 
+            provide_motivation,
+            get_workout_info,
+            get_meal_info,
+            get_schedule_info,
+            get_exercise_demo,
+            get_recipe_details
+        ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
         """
@@ -372,6 +615,20 @@ Guidelines:
 Available Tools:
 - get_user_stats: Retrieve general user statistics and profile information
 - provide_motivation: Generate personalized motivational messages
+- get_workout_info: Get today's workout plan with exercises, sets, reps, and rest periods
+- get_meal_info: Get today's meal plan with dishes, timing, and nutritional information
+- get_schedule_info: Get upcoming workout and meal schedules with days and times
+- get_exercise_demo: Get exercise demonstration details (GIF, video, instructions) by exercise name
+- get_recipe_details: Get recipe details with ingredients and cooking instructions by dish name
+
+When to Use Tools:
+- Use get_workout_info when users ask about today's workout, exercises, or training plan
+- Use get_meal_info when users ask about today's meals, nutrition, or eating plan
+- Use get_schedule_info when users ask about upcoming workouts, meal times, or their schedule
+- Use get_exercise_demo when users ask how to perform a specific exercise or need form guidance
+- Use get_recipe_details when users ask about cooking instructions, ingredients, or recipe preparation
+- Use get_user_stats for general profile information and fitness goals
+- Use provide_motivation for encouragement and motivational messages
 
 Remember:
 - Fitness is a journey, not a destination

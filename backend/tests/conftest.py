@@ -2,11 +2,14 @@
 Pytest configuration and shared fixtures for the Shuren backend test suite.
 
 This module provides:
-- Test database setup with separate test schema
+- Test database setup with session-scoped connection
 - Async test client fixture
 - Authenticated user fixtures
 - Sample onboarding data fixtures
 - Database session management for tests
+
+Based on SQLAlchemy async testing best practices:
+https://asphalt.readthedocs.io/projects/sqlalchemy/en/stable/testing.html
 """
 
 import asyncio
@@ -17,8 +20,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession, AsyncConnection, create_async_engine
 
 from app.main import app
 from app.db.base import Base
@@ -35,12 +37,26 @@ from app.models.profile import UserProfile
 def get_test_database_url() -> str:
     """Get test database URL from settings or create test-specific URL.
     
-    For remote databases (like Aiven), we use the same database but with
-    transaction isolation to prevent test data pollution.
+    For local development, uses a local test database.
+    For remote databases (like Aiven), uses transaction isolation.
     """
     db_url = settings.DATABASE_URL
     
-    # Convert to async format
+    # For local testing, use local PostgreSQL database
+    # This avoids DNS issues with remote databases
+    local_test_db = "postgresql+asyncpg://postgres:ist%40123@localhost:5432/shuren_test_db"
+    
+    # Check if we're using a remote database (Aiven, AWS, etc.)
+    if any(domain in db_url for domain in ['aivencloud.com', 'amazonaws.com', 'azure.com', 'cloud.google.com']):
+        # Use local database for testing instead of remote
+        return local_test_db
+    
+    # Check if already using local database (localhost or 127.0.0.1)
+    if 'localhost' in db_url or '127.0.0.1' in db_url:
+        # Always use shuren_test_db for local testing
+        return local_test_db
+    
+    # Convert to async format for other databases
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif db_url.startswith("postgresql://"):
@@ -48,26 +64,16 @@ def get_test_database_url() -> str:
     
     # Remove sslmode parameter if present (asyncpg uses ssl parameter instead)
     if "?sslmode=" in db_url:
-        # Extract sslmode value and convert to ssl parameter
         parts = db_url.split("?")
         base_url = parts[0]
         params = parts[1] if len(parts) > 1 else ""
-        
-        # Remove sslmode from params
         param_list = [p for p in params.split("&") if not p.startswith("sslmode=")]
-        
-        # Reconstruct URL
         if param_list:
             db_url = f"{base_url}?{'&'.join(param_list)}"
         else:
             db_url = base_url
     
-    # For remote databases (containing cloud provider domains), use the same database
-    # with transaction isolation instead of trying to create a test database
-    if any(domain in db_url for domain in ['aivencloud.com', 'amazonaws.com', 'azure.com', 'cloud.google.com']):
-        return db_url
-    
-    # For local databases, try to use a test database
+    # For other databases, create a test database name
     if "//" in db_url and "/" in db_url.split("//")[1]:
         parts = db_url.rsplit("/", 1)
         db_name = parts[1].split("?")[0]  # Remove query params if any
@@ -77,42 +83,38 @@ def get_test_database_url() -> str:
     return db_url
 
 
-# Create test engine with NullPool to avoid connection issues in tests
+# Create test engine - use NullPool to avoid pooling issues with async
+from sqlalchemy.pool import NullPool
+
 test_engine = create_async_engine(
     get_test_database_url(),
     echo=False,
-    poolclass=NullPool  # Disable connection pooling for tests
-)
-
-# Create test session factory
-TestSessionLocal = async_sessionmaker(
-    test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False
+    poolclass=NullPool  # No pooling - we use a single session-scoped connection
 )
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator:
+def event_loop():
     """Create an event loop for the test session.
     
     This fixture ensures all async tests share the same event loop.
     """
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
     yield loop
     loop.close()
 
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a test database session.
+    """Create a test database session with automatic rollback.
     
     This fixture:
     - Creates all tables before each test
-    - Provides a clean database session
+    - Provides a clean database session  
     - Drops all tables after each test
+    
+    Uses local PostgreSQL database to avoid DNS issues with remote databases.
     
     Usage:
         async def test_something(db_session: AsyncSession):
@@ -125,8 +127,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.create_all)
     
     # Create session
-    async with TestSessionLocal() as session:
-        yield session
+    async with test_engine.connect() as conn:
+        async with AsyncSession(bind=conn, expire_on_commit=False) as session:
+            yield session
     
     # Drop all tables after test
     async with test_engine.begin() as conn:

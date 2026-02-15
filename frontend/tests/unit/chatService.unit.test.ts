@@ -13,10 +13,10 @@ describe('chatService Unit Tests', () => {
   });
 
   describe('sendMessage', () => {
-    it('should call POST /chat/chat with message and agent_type', async () => {
+    it('should call POST /chat/chat with message only (no agent_type)', async () => {
       const mockChatResponse: ChatResponse = {
         response: 'Here is your workout plan for today.',
-        agent_type: 'workout_planning',
+        agent_type: 'conversational_assistant',
         conversation_id: 'conv-123',
         tools_used: ['get_workout_plan'],
       };
@@ -29,14 +29,10 @@ describe('chatService Unit Tests', () => {
         config: {} as any,
       });
 
-      const result = await chatService.sendMessage(
-        'What should I do today?',
-        'workout_planning'
-      );
+      const result = await chatService.sendMessage('What should I do today?');
 
       expect(api.post).toHaveBeenCalledWith('/chat/chat', {
         message: 'What should I do today?',
-        agent_type: 'workout_planning',
       });
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockChatResponse);
@@ -63,7 +59,6 @@ describe('chatService Unit Tests', () => {
 
       expect(api.post).toHaveBeenCalledWith('/chat/chat', {
         message: 'Hello',
-        agent_type: undefined,
       });
       expect(result.agent_type).toBe('conversational_assistant');
     });
@@ -71,7 +66,7 @@ describe('chatService Unit Tests', () => {
     it('should return conversation_id from response', async () => {
       const mockChatResponse: ChatResponse = {
         response: 'Your meal plan is ready.',
-        agent_type: 'diet_planning',
+        agent_type: 'conversational_assistant',
         conversation_id: 'conv-789',
         tools_used: ['get_meal_plan', 'get_dishes'],
       };
@@ -84,10 +79,7 @@ describe('chatService Unit Tests', () => {
         config: {} as any,
       });
 
-      const result = await chatService.sendMessage(
-        'Show me my meal plan',
-        'diet_planning'
-      );
+      const result = await chatService.sendMessage('Show me my meal plan');
 
       expect(result.conversation_id).toBe('conv-789');
       expect(result.tools_used).toEqual(['get_meal_plan', 'get_dishes']);
@@ -98,11 +90,10 @@ describe('chatService Unit Tests', () => {
       vi.mocked(api.post).mockRejectedValue(mockError);
 
       await expect(
-        chatService.sendMessage('Test message', 'workout_planning')
+        chatService.sendMessage('Test message')
       ).rejects.toThrow('Network error');
       expect(api.post).toHaveBeenCalledWith('/chat/chat', {
         message: 'Test message',
-        agent_type: 'workout_planning',
       });
     });
 
@@ -118,7 +109,6 @@ describe('chatService Unit Tests', () => {
       await expect(chatService.sendMessage('Test message')).rejects.toThrow();
       expect(api.post).toHaveBeenCalledWith('/chat/chat', {
         message: 'Test message',
-        agent_type: undefined,
       });
     });
 
@@ -142,9 +132,211 @@ describe('chatService Unit Tests', () => {
 
       expect(api.post).toHaveBeenCalledWith('/chat/chat', {
         message: '',
-        agent_type: undefined,
       });
       expect(result).toEqual(mockChatResponse);
+    });
+
+    it('should throw structured error for 403 with ONBOARDING_REQUIRED', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              error_code: 'ONBOARDING_REQUIRED',
+              message: 'Complete onboarding to access chat',
+              redirect: '/onboarding',
+            },
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.status).toBe(403);
+        expect(error.code).toBe('ONBOARDING_REQUIRED');
+        expect(error.message).toBe('Complete onboarding to access chat');
+        expect(error.redirect).toBe('/onboarding');
+      }
+    });
+
+    it('should throw structured error for 403 without error_code', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              message: 'Access forbidden',
+            },
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.status).toBe(403);
+        expect(error.code).toBeUndefined();
+        expect(error.message).toBe('Access forbidden');
+      }
+    });
+
+    it('should throw structured error for 403 with all error details', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              error_code: 'ONBOARDING_REQUIRED',
+              message: 'You must complete onboarding first',
+              redirect: '/onboarding',
+            },
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error).toHaveProperty('status', 403);
+        expect(error).toHaveProperty('code', 'ONBOARDING_REQUIRED');
+        expect(error).toHaveProperty('message', 'You must complete onboarding first');
+        expect(error).toHaveProperty('redirect', '/onboarding');
+      }
+    });
+
+    it('should use default message when detail.message is missing', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              error_code: 'FORBIDDEN',
+            },
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.status).toBe(403);
+        expect(error.code).toBe('FORBIDDEN');
+        expect(error.message).toBe('Access forbidden');
+        expect(error.redirect).toBeUndefined();
+      }
+    });
+
+    it('should handle 403 error with empty detail object', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {},
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.status).toBe(403);
+        expect(error.code).toBeUndefined();
+        expect(error.message).toBe('Access forbidden');
+        expect(error.redirect).toBeUndefined();
+      }
+    });
+
+    it('should handle 403 error without detail object', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {},
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.status).toBe(403);
+        expect(error.code).toBeUndefined();
+        expect(error.message).toBe('Access forbidden');
+        expect(error.redirect).toBeUndefined();
+      }
+    });
+
+    it('should preserve redirect URL in structured error', async () => {
+      const mockError = {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              error_code: 'ONBOARDING_REQUIRED',
+              message: 'Complete onboarding to continue',
+              redirect: '/onboarding?from=chat',
+            },
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.redirect).toBe('/onboarding?from=chat');
+      }
+    });
+
+    it('should not modify non-403 errors', async () => {
+      const mockError = {
+        response: {
+          status: 500,
+          data: {
+            detail: 'Internal server error',
+          },
+        },
+      };
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        // Non-403 errors should be thrown as-is
+        expect(error.response.status).toBe(500);
+        expect(error.response.data.detail).toBe('Internal server error');
+        // Should not have structured error properties
+        expect(error.status).toBeUndefined();
+        expect(error.code).toBeUndefined();
+      }
+    });
+
+    it('should not modify network errors without response', async () => {
+      const mockError = new Error('Network connection failed');
+      vi.mocked(api.post).mockRejectedValue(mockError);
+
+      try {
+        await chatService.sendMessage('Test message');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        // Network errors should be thrown as-is
+        expect(error.message).toBe('Network connection failed');
+        expect(error.status).toBeUndefined();
+        expect(error.code).toBeUndefined();
+      }
     });
   });
 
@@ -356,14 +548,13 @@ describe('chatService Unit Tests', () => {
       localStorage.setItem('auth_token', 'test-token-123');
     });
 
-    it('should create EventSource with correct URL and query params', () => {
+    it('should create EventSource with correct URL and query params (no agent_type)', () => {
       const onChunk = vi.fn();
       const onComplete = vi.fn();
       const onError = vi.fn();
 
       chatService.streamMessage(
         'Tell me about protein',
-        'diet_planning',
         onChunk,
         onComplete,
         onError
@@ -374,7 +565,7 @@ describe('chatService Unit Tests', () => {
       expect(calledUrl).toContain('/chat/stream');
       expect(calledUrl).toContain('message=Tell');
       expect(calledUrl).toContain('protein');
-      expect(calledUrl).toContain('agent_type=diet_planning');
+      expect(calledUrl).not.toContain('agent_type=');
       expect(calledUrl).toContain('token=test-token-123');
     });
 
@@ -385,7 +576,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'workout_planning',
         onChunk,
         onComplete,
         onError
@@ -410,7 +600,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'diet_planning',
         onChunk,
         onComplete,
         onError
@@ -418,11 +607,11 @@ describe('chatService Unit Tests', () => {
 
       // Simulate completion
       const doneEvent = {
-        data: JSON.stringify({ done: true, agent_type: 'diet_planning' }),
+        data: JSON.stringify({ done: true, agent_type: 'conversational_assistant' }),
       };
       mockEventSource.onmessage(doneEvent);
 
-      expect(onComplete).toHaveBeenCalledWith('diet_planning');
+      expect(onComplete).toHaveBeenCalledWith('conversational_assistant');
       expect(onComplete).toHaveBeenCalledTimes(1);
       expect(mockEventSource.close).toHaveBeenCalled();
       expect(onChunk).not.toHaveBeenCalled();
@@ -435,7 +624,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'workout_planning',
         onChunk,
         onComplete,
         onError
@@ -461,7 +649,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'diet_planning',
         onChunk,
         onComplete,
         onError
@@ -484,7 +671,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'workout_planning',
         onChunk,
         onComplete,
         onError
@@ -502,7 +688,7 @@ describe('chatService Unit Tests', () => {
       const onComplete = vi.fn();
       const onError = vi.fn();
 
-      chatService.streamMessage('Test message', undefined, onChunk, onComplete, onError);
+      chatService.streamMessage('Test message', onChunk, onComplete, onError);
 
       const calledUrl = (globalThis.EventSource as any).mock.calls[0][0];
       expect(calledUrl).toContain('message=Test');
@@ -519,7 +705,6 @@ describe('chatService Unit Tests', () => {
 
       chatService.streamMessage(
         'Test message',
-        'diet_planning',
         onChunk,
         onComplete,
         onError
@@ -536,7 +721,6 @@ describe('chatService Unit Tests', () => {
 
       const eventSource = chatService.streamMessage(
         'Test message',
-        'workout_planning',
         onChunk,
         onComplete,
         onError

@@ -25,6 +25,7 @@ export interface UserResponse {
   full_name: string;
   oauth_provider: string | null;
   is_active: boolean;
+  onboarding_completed: boolean;
   created_at: string;
 }
 

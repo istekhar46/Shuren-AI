@@ -92,9 +92,36 @@ async def load_agent_context(
     result = await db.execute(stmt)
     profile = result.scalar_one_or_none()
     
-    # Raise error if profile not found
+    # Handle missing profile based on mode
     if not profile:
-        raise ValueError(f"User profile not found: {user_id}")
+        if onboarding_mode:
+            # During onboarding, profile doesn't exist yet - return minimal context
+            logger.debug(f"No profile found for user {user_id} during onboarding - using minimal context")
+            
+            # Load conversation history for onboarding
+            conversation_history = []
+            if include_history:
+                conversation_history = await _load_conversation_history(
+                    db, 
+                    user_uuid,
+                    onboarding_mode=True
+                )
+            
+            # Return minimal context for onboarding
+            return AgentContext(
+                user_id=user_id,
+                fitness_level="beginner",  # Default
+                primary_goal="general_fitness",  # Default
+                secondary_goal=None,
+                energy_level="medium",  # Default
+                current_workout_plan={},
+                current_meal_plan={},
+                conversation_history=conversation_history,
+                loaded_at=datetime.utcnow()
+            )
+        else:
+            # Post-onboarding, profile must exist
+            raise ValueError(f"User profile not found: {user_id}")
     
     # Log context loading mode
     logger.debug(

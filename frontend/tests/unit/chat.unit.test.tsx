@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { AgentSelector } from '../../src/components/chat/AgentSelector';
 import { MessageInput } from '../../src/components/chat/MessageInput';
 import { MessageList } from '../../src/components/chat/MessageList';
@@ -295,15 +296,20 @@ describe('Chat Components Unit Tests', () => {
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       expect(screen.getByText('AI Chat')).toBeInTheDocument();
-      expect(screen.getByLabelText('Select AI Agent')).toBeInTheDocument();
       expect(screen.getByPlaceholderText(/Type your message/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument();
+      // Agent selector should not be present
+      expect(screen.queryByLabelText('Select AI Agent')).not.toBeInTheDocument();
     });
 
-    it('should send message with selected agent type', async () => {
+    it('should send message without agent type', async () => {
       const mockSendMessage = vi.fn();
       const mockUseChat = {
         messages: [],
@@ -317,18 +323,19 @@ describe('Chat Components Unit Tests', () => {
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
       const user = userEvent.setup();
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
-      // Select workout planning agent
-      const agentSelect = screen.getByLabelText('Select AI Agent');
-      await user.selectOptions(agentSelect, 'workout_planning');
-
-      // Type and send message
+      // Type and send message (no agent selection needed)
       const textarea = screen.getByPlaceholderText(/Type your message/i);
       await user.type(textarea, 'Create a workout plan');
       await user.click(screen.getByRole('button', { name: /send/i }));
 
-      expect(mockSendMessage).toHaveBeenCalledWith('Create a workout plan', 'workout_planning');
+      // Should be called without agent type parameter
+      expect(mockSendMessage).toHaveBeenCalledWith('Create a workout plan');
     });
 
     it('should display error message when error occurs', () => {
@@ -343,7 +350,11 @@ describe('Chat Components Unit Tests', () => {
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       expect(screen.getByText('Error')).toBeInTheDocument();
       expect(screen.getByText('Failed to send message')).toBeInTheDocument();
@@ -362,7 +373,11 @@ describe('Chat Components Unit Tests', () => {
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
       const user = userEvent.setup();
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       expect(screen.getByText('Failed to send message')).toBeInTheDocument();
 
@@ -372,7 +387,7 @@ describe('Chat Components Unit Tests', () => {
       expect(screen.queryByText('Failed to send message')).not.toBeInTheDocument();
     });
 
-    it('should disable agent selector and input when loading', () => {
+    it('should disable input when loading', () => {
       const mockUseChat = {
         messages: [],
         loading: true,
@@ -384,13 +399,15 @@ describe('Chat Components Unit Tests', () => {
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
-      const agentSelect = screen.getByLabelText('Select AI Agent');
       const textarea = screen.getByPlaceholderText(/Type your message/i);
       const sendButton = screen.getByRole('button', { name: /send/i });
 
-      expect(agentSelect).toBeDisabled();
       expect(textarea).toBeDisabled();
       expect(sendButton).toBeDisabled();
     });
@@ -417,7 +434,11 @@ describe('Chat Components Unit Tests', () => {
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
       const user = userEvent.setup();
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       const clearButton = screen.getByRole('button', { name: /clear chat/i });
       await user.click(clearButton);
@@ -437,7 +458,11 @@ describe('Chat Components Unit Tests', () => {
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       const clearButton = screen.getByRole('button', { name: /clear chat/i });
       expect(clearButton).toBeDisabled();
@@ -455,7 +480,11 @@ describe('Chat Components Unit Tests', () => {
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
 
-      render(<ChatPage />);
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
 
       expect(screen.getByText(/thinking/i)).toBeInTheDocument();
     });

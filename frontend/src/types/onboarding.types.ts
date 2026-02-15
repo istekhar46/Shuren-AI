@@ -38,3 +38,54 @@ export interface OnboardingStepResponse {
   is_complete: boolean;
   message: string;
 }
+/**
+ * Onboarding progress response
+ * Returned by GET /api/v1/onboarding/progress
+ * Contains current state, completion status, and metadata
+ */
+export interface OnboardingProgress {
+  current_state: number;
+  total_states: number;
+  completed_states: number[];
+  is_complete: boolean;
+  completion_percentage: number;
+  current_state_info: StateMetadata;
+}
+
+/**
+ * State metadata for UI rendering
+ * Provides information about each onboarding state
+ */
+export interface StateMetadata {
+  state_number: number;
+  name: string;
+  agent: string;
+  description: string;
+  required_fields: string[];
+}
+
+/**
+ * Onboarding chat request
+ * Sent to POST /api/v1/chat/onboarding
+ */
+export interface OnboardingChatRequest {
+  message: string;
+  current_state: number;
+}
+
+/**
+ * Onboarding chat response
+ * Returned by POST /api/v1/chat/onboarding
+ * Contains agent response and state update information
+ */
+export interface OnboardingChatResponse {
+  response: string;
+  agent_type: string;
+  state_updated: boolean;
+  new_state?: number;
+  is_complete: boolean;
+  progress: {
+    current_state: number;
+    completion_percentage: number;
+  };
+}

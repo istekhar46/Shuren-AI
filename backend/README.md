@@ -48,7 +48,7 @@ All tools internally call the REST API with validation, maintaining a single sou
 
 - Python 3.11+
 - Poetry (Python package manager)
-- PostgreSQL database
+- PostgreSQL database (local installation recommended for development)
 
 ### Setup
 
@@ -57,35 +57,66 @@ All tools internally call the REST API with validation, maintaining a single sou
    poetry install
    ```
 
-2. **Configure environment:**
+2. **Set up local databases:**
    ```bash
-   # Copy example config
-   cp .env.example .env
+   # Create separate development and test databases
+   cd scripts
+   .\setup_databases_simple.bat
+   cd ..
+   ```
+
+3. **Configure environment:**
+   ```bash
+   # Copy local development config
+   cp .env.local .env
    
-   # Edit .env and set:
-   # - DATABASE_URL (your PostgreSQL connection)
+   # Or manually edit .env and set:
+   # - DATABASE_URL=postgresql+asyncpg://postgres:PASSWORD@localhost:5432/shuren_dev_db
    # - JWT_SECRET_KEY (generate a secure key)
    # - LLM API keys (Anthropic/OpenAI/Google)
    ```
 
-3. **Run database migrations:**
+4. **Verify setup:**
+   ```bash
+   # Run verification script to ensure everything is configured correctly
+   poetry run python scripts/test_connection.py
+   ```
+
+5. **Run database migrations:**
    ```bash
    poetry run alembic upgrade head
    ```
 
-4. **Start the server:**
+6. **Start the server:**
    ```bash
-   # Windows
-   run_local.bat
+   # Windows/Linux/Mac
+   ./run_local.sh
    
-   # Linux/Mac
+   # Or manually:
    poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-5. **Access the API:**
+7. **Access the API:**
    - API: http://localhost:8000
    - Docs: http://localhost:8000/api/docs
    - ReDoc: http://localhost:8000/api/redoc
+
+### Important: Database Isolation
+
+This project uses **three separate databases** to prevent data loss:
+
+- **Production** (`defaultdb` on Aiven) - Your live production data
+- **Development** (`shuren_dev_db` on localhost) - For local development
+- **Testing** (`shuren_test_db` on localhost) - For running tests
+
+**Why?** Tests automatically drop all tables after each test. Using separate databases ensures:
+- ✅ Tests never affect your development data
+- ✅ Development never affects production data
+- ✅ Production database is safe from local operations
+
+**Setup complete?** See [SETUP_COMPLETE.md](SETUP_COMPLETE.md) for verification.
+
+See [DATABASE_SETUP.md](DATABASE_SETUP.md) for detailed information.
 
 ## API Endpoints
 
@@ -329,10 +360,25 @@ backend/
 
 ## Common Issues
 
+### Tables Being Dropped
+
+**Problem:** All tables are being dropped from your database.
+
+**Cause:** Tests run `drop_all()` after each test. If your `.env` points to production database, tests will drop production tables.
+
+**Solution:**
+1. Run `cd scripts && .\setup_databases_simple.bat` to create local databases
+2. Ensure `.env` uses local database (check with `grep DATABASE_URL .env`)
+3. Run `poetry run pytest tests/test_database_isolation.py -v` to verify
+4. See [DATABASE_FIX_COMPLETE.md](DATABASE_FIX_COMPLETE.md) for complete fix details
+
+**Status**: ✅ Fixed - Three-database architecture implemented with proper isolation
+
 ### Database Connection Error
 - Verify DATABASE_URL in .env is correct
 - Ensure PostgreSQL is running
 - For cloud databases (Aiven, etc.), asyncpg handles SSL automatically
+- For local development, use: `postgresql+asyncpg://postgres:PASSWORD@localhost:5432/shuren_dev_db`
 
 ### Migration Conflicts
 - If migrations are out of sync, use `reset_db.py` to start fresh
@@ -341,3 +387,12 @@ backend/
 ### Import Errors
 - Make sure you're using Poetry: `poetry run <command>`
 - Or activate the shell: `poetry shell`
+
+### "Database does not exist" Error
+- Run `cd scripts && .\setup_databases_simple.bat` to create databases
+- Verify DATABASE_URL in .env points to correct database
+
+### Tests Failing
+- Run `poetry run pytest tests/test_database_isolation.py -v` to verify test setup
+- Ensure `shuren_test_db` database exists
+- Check that tests are using correct database (should be `shuren_test_db`)

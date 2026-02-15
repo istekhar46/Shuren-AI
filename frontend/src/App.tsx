@@ -1,9 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { UserProvider } from './contexts/UserContext';
 import { VoiceProvider } from './contexts/VoiceContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
+import { RootRedirect } from './components/common/RootRedirect';
+import { NotFoundRedirect } from './components/common/NotFoundRedirect';
 import { MainLayout } from './components/layout/MainLayout';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import './App.css';
@@ -14,7 +16,7 @@ import { RegisterPage } from './pages/RegisterPage';
 
 // Lazy load protected pages for code splitting
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const OnboardingPage = lazy(() => import('./pages/OnboardingPage').then(m => ({ default: m.OnboardingPage })));
+const OnboardingChatPage = lazy(() => import('./pages/OnboardingChatPage').then(m => ({ default: m.OnboardingChatPage })));
 const ChatPage = lazy(() => import('./pages/ChatPage').then(m => ({ default: m.ChatPage })));
 const VoicePage = lazy(() => import('./pages/VoicePage').then(m => ({ default: m.VoicePage })));
 const MealsPage = lazy(() => import('./pages/MealsPage').then(m => ({ default: m.MealsPage })));
@@ -28,15 +30,29 @@ function App() {
           <VoiceProvider>
             <Routes>
               {/* Public routes */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/" element={<RootRedirect />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
 
-              {/* Protected routes with layout and lazy loading */}
+              {/* Onboarding route - accessible during onboarding */}
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute requireOnboardingComplete={false}>
+                    <MainLayout>
+                      <Suspense fallback={<LoadingSpinner message="Loading onboarding..." />}>
+                        <OnboardingChatPage />
+                      </Suspense>
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Protected routes - require onboarding completion */}
               <Route
                 path="/dashboard"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireOnboardingComplete={true}>
                     <MainLayout>
                       <Suspense fallback={<LoadingSpinner message="Loading dashboard..." />}>
                         <DashboardPage />
@@ -46,21 +62,9 @@ function App() {
                 }
               />
               <Route
-                path="/onboarding"
-                element={
-                  <ProtectedRoute>
-                    <MainLayout>
-                      <Suspense fallback={<LoadingSpinner message="Loading onboarding..." />}>
-                        <OnboardingPage />
-                      </Suspense>
-                    </MainLayout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
                 path="/chat"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireOnboardingComplete={true}>
                     <MainLayout>
                       <Suspense fallback={<LoadingSpinner message="Loading chat..." />}>
                         <ChatPage />
@@ -72,7 +76,7 @@ function App() {
               <Route
                 path="/voice"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireOnboardingComplete={true}>
                     <MainLayout>
                       <Suspense fallback={<LoadingSpinner message="Loading voice session..." />}>
                         <VoicePage />
@@ -84,7 +88,7 @@ function App() {
               <Route
                 path="/meals"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireOnboardingComplete={true}>
                     <MainLayout>
                       <Suspense fallback={<LoadingSpinner message="Loading meals..." />}>
                         <MealsPage />
@@ -96,7 +100,7 @@ function App() {
               <Route
                 path="/workouts"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireOnboardingComplete={true}>
                     <MainLayout>
                       <Suspense fallback={<LoadingSpinner message="Loading workouts..." />}>
                         <WorkoutsPage />
@@ -107,7 +111,7 @@ function App() {
               />
 
               {/* 404 fallback */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<NotFoundRedirect />} />
             </Routes>
           </VoiceProvider>
         </UserProvider>

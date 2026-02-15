@@ -142,27 +142,27 @@ This implementation plan breaks down the agent orchestration refinement into dis
   - Verify logging includes all required fields
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Integration testing
-  - [ ] 7.1 Write integration test for onboarding flow
+- [x] 7. Integration testing
+  - [x] 7.1 Write integration test for onboarding flow
     - Test complete onboarding flow with agent routing
     - Verify specialized agents are accessible
     - Verify general agent is blocked
     - Verify state transitions work correctly
     - _Requirements: 2.1, 5.2_
   
-  - [ ] 7.2 Write integration test for post-onboarding flow
+  - [x] 7.2 Write integration test for post-onboarding flow
     - Test post-onboarding flow with general agent
     - Verify specialized agents are blocked
     - Verify general agent has full context
     - _Requirements: 2.2, 5.2_
   
-  - [ ] 7.3 Write integration test for access violations
+  - [x] 7.3 Write integration test for access violations
     - Test all access control violation scenarios
     - Verify error messages are correct
     - Verify logging is correct
     - _Requirements: 2.3, 5.2_
   
-  - [ ] 7.4 Write integration test with real database
+  - [x] 7.4 Write integration test with real database
     - Test with real user and onboarding state
     - Test context loading
     - Test agent creation
@@ -206,20 +206,20 @@ This implementation plan breaks down the agent orchestration refinement into dis
     - Check for memory leaks
     - _Requirements: 4.1_
 
-- [ ] 10. Documentation updates
-  - [ ] 10.1 Update AgentOrchestrator docstrings
+- [x] 10. Documentation updates
+  - [x] 10.1 Update AgentOrchestrator docstrings
     - Update class docstring
     - Update route_query() docstring
     - Add docstrings for new methods
     - _Requirements: All_
   
-  - [ ] 10.2 Update API documentation
+  - [x] 10.2 Update API documentation
     - Document access control rules
     - Document error messages
     - Document logging format
     - _Requirements: All_
   
-  - [ ] 10.3 Create migration guide
+  - [x] 10.3 Create migration guide
     - Document changes from previous version
     - Provide examples of new behavior
     - Document breaking changes (if any)

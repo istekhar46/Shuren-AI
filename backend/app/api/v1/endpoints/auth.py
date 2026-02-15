@@ -91,10 +91,10 @@ async def register(
     db.add(new_user)
     await db.flush()  # Flush to get user.id
     
-    # Create onboarding state at step 0
+    # Create onboarding state at step 1
     onboarding_state = OnboardingState(
         user_id=new_user.id,
-        current_step=0,
+        current_step=1,
         is_complete=False,
         step_data={}
     )
@@ -239,7 +239,7 @@ async def google_auth(
         # Create onboarding state for new user
         onboarding_state = OnboardingState(
             user_id=new_user.id,
-            current_step=0,
+            current_step=1,
             is_complete=False,
             step_data={}
         )

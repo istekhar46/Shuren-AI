@@ -1,5 +1,4 @@
 import api from './api';
-import type { WorkoutSession, WorkoutLog } from '../types';
 import type { 
   WorkoutPlanResponse, 
   WorkoutDayResponse, 

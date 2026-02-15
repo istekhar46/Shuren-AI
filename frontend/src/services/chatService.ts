@@ -1,5 +1,5 @@
 import api from './api';
-import type { ChatRequest, ChatResponse, ChatHistoryResponse } from '../types/api';
+import type { ChatResponse, ChatHistoryResponse, ChatServiceError } from '../types/api';
 
 /**
  * Chat Service
@@ -10,31 +10,54 @@ import type { ChatRequest, ChatResponse, ChatHistoryResponse } from '../types/ap
  */
 export const chatService = {
   /**
-   * Send a message to an AI agent
+   * Send a message to an AI agent (post-onboarding)
    * 
-   * Sends a text message to the backend which routes it to the appropriate
-   * AI agent. The backend manages conversation context automatically and
-   * returns the conversation_id in the response for tracking.
+   * Sends a text message to the backend which routes it to the general agent.
+   * This method is for post-onboarding chat only. The backend manages 
+   * conversation context automatically and returns the conversation_id 
+   * in the response for tracking.
+   * 
+   * Note: agentType parameter is omitted for post-onboarding chat as the
+   * backend enforces routing to the general agent only.
    * 
    * @param {string} message - User's message text
-   * @param {string} [agentType] - Type of agent to route to (optional, backend will auto-route if not specified)
    * @returns {Promise<ChatResponse>} Agent's response with conversation metadata and tools used
-   * @throws {Error} If the request fails or user is not authenticated
+   * @throws {ChatServiceError} Structured error with status, code, message, and redirect info
    * 
    * @example
-   * const response = await chatService.sendMessage('What should I eat for lunch?', 'diet_planning');
-   * console.log(response.response); // Agent's text response
-   * console.log(response.conversation_id); // For tracking conversation
+   * try {
+   *   const response = await chatService.sendMessage('What should I eat for lunch?');
+   *   console.log(response.response); // Agent's text response
+   *   console.log(response.conversation_id); // For tracking conversation
+   * } catch (error) {
+   *   if (error.status === 403 && error.code === 'ONBOARDING_REQUIRED') {
+   *     // Redirect to onboarding
+   *     navigate(error.redirect || '/onboarding');
+   *   }
+   * }
    */
-  async sendMessage(
-    message: string,
-    agentType?: string
-  ): Promise<ChatResponse> {
-    const response = await api.post<ChatResponse>('/chat/chat', {
-      message,
-      agent_type: agentType,
-    });
-    return response.data;
+  async sendMessage(message: string): Promise<ChatResponse> {
+    try {
+      const response = await api.post<ChatResponse>('/chat/chat', {
+        message,
+        // agent_type omitted - backend forces general agent for post-onboarding
+      });
+      return response.data;
+    } catch (error: any) {
+      // Handle 403 errors with structured error details
+      if (error.response?.status === 403) {
+        const detail = error.response.data?.detail;
+        const structuredError: ChatServiceError = {
+          status: 403,
+          code: detail?.error_code,
+          message: detail?.message || 'Access forbidden',
+          redirect: detail?.redirect,
+        };
+        throw structuredError;
+      }
+      // Re-throw other errors as-is
+      throw error;
+    }
   },
 
   /**
@@ -85,8 +108,10 @@ export const chatService = {
    * Uses EventSource for SSE connection. Authentication token is passed as
    * a query parameter due to EventSource limitations with custom headers.
    * 
+   * Note: For post-onboarding chat, agentType is omitted as backend routes
+   * to general agent only.
+   * 
    * @param {string} message - User's message text
-   * @param {string | undefined} agentType - Type of agent to route to (optional)
    * @param {(chunk: string) => void} onChunk - Callback invoked for each chunk of the response
    * @param {(agentType: string) => void} onComplete - Callback invoked when streaming completes, receives agent type
    * @param {(error: Error) => void} onError - Callback invoked on errors
@@ -95,7 +120,6 @@ export const chatService = {
    * @example
    * const eventSource = chatService.streamMessage(
    *   'Tell me about protein intake',
-   *   'diet_planning',
    *   (chunk) => console.log('Received:', chunk),
    *   (agentType) => console.log('Complete! Agent:', agentType),
    *   (error) => console.error('Error:', error)
@@ -106,7 +130,6 @@ export const chatService = {
    */
   streamMessage(
     message: string,
-    agentType: string | undefined,
     onChunk: (chunk: string) => void,
     onComplete: (agentType: string) => void,
     onError: (error: Error) => void
@@ -122,11 +145,9 @@ export const chatService = {
       url.searchParams.append('token', token);
     }
     
-    // Add message and agent_type as query params
+    // Add message as query param
     url.searchParams.append('message', message);
-    if (agentType) {
-      url.searchParams.append('agent_type', agentType);
-    }
+    // agent_type omitted - backend forces general agent for post-onboarding
 
     const eventSource = new EventSource(url.toString());
 

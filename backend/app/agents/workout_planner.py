@@ -451,7 +451,7 @@ class WorkoutPlannerAgent(BaseAgent):
             return json.dumps(result)
         
         @tool
-        async def save_fitness_goals_tool(goals: list) -> str:
+        async def save_fitness_goals_tool(goals: list[dict]) -> str:
             """Save user's fitness goals during onboarding (State 2).
             
             Args:
@@ -467,9 +467,9 @@ class WorkoutPlannerAgent(BaseAgent):
         
         @tool
         async def save_workout_constraints_tool(
-            equipment: list,
-            injuries: list,
-            limitations: list,
+            equipment: list[str],
+            injuries: list[str],
+            limitations: list[str],
             target_weight_kg: float = None,
             target_body_fat_percentage: float = None
         ) -> str:

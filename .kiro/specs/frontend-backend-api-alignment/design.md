@@ -1,143 +1,163 @@
-# Design Document
+# Design Document: Frontend-Backend API Alignment
 
 ## Overview
 
-This design document specifies the implementation details for aligning the Shuren frontend API service layer with the actual backend API endpoints. The design addresses all identified mismatches and provides a complete mapping of frontend service methods to backend endpoints.
+This design document specifies the frontend architecture and implementation patterns required to integrate with the validated backend onboarding system. The frontend will implement a React-based (or similar framework) single-page application that enforces mandatory onboarding, manages user state, routes API requests correctly, and provides rich visual feedback throughout the user journey.
+
+The design focuses on three core areas:
+1. **State Management**: Tracking onboarding status and user authentication state
+2. **API Integration**: Correct endpoint routing and error handling
+3. **UI Components**: Navigation locks, progress indicators, and chat interface
 
 ## Architecture
 
-### Component Structure
+### High-Level Architecture
 
 ```
-frontend/src/services/
-├── api.ts                    # Base axios instance with interceptors
-├── authService.ts            # Authentication operations
-├── onboardingService.ts      # Onboarding flow management
-├── profileService.ts         # User profile operations
-├── chatService.ts            # AI chat interactions
-├── mealService.ts            # Meal plan and schedule operations
-├── dishService.ts            # NEW: Dish search and details
-├── mealTemplateService.ts    # NEW: Meal template operations
-├── shoppingListService.ts    # NEW: Shopping list generation
-├── workoutService.ts         # Workout plan and schedule operations
-└── voiceService.ts           # Voice session management
+┌─────────────────────────────────────────────────────────────┐
+│                     Frontend Application                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Auth       │  │  Onboarding  │  │   Main App   │      │
+│  │   Module     │  │   Module     │  │   Module     │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│         │                  │                  │              │
+│         └──────────────────┼──────────────────┘              │
+│                            │                                 │
+│                   ┌────────▼────────┐                        │
+│                   │  State Manager  │                        │
+│                   │  (Redux/Zustand)│                        │
+│                   └────────┬────────┘                        │
+│                            │                                 │
+│                   ┌────────▼────────┐                        │
+│                   │   API Client    │                        │
+│                   └────────┬────────┘                        │
+└────────────────────────────┼──────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Backend API    │
+                    │  (FastAPI)      │
+                    └─────────────────┘
 ```
 
-### Design Principles
+### Component Hierarchy
 
-1. **Single Responsibility**: Each service handles one domain
-2. **Type Safety**: All requests and responses are strongly typed
-3. **Error Handling**: Consistent error handling across all services
-4. **Separation of Concerns**: API layer separated from business logic
-5. **Backward Compatibility**: Maintain existing method signatures where possible
+```
+App
+├── AuthProvider
+│   ├── LoginPage
+│   └── RegisterPage
+├── OnboardingGuard (Route Guard)
+│   ├── OnboardingPage
+│   │   ├── ProgressIndicator
+│   │   ├── ChatInterface
+│   │   │   ├── MessageList
+│   │   │   ├── MessageInput
+│   │   │   └── LoadingIndicator
+│   │   └── WelcomeMessage
+│   └── MainApp (Protected)
+│       ├── NavigationMenu (with locks)
+│       ├── ChatPage
+│       ├── DashboardPage
+│       ├── ProfilePage
+│       └── SettingsPage
+```
 
-## API Endpoint Mapping
+## Components and Interfaces
 
-### 1. Authentication Service (`authService.ts`)
+### 1. State Management
 
-**Status**: ✅ Already Correct - No changes needed
+#### User State Interface
 
-**Endpoints**:
-- `POST /auth/register` → `register(email, password)`
-- `POST /auth/login` → `login(email, password)`
-- `GET /auth/me` → `getCurrentUser()` (NEW method to add)
-
-**Type Definitions**:
 ```typescript
-interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  user_id: string;
-}
-
-interface UserResponse {
+interface UserState {
   id: string;
   email: string;
-  full_name: string;
-  oauth_provider: string | null;
-  is_active: boolean;
+  onboarding_completed: boolean;
   created_at: string;
+  updated_at: string;
 }
-```
 
-### 2. Onboarding Service (`onboardingService.ts`)
-
-**Changes Required**: Update endpoint from `/progress` to `/state`
-
-**Endpoints**:
-- `GET /onboarding/state` → `getOnboardingState()`
-- `POST /onboarding/step` → `saveStep(step, data)`
-- `POST /onboarding/complete` → `completeOnboarding()` (NEW)
-
-**Type Definitions**:
-```typescript
-interface OnboardingStateResponse {
-  id: string;
-  user_id: string;
-  current_step: number;
+interface OnboardingProgress {
+  current_state: number;
+  total_states: number;
+  completed_states: number[];
+  completion_percentage: number;
   is_complete: boolean;
-  step_data: Record<string, any>;
+  can_complete: boolean;
 }
 
-interface OnboardingStepRequest {
-  step: number;
-  data: Record<string, any>;
+interface StateMetadata {
+  state_number: number;
+  name: string;
+  agent: string;
+  description: string;
+  required_fields: string[];
+}
+
+interface AppState {
+  user: UserState | null;
+  isAuthenticated: boolean;
+  onboardingProgress: OnboardingProgress | null;
+  stateMetadata: Record<number, StateMetadata>;
+  currentChatMessages: ChatMessage[];
+  isLoading: boolean;
+  error: string | null;
 }
 ```
 
+#### State Management Actions
 
-### 3. Profile Service (`profileService.ts`)
-
-**Changes Required**: 
-- Change PUT to PATCH
-- Remove `unlockProfile()` method
-- Add `lockProfile()` method
-- Update request structure for updates
-
-**Endpoints**:
-- `GET /profiles/me` → `getProfile()`
-- `PATCH /profiles/me` → `updateProfile(updates, reason)`
-- `POST /profiles/me/lock` → `lockProfile()` (NEW)
-
-**Type Definitions**:
 ```typescript
-interface ProfileUpdateRequest {
-  reason: string;
-  updates: Record<string, any>;
-}
+// Authentication actions
+type AuthAction =
+  | { type: 'LOGIN_SUCCESS'; payload: UserState }
+  | { type: 'LOGOUT' }
+  | { type: 'UPDATE_USER'; payload: Partial<UserState> };
 
-interface UserProfileResponse {
-  id: string;
-  user_id: string;
-  is_locked: boolean;
-  fitness_level: string;
-  fitness_goals: FitnessGoal[];
-  physical_constraints: PhysicalConstraint[];
-  dietary_preferences: DietaryPreferences | null;
-  meal_plan: MealPlan | null;
-  meal_schedules: MealSchedule[];
-  workout_schedules: WorkoutSchedule[];
-  hydration_preferences: HydrationPreferences | null;
-  lifestyle_baseline: LifestyleBaseline | null;
+// Onboarding actions
+type OnboardingAction =
+  | { type: 'LOAD_PROGRESS'; payload: OnboardingProgress }
+  | { type: 'UPDATE_STATE'; payload: number }
+  | { type: 'COMPLETE_ONBOARDING' }
+  | { type: 'LOAD_METADATA'; payload: Record<number, StateMetadata> };
+
+// Chat actions
+type ChatAction =
+  | { type: 'ADD_MESSAGE'; payload: ChatMessage }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'CLEAR_MESSAGES' };
+```
+
+### 2. API Client
+
+#### API Client Interface
+
+```typescript
+interface APIClient {
+  // Authentication
+  login(email: string, password: string): Promise<LoginResponse>;
+  register(email: string, password: string): Promise<RegisterResponse>;
+  logout(): Promise<void>;
+  
+  // User
+  getCurrentUser(): Promise<UserState>;
+  
+  // Onboarding
+  getOnboardingProgress(): Promise<OnboardingProgress>;
+  sendOnboardingMessage(message: string, currentState: number): Promise<OnboardingChatResponse>;
+  
+  // Chat
+  sendChatMessage(message: string): Promise<ChatResponse>;
+  getChatHistory(limit?: number): Promise<ChatHistoryResponse>;
+  deleteChatHistory(): Promise<void>;
 }
 ```
 
-### 4. Chat Service (`chatService.ts`)
+#### Request/Response Types
 
-**Changes Required**:
-- Remove `conversation_id` from request
-- Extract `conversation_id` from response
-- Change history endpoint to use `limit` param
-- Fix streaming to use POST body
-- Add `clearHistory()` method
-
-**Endpoints**:
-- `POST /chat/chat` → `sendMessage(message, agentType)`
-- `POST /chat/stream` → `streamMessage(message, agentType, callbacks)`
-- `GET /chat/history?limit=N` → `getHistory(limit)`
-- `DELETE /chat/history` → `clearHistory()` (NEW)
-
-**Type Definitions**:
 ```typescript
 interface ChatRequest {
   message: string;
@@ -151,1753 +171,1037 @@ interface ChatResponse {
   tools_used: string[];
 }
 
-interface ChatHistoryResponse {
-  messages: MessageDict[];
-  total: number;
+interface OnboardingChatRequest {
+  message: string;
+  current_state: number;
 }
 
-interface MessageDict {
-  role: string;
-  content: string;
-  agent_type: string | null;
-  created_at: string;
-}
-```
-
-
-### 5. Meal Service (`mealService.ts`)
-
-**Changes Required**:
-- Remove date filtering from `getMealPlan()`
-- Remove `getMealDetails(mealId)` method
-- Move dish search to separate service
-- Move shopping list to separate service
-- Add meal schedule methods
-
-**Endpoints**:
-- `GET /meals/plan` → `getMealPlan()`
-- `PATCH /meals/plan` → `updateMealPlan(updates)` (NEW)
-- `GET /meals/schedule` → `getMealSchedule()` (NEW)
-- `PATCH /meals/schedule` → `updateMealSchedule(updates)` (NEW)
-- `GET /meals/today` → `getTodayMeals()` (NEW)
-- `GET /meals/next` → `getNextMeal()` (NEW)
-
-**Type Definitions**:
-```typescript
-interface MealPlanResponse {
-  id: string;
-  meals_per_day: number;
-  daily_calories_target: number;
-  daily_calories_min: number;
-  daily_calories_max: number;
-  protein_grams_target: number;
-  carbs_grams_target: number;
-  fats_grams_target: number;
-  protein_percentage: number;
-  carbs_percentage: number;
-  fats_percentage: number;
-  plan_rationale: string;
-  is_locked: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MealScheduleResponse {
-  meals: MealScheduleItemResponse[];
-}
-
-interface MealScheduleItemResponse {
-  id: string;
-  meal_number: number;
-  meal_name: string;
-  scheduled_time: string;
-  notification_offset_minutes: number;
-  earliest_time: string;
-  latest_time: string;
-  is_active: boolean;
-}
-```
-
-### 6. Dish Service (`dishService.ts`) - NEW SERVICE
-
-**Purpose**: Handle dish search and details (moved from mealService)
-
-**Endpoints**:
-- `GET /dishes/` → `listDishes(filters)`
-- `GET /dishes/search` → `searchDishes(filters)`
-- `GET /dishes/{dish_id}` → `getDishDetails(dishId)`
-
-**Type Definitions**:
-```typescript
-interface DishSearchFilters {
-  meal_type?: string;
-  diet_type?: string;
-  max_prep_time?: number;
-  max_calories?: number;
-  limit?: number;
-  offset?: number;
-}
-
-interface DishSummaryResponse {
-  id: string;
-  name: string;
-  name_hindi: string;
-  meal_type: string;
-  cuisine_type: string;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fats_g: number;
-  prep_time_minutes: number;
-  cook_time_minutes: number;
-  total_time_minutes: number;
-  difficulty_level: string;
-  is_vegetarian: boolean;
-  is_vegan: boolean;
-}
-
-interface DishResponse extends DishSummaryResponse {
-  description: string;
-  dish_category: string;
-  serving_size_g: number;
-  fiber_g: number;
-  is_gluten_free: boolean;
-  is_dairy_free: boolean;
-  is_nut_free: boolean;
-  contains_allergens: string[];
-  is_active: boolean;
-  popularity_score: number;
-  ingredients: DishIngredient[];
-}
-```
-
-
-### 7. Meal Template Service (`mealTemplateService.ts`) - NEW SERVICE
-
-**Purpose**: Handle meal templates with assigned dishes
-
-**Endpoints**:
-- `GET /meal-templates/today` → `getTodayMealsWithDishes()`
-- `GET /meal-templates/next` → `getNextMealWithDishes()`
-- `GET /meal-templates/template` → `getMealTemplate(weekNumber?)`
-- `POST /meal-templates/template/regenerate` → `regenerateMealTemplate(preferences?, weekNumber?)`
-
-**Type Definitions**:
-```typescript
-interface TodayMealsResponse {
-  date: string;
-  day_of_week: number;
-  day_name: string;
-  meals: MealSlot[];
-  total_calories: number;
-  total_protein_g: number;
-  total_carbs_g: number;
-  total_fats_g: number;
-}
-
-interface MealSlot {
-  meal_name: string;
-  scheduled_time: string;
-  day_of_week: number;
-  primary_dish: DishSummaryResponse;
-  alternative_dishes: DishSummaryResponse[];
-}
-
-interface NextMealResponse {
-  meal_name: string;
-  scheduled_time: string;
-  time_until_meal_minutes: number;
-  primary_dish: DishSummaryResponse;
-  alternative_dishes: DishSummaryResponse[];
-}
-
-interface MealTemplateResponse {
-  id: string;
-  week_number: number;
-  is_active: boolean;
-  days: DayMeals[];
-  created_at: string;
-  updated_at: string;
-}
-
-interface TemplateRegenerateRequest {
-  preferences?: string;
-  week_number?: number;
-}
-```
-
-### 8. Shopping List Service (`shoppingListService.ts`) - NEW SERVICE
-
-**Purpose**: Generate shopping lists from meal templates
-
-**Endpoints**:
-- `GET /shopping-list/?weeks=N` → `getShoppingList(weeks)`
-
-**Type Definitions**:
-```typescript
-interface ShoppingListResponse {
-  week_number: number;
-  start_date: string;
-  end_date: string;
-  categories: IngredientCategory[];
-  total_items: number;
-}
-
-interface IngredientCategory {
-  category: string;
-  ingredients: ShoppingListIngredient[];
-}
-
-interface ShoppingListIngredient {
-  ingredient_id: string;
-  name: string;
-  name_hindi: string;
-  category: string;
-  total_quantity: number;
-  unit: string;
-  is_optional: boolean;
-  used_in_dishes: string[];
-}
-```
-
-
-### 9. Workout Service (`workoutService.ts`)
-
-**Changes Required**:
-- Remove `logSet()`, `completeWorkout()`, `getHistory()` methods
-- Add missing methods for workout plan and day retrieval
-- Keep existing schedule methods
-
-**Endpoints**:
-- `GET /workouts/plan` → `getWorkoutPlan()` (NEW)
-- `GET /workouts/plan/day/{day_number}` → `getWorkoutDay(dayNumber)` (NEW)
-- `GET /workouts/today` → `getTodayWorkout()`
-- `GET /workouts/week` → `getWeekWorkouts()` (NEW)
-- `GET /workouts/schedule` → `getWorkoutSchedule()`
-- `PATCH /workouts/schedule` → `updateWorkoutSchedule(updates)` (NEW)
-- `PATCH /workouts/plan` → `updateWorkoutPlan(updates)` (NEW)
-
-**Type Definitions**:
-```typescript
-interface WorkoutPlanResponse {
-  id: string;
-  plan_name: string;
-  plan_description: string;
-  duration_weeks: number;
-  days_per_week: number;
-  plan_rationale: string;
-  is_locked: boolean;
-  workout_days: WorkoutDayResponse[];
-  created_at: string;
-  updated_at: string;
-}
-
-interface WorkoutDayResponse {
-  id: string;
-  day_number: number;
-  day_name: string;
-  muscle_groups: string[];
-  workout_type: string;
-  description: string;
-  estimated_duration_minutes: number;
-  exercises: WorkoutExercise[];
-}
-
-interface WorkoutExercise {
-  id: string;
-  exercise_order: number;
-  sets: number;
-  reps_target: number;
-  weight_kg: number;
-  rest_seconds: number;
-  exercise: ExerciseLibrary;
-}
-
-interface ExerciseLibrary {
-  id: string;
-  exercise_name: string;
-  exercise_type: string;
-  primary_muscle_group: string;
-  gif_url: string;
-}
-
-interface WorkoutScheduleResponse {
-  id: string;
-  day_of_week: number;
-  scheduled_time: string;
-  enable_notifications: boolean;
-}
-```
-
-### 10. Voice Service (`voiceService.ts`)
-
-**Status**: ✅ Already Correct - Minor additions needed
-
-**Endpoints**:
-- `POST /voice-sessions/start` → `startSession(agentType)`
-- `GET /voice-sessions/{room_name}/status` → `getSessionStatus(roomName)`
-- `DELETE /voice-sessions/{room_name}` → `endSession(roomName)`
-- `GET /voice-sessions/active` → `getActiveSessions()` (NEW)
-
-**Type Definitions**:
-```typescript
-interface VoiceSessionRequest {
+interface OnboardingChatResponse {
+  response: string;
   agent_type: string;
+  state_updated: boolean;
+  new_state: number | null;
+  progress: OnboardingProgress;
 }
 
-interface VoiceSessionResponse {
-  room_name: string;
-  token: string;
-  livekit_url: string;
-  agent_type: string;
-  expires_at: string;
-}
-
-interface VoiceSessionStatus {
-  room_name: string;
-  active: boolean;
-  participants: number;
-  agent_connected: boolean;
-  created_at: string | null;
-}
-
-interface ActiveSessionsResponse {
-  sessions: SessionSummary[];
-}
-
-interface SessionSummary {
-  room_name: string;
-  agent_type: string;
-  participants: number;
-  created_at: string | null;
+interface ErrorResponse {
+  message: string;
+  error_code: string;
+  redirect?: string;
+  onboarding_progress?: {
+    current_state: number;
+    completion_percentage: number;
+  };
 }
 ```
 
-
-## Implementation Details
-
-### Error Handling Strategy
-
-All services will use a consistent error handling pattern:
+#### API Client Implementation Pattern
 
 ```typescript
-try {
-  const response = await api.get('/endpoint');
-  return response.data;
-} catch (error) {
-  if (axios.isAxiosError(error)) {
-    if (error.response) {
-      // Backend returned error response
-      const status = error.response.status;
-      const message = error.response.data?.detail || 'An error occurred';
-      
-      if (status === 401) {
-        // Handled by axios interceptor
-        throw new Error('Unauthorized');
-      } else if (status >= 400 && status < 500) {
-        // Client error
-        throw new Error(message);
-      } else if (status >= 500) {
-        // Server error
-        throw new Error('Server error. Please try again later.');
-      }
-    } else if (error.request) {
-      // Network error
-      throw new Error('Network error. Please check your connection.');
-    }
+class APIClient {
+  private baseURL: string;
+  private authToken: string | null;
+  
+  constructor(baseURL: string) {
+    this.baseURL = baseURL;
+    this.authToken = this.loadToken();
   }
-  throw error;
-}
-```
-
-### Type Definition Organization
-
-Create a new `types/api.ts` file to centralize all API-related type definitions:
-
-```typescript
-// types/api.ts
-export * from './auth.types';
-export * from './onboarding.types';
-export * from './profile.types';
-export * from './chat.types';
-export * from './meal.types';
-export * from './dish.types';
-export * from './mealTemplate.types';
-export * from './shoppingList.types';
-export * from './workout.types';
-export * from './voice.types';
-```
-
-### Axios Instance Configuration
-
-The base `api.ts` configuration remains unchanged:
-
-```typescript
-import axios from 'axios';
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor: Add JWT token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor: Handle 401 errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
-export default api;
-```
-
-
-## Service Implementation Examples
-
-### Example 1: Updated Onboarding Service
-
-```typescript
-// services/onboardingService.ts
-import api from './api';
-import type { 
-  OnboardingStateResponse, 
-  OnboardingStepRequest,
-  OnboardingStepResponse,
-  UserProfileResponse 
-} from '../types/api';
-
-export const onboardingService = {
-  /**
-   * Get current onboarding state
-   * @returns Current onboarding progress
-   */
-  async getOnboardingState(): Promise<OnboardingStateResponse> {
-    const response = await api.get<OnboardingStateResponse>('/onboarding/state');
-    return response.data;
-  },
-
-  /**
-   * Save onboarding step data
-   * @param step - Step number
-   * @param data - Step data
-   * @returns Updated onboarding state
-   */
-  async saveStep(step: number, data: Record<string, any>): Promise<OnboardingStepResponse> {
-    const payload: OnboardingStepRequest = { step, data };
-    const response = await api.post<OnboardingStepResponse>('/onboarding/step', payload);
-    return response.data;
-  },
-
-  /**
-   * Complete onboarding and create user profile
-   * @returns Created user profile
-   */
-  async completeOnboarding(): Promise<UserProfileResponse> {
-    const response = await api.post<UserProfileResponse>('/onboarding/complete');
-    return response.data;
-  },
-
-  /**
-   * Legacy method for backward compatibility
-   * Maps to getOnboardingState()
-   */
-  async getProgress(): Promise<{ currentStep: number; completed: boolean }> {
-    const state = await this.getOnboardingState();
-    return {
-      currentStep: state.current_step,
-      completed: state.is_complete,
+  
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(this.authToken && { 'Authorization': `Bearer ${this.authToken}` }),
+      ...options.headers,
     };
-  },
-};
-```
-
-### Example 2: Updated Profile Service
-
-```typescript
-// services/profileService.ts
-import api from './api';
-import type { 
-  UserProfileResponse, 
-  ProfileUpdateRequest 
-} from '../types/api';
-
-export const profileService = {
-  /**
-   * Get current user's profile
-   * @returns User profile with all relationships
-   */
-  async getProfile(): Promise<UserProfileResponse> {
-    const response = await api.get<UserProfileResponse>('/profiles/me');
-    return response.data;
-  },
-
-  /**
-   * Update user's profile
-   * @param updates - Fields to update
-   * @param reason - Reason for update (required for locked profiles)
-   * @returns Updated user profile
-   */
-  async updateProfile(
-    updates: Record<string, any>, 
-    reason: string = 'User requested update'
-  ): Promise<UserProfileResponse> {
-    const payload: ProfileUpdateRequest = { updates, reason };
-    const response = await api.patch<UserProfileResponse>('/profiles/me', payload);
-    return response.data;
-  },
-
-  /**
-   * Lock user's profile to prevent modifications
-   * @returns Updated user profile with is_locked=true
-   */
-  async lockProfile(): Promise<UserProfileResponse> {
-    const response = await api.post<UserProfileResponse>('/profiles/me/lock');
-    return response.data;
-  },
-};
-```
-
-
-### Example 3: Updated Chat Service
-
-```typescript
-// services/chatService.ts
-import api from './api';
-import type { 
-  ChatRequest, 
-  ChatResponse, 
-  ChatHistoryResponse 
-} from '../types/api';
-
-export const chatService = {
-  /**
-   * Send a message to an AI agent
-   * @param message - User's message text
-   * @param agentType - Type of agent to route to (optional)
-   * @returns Agent's response with conversation metadata
-   */
-  async sendMessage(
-    message: string,
-    agentType?: string
-  ): Promise<ChatResponse> {
-    const payload: ChatRequest = {
-      message,
-      agent_type: agentType,
-    };
-    const response = await api.post<ChatResponse>('/chat/chat', payload);
-    return response.data;
-  },
-
-  /**
-   * Get chat history
-   * @param limit - Maximum number of messages to return
-   * @returns Chat history with messages and total count
-   */
-  async getHistory(limit: number = 50): Promise<ChatHistoryResponse> {
-    const response = await api.get<ChatHistoryResponse>('/chat/history', {
-      params: { limit },
+    
+    const response = await fetch(`${this.baseURL}${endpoint}`, {
+      ...options,
+      headers,
     });
-    return response.data;
-  },
-
-  /**
-   * Clear all chat history
-   * @returns Success status
-   */
-  async clearHistory(): Promise<{ status: string }> {
-    const response = await api.delete<{ status: string }>('/chat/history');
-    return response.data;
-  },
-
-  /**
-   * Stream a message to an agent using Server-Sent Events
-   * @param message - User's message text
-   * @param agentType - Type of agent to route to (optional)
-   * @param onChunk - Callback for each chunk
-   * @param onComplete - Callback when complete
-   * @param onError - Callback for errors
-   * @returns EventSource instance
-   */
-  streamMessage(
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new APIError(response.status, error);
+    }
+    
+    return response.json();
+  }
+  
+  async sendOnboardingMessage(
     message: string,
-    agentType: string | undefined,
-    onChunk: (chunk: string) => void,
-    onComplete: (agentType: string) => void,
-    onError: (error: Error) => void
-  ): EventSource {
-    const baseURL = api.defaults.baseURL || 'http://localhost:8000/api/v1';
-    
-    // Create URL with query params for SSE
-    const url = new URL('/chat/stream', baseURL);
-    
-    // Add authentication token as query param (SSE limitation)
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      url.searchParams.append('token', token);
+    currentState: number
+  ): Promise<OnboardingChatResponse> {
+    return this.request<OnboardingChatResponse>('/api/v1/chat/onboarding', {
+      method: 'POST',
+      body: JSON.stringify({ message, current_state: currentState }),
+    });
+  }
+  
+  async sendChatMessage(message: string): Promise<ChatResponse> {
+    return this.request<ChatResponse>('/api/v1/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  }
+}
+```
+
+### 3. Route Guard Component
+
+#### OnboardingGuard Implementation
+
+```typescript
+interface OnboardingGuardProps {
+  children: React.ReactNode;
+}
+
+const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
+  const { user, onboardingProgress } = useAppState();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  useEffect(() => {
+    // If not authenticated, redirect to login
+    if (!user) {
+      navigate('/login', { state: { from: location } });
+      return;
     }
     
-    // Add message and agent_type as query params
-    url.searchParams.append('message', message);
-    if (agentType) {
-      url.searchParams.append('agent_type', agentType);
+    // If onboarding not completed, redirect to onboarding
+    if (!user.onboarding_completed) {
+      if (location.pathname !== '/onboarding') {
+        navigate('/onboarding');
+      }
+      return;
     }
+    
+    // If onboarding completed but on onboarding page, redirect to main app
+    if (user.onboarding_completed && location.pathname === '/onboarding') {
+      navigate('/chat');
+    }
+  }, [user, location, navigate]);
+  
+  // Show loading while checking auth state
+  if (!user) {
+    return <LoadingScreen />;
+  }
+  
+  // Render children if checks pass
+  return <>{children}</>;
+};
+```
 
-    const eventSource = new EventSource(url.toString());
+### 4. Progress Indicator Component
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+#### ProgressIndicator Interface
+
+```typescript
+interface ProgressIndicatorProps {
+  currentState: number;
+  totalStates: number;
+  completedStates: number[];
+  stateMetadata: Record<number, StateMetadata>;
+  onStateClick?: (state: number) => void;
+}
+
+const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
+  currentState,
+  totalStates,
+  completedStates,
+  stateMetadata,
+  onStateClick,
+}) => {
+  const completionPercentage = (completedStates.length / totalStates) * 100;
+  
+  return (
+    <div className="progress-indicator">
+      <div className="progress-header">
+        <h3>Onboarding Progress</h3>
+        <span>Step {currentState} of {totalStates}</span>
+      </div>
+      
+      <div className="progress-bar">
+        <div 
+          className="progress-fill" 
+          style={{ width: `${completionPercentage}%` }}
+        />
+      </div>
+      
+      <div className="state-list">
+        {Array.from({ length: totalStates }, (_, i) => i + 1).map((stateNum) => {
+          const metadata = stateMetadata[stateNum];
+          const isCompleted = completedStates.includes(stateNum);
+          const isCurrent = stateNum === currentState;
+          const isUpcoming = stateNum > currentState;
+          
+          return (
+            <div
+              key={stateNum}
+              className={`state-item ${
+                isCompleted ? 'completed' : ''
+              } ${isCurrent ? 'current' : ''} ${
+                isUpcoming ? 'upcoming' : ''
+              }`}
+              onClick={() => onStateClick?.(stateNum)}
+            >
+              <div className="state-icon">
+                {isCompleted ? '✓' : stateNum}
+              </div>
+              <div className="state-info">
+                <div className="state-name">{metadata?.name}</div>
+                <div className="state-description">{metadata?.description}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+```
+
+### 5. Chat Interface Component
+
+#### ChatInterface Implementation
+
+```typescript
+interface ChatInterfaceProps {
+  mode: 'onboarding' | 'regular';
+  currentState?: number;
+  onStateUpdate?: (newState: number) => void;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({
+  mode,
+  currentState,
+  onStateUpdate,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const apiClient = useAPIClient();
+  
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) {
+      return;
+    }
+    
+    // Add user message to UI
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: inputValue,
+      timestamp: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+    
+    try {
+      if (mode === 'onboarding' && currentState) {
+        const response = await apiClient.sendOnboardingMessage(
+          inputValue,
+          currentState
+        );
         
-        if (data.error) {
-          onError(new Error(data.error));
-          eventSource.close();
-        } else if (data.done) {
-          onComplete(data.agent_type);
-          eventSource.close();
-        } else if (data.chunk) {
-          onChunk(data.chunk);
+        // Add assistant message
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: response.response,
+          agent_type: response.agent_type,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        
+        // Handle state update
+        if (response.state_updated && response.new_state) {
+          onStateUpdate?.(response.new_state);
+          
+          // Show transition message
+          const transitionMessage: ChatMessage = {
+            role: 'system',
+            content: `✓ Progress saved! Moving to step ${response.new_state}...`,
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, transitionMessage]);
         }
-      } catch (error) {
-        onError(new Error('Failed to parse stream data'));
-        eventSource.close();
+        
+        // Check if onboarding complete
+        if (response.progress.is_complete) {
+          const completionMessage: ChatMessage = {
+            role: 'system',
+            content: '🎉 Onboarding complete! Redirecting to main app...',
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, completionMessage]);
+          
+          setTimeout(() => {
+            window.location.href = '/chat';
+          }, 3000);
+        }
+      } else {
+        const response = await apiClient.sendChatMessage(inputValue);
+        
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: response.response,
+          agent_type: response.agent_type,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
       }
-    };
-
-    eventSource.onerror = () => {
-      onError(new Error('Stream connection failed'));
-      eventSource.close();
-    };
-
-    return eventSource;
-  },
-};
-```
-
-
-### Example 4: New Dish Service
-
-```typescript
-// services/dishService.ts
-import api from './api';
-import type { 
-  DishSummaryResponse, 
-  DishResponse,
-  DishSearchFilters 
-} from '../types/api';
-
-export const dishService = {
-  /**
-   * List dishes with optional filters
-   * @param filters - Search filters
-   * @returns Array of dish summaries
-   */
-  async listDishes(filters?: DishSearchFilters): Promise<DishSummaryResponse[]> {
-    const response = await api.get<DishSummaryResponse[]>('/dishes/', {
-      params: filters,
-    });
-    return response.data;
-  },
-
-  /**
-   * Search dishes with advanced filters
-   * @param filters - Search filters including prep time and calories
-   * @returns Array of dish summaries
-   */
-  async searchDishes(filters: DishSearchFilters): Promise<DishSummaryResponse[]> {
-    const response = await api.get<DishSummaryResponse[]>('/dishes/search', {
-      params: filters,
-    });
-    return response.data;
-  },
-
-  /**
-   * Get detailed dish information with ingredients
-   * @param dishId - Dish UUID
-   * @returns Complete dish details
-   */
-  async getDishDetails(dishId: string): Promise<DishResponse> {
-    const response = await api.get<DishResponse>(`/dishes/${dishId}`);
-    return response.data;
-  },
-};
-```
-
-### Example 5: New Meal Template Service
-
-```typescript
-// services/mealTemplateService.ts
-import api from './api';
-import type { 
-  TodayMealsResponse, 
-  NextMealResponse,
-  MealTemplateResponse,
-  TemplateRegenerateRequest 
-} from '../types/api';
-
-export const mealTemplateService = {
-  /**
-   * Get today's meals with assigned dishes
-   * @returns Today's meal plan with dishes
-   */
-  async getTodayMealsWithDishes(): Promise<TodayMealsResponse> {
-    const response = await api.get<TodayMealsResponse>('/meal-templates/today');
-    return response.data;
-  },
-
-  /**
-   * Get next upcoming meal with dishes
-   * @returns Next meal details
-   */
-  async getNextMealWithDishes(): Promise<NextMealResponse> {
-    const response = await api.get<NextMealResponse>('/meal-templates/next');
-    return response.data;
-  },
-
-  /**
-   * Get meal template for a specific week
-   * @param weekNumber - Week number (1-4), optional
-   * @returns Complete meal template
-   */
-  async getMealTemplate(weekNumber?: number): Promise<MealTemplateResponse> {
-    const response = await api.get<MealTemplateResponse>('/meal-templates/template', {
-      params: weekNumber ? { week_number: weekNumber } : {},
-    });
-    return response.data;
-  },
-
-  /**
-   * Regenerate meal template with new dishes
-   * @param preferences - Optional preferences for dish selection
-   * @param weekNumber - Optional week number to regenerate
-   * @returns Newly generated meal template
-   */
-  async regenerateMealTemplate(
-    preferences?: string,
-    weekNumber?: number
-  ): Promise<MealTemplateResponse> {
-    const payload: TemplateRegenerateRequest = {};
-    if (preferences) payload.preferences = preferences;
-    if (weekNumber) payload.week_number = weekNumber;
-    
-    const response = await api.post<MealTemplateResponse>(
-      '/meal-templates/template/regenerate',
-      payload
-    );
-    return response.data;
-  },
-};
-```
-
-
-## Migration Strategy
-
-### Phase 1: Type Definitions (Week 1)
-
-1. Create new type definition files in `types/` directory
-2. Define all request and response interfaces
-3. Export types from centralized `types/api.ts`
-4. Update existing type imports across the codebase
-
-### Phase 2: Core Services Update (Week 1-2)
-
-1. Update `authService.ts` - Add `getCurrentUser()` method
-2. Update `onboardingService.ts` - Change endpoint from `/progress` to `/state`
-3. Update `profileService.ts` - Change PUT to PATCH, remove unlock, add lock
-4. Update `chatService.ts` - Fix request/response structure, add clearHistory
-
-### Phase 3: New Services Creation (Week 2)
-
-1. Create `dishService.ts` - Move dish operations from mealService
-2. Create `mealTemplateService.ts` - Add meal template operations
-3. Create `shoppingListService.ts` - Add shopping list generation
-
-### Phase 4: Meal & Workout Services (Week 2-3)
-
-1. Update `mealService.ts` - Remove date filtering, add schedule methods
-2. Update `workoutService.ts` - Remove logging methods, add plan methods
-3. Update `voiceService.ts` - Add getActiveSessions method
-
-### Phase 5: Testing & Validation (Week 3)
-
-1. Write unit tests for all service methods
-2. Write integration tests for API calls
-3. Test error handling scenarios
-4. Validate type safety with TypeScript compiler
-
-### Phase 6: Documentation & Cleanup (Week 3)
-
-1. Update API documentation
-2. Remove deprecated methods
-3. Add JSDoc comments to all methods
-4. Create migration guide for developers
-
-## Backward Compatibility
-
-To maintain backward compatibility during migration:
-
-### Deprecated Method Wrappers
-
-```typescript
-// Example: onboardingService.ts
-export const onboardingService = {
-  // New method
-  async getOnboardingState(): Promise<OnboardingStateResponse> {
-    const response = await api.get<OnboardingStateResponse>('/onboarding/state');
-    return response.data;
-  },
-
-  // Deprecated method - wrapper for backward compatibility
-  /** @deprecated Use getOnboardingState() instead */
-  async getProgress(): Promise<{ currentStep: number; completed: boolean }> {
-    console.warn('getProgress() is deprecated. Use getOnboardingState() instead.');
-    const state = await this.getOnboardingState();
-    return {
-      currentStep: state.current_step,
-      completed: state.is_complete,
-    };
-  },
-};
-```
-
-### Method Signature Adapters
-
-```typescript
-// Example: mealService.ts
-export const mealService = {
-  // New method
-  async getMealPlan(): Promise<MealPlanResponse> {
-    const response = await api.get<MealPlanResponse>('/meals/plan');
-    return response.data;
-  },
-
-  // Deprecated method - ignores date parameters
-  /** @deprecated Date filtering not supported. Use getMealPlan() instead */
-  async getMealPlanWithDates(startDate?: string, endDate?: string): Promise<MealPlanResponse> {
-    if (startDate || endDate) {
-      console.warn('Date filtering is not supported by the backend. Returning full meal plan.');
+    } catch (error) {
+      if (error instanceof APIError) {
+        handleAPIError(error);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: 'An error occurred. Please try again.',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
+    } finally {
+      setIsLoading(false);
     }
-    return this.getMealPlan();
-  },
+  };
+  
+  const handleAPIError = (error: APIError) => {
+    if (error.status === 403) {
+      const errorData = error.data as ErrorResponse;
+      
+      if (errorData.error_code === 'ONBOARDING_REQUIRED') {
+        window.location.href = errorData.redirect || '/onboarding';
+      } else if (errorData.error_code === 'AGENT_NOT_ALLOWED') {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: errorData.message,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
+    } else if (error.status === 400) {
+      // State mismatch - resync
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          content: 'Syncing your progress...',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      // Trigger progress refresh
+      window.location.reload();
+    }
+  };
+  
+  return (
+    <div className="chat-interface">
+      <MessageList messages={messages} />
+      <MessageInput
+        value={inputValue}
+        onChange={setInputValue}
+        onSend={handleSendMessage}
+        disabled={isLoading}
+        placeholder={
+          mode === 'onboarding'
+            ? 'Type your response...'
+            : 'Ask me anything about your fitness journey...'
+        }
+      />
+      {isLoading && <LoadingIndicator />}
+    </div>
+  );
 };
 ```
 
+### 6. Navigation Menu Component
 
-## Testing Strategy
-
-### Unit Tests
-
-Each service method should have unit tests covering:
-
-1. **Successful API calls** - Verify correct endpoint, method, and parameters
-2. **Response mapping** - Verify response data is correctly typed and returned
-3. **Error handling** - Verify errors are caught and re-thrown appropriately
-4. **Edge cases** - Verify handling of null/undefined parameters
-
-Example unit test:
+#### NavigationMenu with Locks
 
 ```typescript
-// tests/unit/services/onboardingService.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { onboardingService } from '@/services/onboardingService';
-import api from '@/services/api';
+interface NavigationItem {
+  id: string;
+  label: string;
+  path: string;
+  icon: React.ReactNode;
+  requiresOnboarding: boolean;
+}
 
-vi.mock('@/services/api');
+const navigationItems: NavigationItem[] = [
+  { id: 'chat', label: 'Chat', path: '/chat', icon: <ChatIcon />, requiresOnboarding: true },
+  { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon />, requiresOnboarding: true },
+  { id: 'workouts', label: 'Workouts', path: '/workouts', icon: <WorkoutIcon />, requiresOnboarding: true },
+  { id: 'meals', label: 'Meals', path: '/meals', icon: <MealIcon />, requiresOnboarding: true },
+  { id: 'profile', label: 'Profile', path: '/profile', icon: <ProfileIcon />, requiresOnboarding: true },
+];
 
-describe('onboardingService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe('getOnboardingState', () => {
-    it('should call GET /onboarding/state', async () => {
-      const mockResponse = {
-        data: {
-          id: '123',
-          user_id: '456',
-          current_step: 5,
-          is_complete: false,
-          step_data: {},
-        },
-      };
-      
-      vi.mocked(api.get).mockResolvedValue(mockResponse);
-
-      const result = await onboardingService.getOnboardingState();
-
-      expect(api.get).toHaveBeenCalledWith('/onboarding/state');
-      expect(result).toEqual(mockResponse.data);
-    });
-
-    it('should handle errors', async () => {
-      vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-
-      await expect(onboardingService.getOnboardingState()).rejects.toThrow('Network error');
-    });
-  });
-
-  describe('saveStep', () => {
-    it('should call POST /onboarding/step with correct payload', async () => {
-      const mockResponse = {
-        data: {
-          current_step: 6,
-          is_complete: false,
-          message: 'Step 5 saved successfully',
-        },
-      };
-      
-      vi.mocked(api.post).mockResolvedValue(mockResponse);
-
-      const result = await onboardingService.saveStep(5, { fitness_level: 'intermediate' });
-
-      expect(api.post).toHaveBeenCalledWith('/onboarding/step', {
-        step: 5,
-        data: { fitness_level: 'intermediate' },
-      });
-      expect(result).toEqual(mockResponse.data);
-    });
-  });
-});
+const NavigationMenu: React.FC = () => {
+  const { user } = useAppState();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  const handleNavClick = (item: NavigationItem) => {
+    if (item.requiresOnboarding && !user?.onboarding_completed) {
+      // Show tooltip or toast
+      return;
+    }
+    navigate(item.path);
+  };
+  
+  return (
+    <nav className="navigation-menu">
+      {navigationItems.map((item) => {
+        const isLocked = item.requiresOnboarding && !user?.onboarding_completed;
+        const isActive = location.pathname === item.path;
+        
+        return (
+          <Tooltip
+            key={item.id}
+            content={isLocked ? 'Complete onboarding to unlock this feature' : ''}
+            disabled={!isLocked}
+          >
+            <button
+              className={`nav-item ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+              onClick={() => handleNavClick(item)}
+              disabled={isLocked}
+              aria-label={item.label}
+              aria-disabled={isLocked}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+              {isLocked && <LockIcon className="lock-icon" />}
+            </button>
+          </Tooltip>
+        );
+      })}
+    </nav>
+  );
+};
 ```
 
-### Integration Tests
+## Data Models
 
-Integration tests should verify end-to-end API communication:
+### Local Storage Schema
 
 ```typescript
-// tests/integration/api/onboarding.test.ts
-import { describe, it, expect } from 'vitest';
-import { onboardingService } from '@/services/onboardingService';
+// Stored in localStorage or sessionStorage
+interface StoredAuthData {
+  token: string;
+  refreshToken?: string;
+  expiresAt: number;
+}
 
-describe('Onboarding API Integration', () => {
-  it('should complete full onboarding flow', async () => {
-    // Get initial state
-    const initialState = await onboardingService.getOnboardingState();
-    expect(initialState.current_step).toBeDefined();
-
-    // Save a step
-    const stepResult = await onboardingService.saveStep(1, {
-      fitness_level: 'beginner',
-    });
-    expect(stepResult.current_step).toBeGreaterThan(initialState.current_step);
-
-    // Complete onboarding
-    const profile = await onboardingService.completeOnboarding();
-    expect(profile.id).toBeDefined();
-    expect(profile.is_locked).toBe(true);
-  });
-});
+interface CachedProgress {
+  data: OnboardingProgress;
+  cachedAt: number;
+  ttl: number; // 30 seconds
+}
 ```
 
-
-## Property-Based Testing
-
-### Correctness Properties
-
-#### Property 1: API Endpoint Consistency
-
-**Validates: Requirements 1-8**
-
-**Property**: For any service method call, the HTTP request MUST use the correct endpoint path, method, and parameters as defined in the backend API specification.
-
-**Test Strategy**:
-```typescript
-import { describe, it } from 'vitest';
-import fc from 'fast-check';
-
-describe('Property: API Endpoint Consistency', () => {
-  it('should always call correct endpoints for onboarding operations', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 11 }), // step number
-        fc.record({ // step data
-          fitness_level: fc.constantFrom('beginner', 'intermediate', 'advanced'),
-        }),
-        async (step, data) => {
-          const spy = vi.spyOn(api, 'post');
-          
-          await onboardingService.saveStep(step, data);
-          
-          // Verify correct endpoint
-          expect(spy).toHaveBeenCalledWith(
-            '/onboarding/step',
-            expect.objectContaining({ step, data })
-          );
-        }
-      )
-    );
-  });
-});
-```
-
-#### Property 2: Type Safety Preservation
-
-**Validates: Requirement 9**
-
-**Property**: For any API response, the returned data MUST conform to the TypeScript interface defined for that endpoint.
-
-**Test Strategy**:
-```typescript
-describe('Property: Type Safety Preservation', () => {
-  it('should return correctly typed responses for all meal operations', () => {
-    fc.assert(
-      fc.asyncProperty(
-        fc.constantFrom('getMealPlan', 'getMealSchedule', 'getTodayMeals'),
-        async (methodName) => {
-          const result = await mealService[methodName]();
-          
-          // Verify result matches expected type structure
-          expect(result).toBeDefined();
-          expect(typeof result).toBe('object');
-          
-          // Type-specific validations
-          if (methodName === 'getMealPlan') {
-            expect(result).toHaveProperty('daily_calories_target');
-            expect(typeof result.daily_calories_target).toBe('number');
-          }
-        }
-      )
-    );
-  });
-});
-```
-
-#### Property 3: Error Handling Consistency
-
-**Validates: Requirement 10**
-
-**Property**: For any API error response, the service MUST throw an error with appropriate message and preserve error details.
-
-**Test Strategy**:
-```typescript
-describe('Property: Error Handling Consistency', () => {
-  it('should consistently handle errors across all services', () => {
-    fc.assert(
-      fc.asyncProperty(
-        fc.constantFrom(401, 403, 404, 500, 503), // HTTP status codes
-        fc.string(), // error message
-        async (statusCode, errorMessage) => {
-          vi.mocked(api.get).mockRejectedValue({
-            response: {
-              status: statusCode,
-              data: { detail: errorMessage },
-            },
-          });
-          
-          await expect(profileService.getProfile()).rejects.toThrow();
-        }
-      )
-    );
-  });
-});
-```
-
-#### Property 4: Request Parameter Validation
-
-**Validates: Requirements 1-8**
-
-**Property**: For any service method with parameters, the parameters MUST be correctly passed to the API request in the expected format.
-
-**Test Strategy**:
-```typescript
-describe('Property: Request Parameter Validation', () => {
-  it('should correctly pass query parameters for dish search', () => {
-    fc.assert(
-      fc.asyncProperty(
-        fc.record({
-          meal_type: fc.constantFrom('breakfast', 'lunch', 'dinner'),
-          limit: fc.integer({ min: 1, max: 100 }),
-          offset: fc.integer({ min: 0, max: 1000 }),
-        }),
-        async (filters) => {
-          const spy = vi.spyOn(api, 'get');
-          
-          await dishService.searchDishes(filters);
-          
-          expect(spy).toHaveBeenCalledWith(
-            '/dishes/search',
-            expect.objectContaining({
-              params: expect.objectContaining(filters),
-            })
-          );
-        }
-      )
-    );
-  });
-});
-```
-
-
-#### Property 5: Response Data Completeness
-
-**Validates: Requirements 1-8**
-
-**Property**: For any successful API response, all required fields defined in the response schema MUST be present and non-null.
-
-**Test Strategy**:
-```typescript
-describe('Property: Response Data Completeness', () => {
-  it('should return complete workout plan data', () => {
-    fc.assert(
-      fc.asyncProperty(
-        fc.record({
-          id: fc.uuid(),
-          plan_name: fc.string(),
-          duration_weeks: fc.integer({ min: 1, max: 52 }),
-          days_per_week: fc.integer({ min: 1, max: 7 }),
-          is_locked: fc.boolean(),
-        }),
-        async (mockPlan) => {
-          vi.mocked(api.get).mockResolvedValue({ data: mockPlan });
-          
-          const result = await workoutService.getWorkoutPlan();
-          
-          // Verify all required fields are present
-          expect(result.id).toBeDefined();
-          expect(result.plan_name).toBeDefined();
-          expect(result.duration_weeks).toBeGreaterThan(0);
-          expect(result.days_per_week).toBeGreaterThan(0);
-          expect(typeof result.is_locked).toBe('boolean');
-        }
-      )
-    );
-  });
-});
-```
-
-## Performance Considerations
-
-### Request Optimization
-
-1. **Caching Strategy**: Implement response caching for frequently accessed data
-2. **Request Debouncing**: Debounce search requests to reduce API calls
-3. **Batch Requests**: Where possible, combine multiple requests into single calls
-4. **Lazy Loading**: Load data only when needed
-
-Example caching implementation:
+### Cache Management
 
 ```typescript
-// utils/cache.ts
-class APICache {
-  private cache = new Map<string, { data: any; timestamp: number }>();
-  private ttl = 5 * 60 * 1000; // 5 minutes
-
-  get(key: string): any | null {
+class CacheManager {
+  private cache: Map<string, { data: any; expiresAt: number }>;
+  
+  constructor() {
+    this.cache = new Map();
+  }
+  
+  set(key: string, data: any, ttlSeconds: number): void {
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+    this.cache.set(key, { data, expiresAt });
+  }
+  
+  get<T>(key: string): T | null {
     const cached = this.cache.get(key);
     if (!cached) return null;
     
-    if (Date.now() - cached.timestamp > this.ttl) {
+    if (Date.now() > cached.expiresAt) {
       this.cache.delete(key);
       return null;
     }
     
-    return cached.data;
+    return cached.data as T;
   }
-
-  set(key: string, data: any): void {
-    this.cache.set(key, { data, timestamp: Date.now() });
+  
+  invalidate(key: string): void {
+    this.cache.delete(key);
   }
-
+  
   clear(): void {
     this.cache.clear();
   }
 }
-
-export const apiCache = new APICache();
 ```
 
-### Error Recovery
+## Correctness Properties
 
-Implement retry logic for transient failures:
+*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+
+### Property 1: Navigation Lock State Consistency
+*For any* user state, the navigation menu items should be disabled if and only if onboarding_completed is false, and all items should be enabled if and only if onboarding_completed is true.
+**Validates: Requirements 1.1, 7.1**
+
+### Property 2: Locked Navigation Tooltip Display
+*For any* navigation item that is locked (user has incomplete onboarding), hovering over the item should display a tooltip containing the text "Complete onboarding to unlock this feature".
+**Validates: Requirements 1.2**
+
+### Property 3: Protected Route Redirection
+*For any* protected route and any user with onboarding_completed=false, attempting to navigate to that route should result in a redirect to /onboarding with an appropriate message.
+**Validates: Requirements 1.3**
+
+### Property 4: Onboarding Completion Reactivity
+*For any* user state transition where onboarding_completed changes from false to true, all navigation items should become enabled without requiring a page refresh.
+**Validates: Requirements 1.4**
+
+### Property 5: Progress Indicator Correctness
+*For any* valid onboarding state (1-9) and any set of completed states, the progress indicator should display "Step X of 9", show checkmarks for all completed states, highlight the current state with distinct styling, and show upcoming states in grayed-out styling.
+**Validates: Requirements 2.1, 2.2, 2.3, 2.4**
+
+### Property 6: State Metadata Display
+*For any* state metadata object fetched from the backend, the UI should render the state name and description fields for each state in the progress indicator.
+**Validates: Requirements 2.5**
+
+### Property 7: State Transition Animation
+*For any* state transition (current_state changes), the progress indicator should animate the transition and update to reflect the new state.
+**Validates: Requirements 2.6**
+
+### Property 8: Endpoint Routing Based on Onboarding Status
+*For any* chat message, if the user has onboarding_completed=false, the message should be sent to POST /api/v1/chat/onboarding; if onboarding_completed=true, the message should be sent to POST /api/v1/chat.
+**Validates: Requirements 3.1, 3.2, 7.2**
+
+### Property 9: Onboarding Required Error Handling
+*For any* 403 error response with error_code "ONBOARDING_REQUIRED", the frontend should redirect to the path specified in the redirect field and display the message from the response.
+**Validates: Requirements 1.5, 3.3, 6.1**
+
+### Property 10: Onboarding Complete Error Handling
+*For any* 403 error from POST /api/v1/chat/onboarding indicating onboarding is already complete, the frontend should redirect to the main chat interface.
+**Validates: Requirements 3.4**
+
+### Property 11: Current State Payload Inclusion
+*For any* message sent to POST /api/v1/chat/onboarding, the request payload should include a current_state field that matches the user's current onboarding step stored in local state.
+**Validates: Requirements 3.5**
+
+### Property 12: State Mismatch Recovery
+*For any* 400 error response indicating state mismatch, the frontend should fetch the current state from GET /api/v1/onboarding/progress, display "Syncing your progress...", and update local state.
+**Validates: Requirements 3.6, 6.3**
+
+### Property 13: Message Role Styling
+*For any* message displayed in the chat interface, if the role is "user" it should have user styling, if the role is "assistant" it should have assistant styling, and if the role is "system" it should have system styling.
+**Validates: Requirements 4.2, 4.3**
+
+### Property 14: State Update Confirmation
+*For any* API response where state_updated is true, the frontend should display a confirmation message indicating progress to the next state.
+**Validates: Requirements 4.4**
+
+### Property 15: Local State Synchronization
+*For any* API response where state_updated is true and new_state is provided, the frontend should update the local current_state to match new_state for all subsequent requests.
+**Validates: Requirements 4.5, 5.6**
+
+### Property 16: Progress Indicator Update
+*For any* API response containing progress information, the progress indicator should update to reflect the completion_percentage from the response.
+**Validates: Requirements 4.6**
+
+### Property 17: Onboarding Completion Flow
+*For any* API response where progress.is_complete is true, the frontend should display a completion message and redirect to the main application after 3 seconds.
+**Validates: Requirements 4.7**
+
+### Property 18: Post-Login Onboarding Check
+*For any* user after successful login, if onboarding_completed is false, the frontend should redirect to /onboarding; if onboarding_completed is true, the frontend should allow access to the main application.
+**Validates: Requirements 5.2, 5.3**
+
+### Property 19: Progress Completion Redirect
+*For any* progress response where is_complete is true, the frontend should redirect to the main application.
+**Validates: Requirements 5.5**
+
+### Property 20: State Recovery After Refresh
+*For any* page refresh during onboarding, the frontend should fetch the current state from the API and resume from that state without losing progress.
+**Validates: Requirements 5.7**
+
+### Property 21: Agent Not Allowed Error Handling
+*For any* 403 error with error_code "AGENT_NOT_ALLOWED", the frontend should display an error message explaining that only the general agent is available.
+**Validates: Requirements 6.2**
+
+### Property 22: Server Error Handling
+*For any* 500 error response, the frontend should display a user-friendly error message and provide a retry button.
+**Validates: Requirements 6.4**
+
+### Property 23: Offline Message Queueing
+*For any* network connectivity loss during onboarding, the frontend should display an offline indicator and queue messages for retry; when connectivity is restored, queued messages should be automatically sent.
+**Validates: Requirements 6.5, 6.6**
+
+### Property 24: Post-Onboarding Agent Type Omission
+*For any* chat request sent by a user with onboarding_completed=true, the request payload should not include an agent_type field.
+**Validates: Requirements 7.3**
+
+### Property 25: Agent Type Display
+*For any* response from POST /api/v1/chat, the frontend should display the agent_type value in the chat interface.
+**Validates: Requirements 7.4**
+
+### Property 26: Completed User Onboarding Redirect
+*For any* user with onboarding_completed=true attempting to access /onboarding, the frontend should redirect to the main chat interface with the message "You've already completed onboarding".
+**Validates: Requirements 7.5**
+
+### Property 27: Responsive Layout Adaptation
+*For any* screen width, if below mobile breakpoint (768px), the progress indicator should use a compact vertical layout; if above desktop breakpoint (1024px), the progress indicator should use a sidebar layout with full state names.
+**Validates: Requirements 8.1, 8.2**
+
+### Property 28: Keyboard Navigation Support
+*For all* interactive elements in the onboarding interface, tab navigation should move focus through elements in logical order.
+**Validates: Requirements 8.3**
+
+### Property 29: Screen Reader Announcements
+*For any* progress update or state transition, the frontend should announce the change via ARIA live regions for screen reader users.
+**Validates: Requirements 8.4**
+
+### Property 30: Mobile Keyboard Visibility
+*For any* focus event on the chat input on mobile devices, the viewport should scroll to ensure the input remains visible above the keyboard.
+**Validates: Requirements 8.5**
+
+### Property 31: Loading Indicator Timing
+*For any* chat message send action, a loading indicator should be displayed within 100ms of the send action.
+**Validates: Requirements 9.1**
+
+### Property 32: Message Render Performance
+*For any* API response containing a message, the message should be rendered in the UI within 50ms of receiving the response.
+**Validates: Requirements 9.2**
+
+### Property 33: Progress Cache Management
+*For any* fetch of onboarding progress, the result should be cached for 30 seconds; when a state transition occurs, the cache should be invalidated and fresh data fetched.
+**Validates: Requirements 9.3, 9.4**
+
+### Property 34: Typing Indicator Debouncing
+*For any* sequence of typing events in the chat input, typing indicators should be debounced to avoid excessive updates.
+**Validates: Requirements 9.5**
+
+### Property 35: Empty Message Validation
+*For any* message that is empty or contains only whitespace, the frontend should prevent the API request and display the validation message "Please enter a message".
+**Validates: Requirements 10.1**
+
+### Property 36: Secure Token Storage
+*For any* authentication token received from the backend, the token should be stored using secure mechanisms (httpOnly cookies or secure localStorage with appropriate flags).
+**Validates: Requirements 10.2**
+
+### Property 37: Authentication Header Inclusion
+*For any* API request to an authenticated endpoint, the request should include the JWT token in the Authorization header with the format "Bearer {token}".
+**Validates: Requirements 10.3**
+
+### Property 38: Unauthorized Error Handling
+*For any* 401 error response, the frontend should clear all stored credentials and redirect to the login page.
+**Validates: Requirements 10.4**
+
+### Property 39: XSS Prevention
+*For any* user-generated content received from the API, the content should be sanitized before rendering to prevent XSS attacks.
+**Validates: Requirements 10.5**
+
+## Error Handling
+
+### Error Classification
+
+The frontend must handle four categories of errors:
+
+1. **Authentication Errors (401)**
+   - Clear stored credentials
+   - Redirect to login page
+   - Preserve intended destination for post-login redirect
+
+2. **Authorization Errors (403)**
+   - ONBOARDING_REQUIRED: Redirect to /onboarding with progress info
+   - AGENT_NOT_ALLOWED: Display error message in chat
+   - Onboarding already complete: Redirect to main chat
+
+3. **Client Errors (400)**
+   - State mismatch: Fetch current state and resync
+   - Validation errors: Display field-specific error messages
+   - Invalid request: Display generic error with retry option
+
+4. **Server Errors (500)**
+   - Display user-friendly error message
+   - Provide retry button
+   - Log error details for debugging
+
+### Error Recovery Strategies
 
 ```typescript
-// utils/retry.ts
-export async function retryRequest<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  delay: number = 1000
-): Promise<T> {
-  let lastError: Error;
+class ErrorHandler {
+  handle(error: APIError): void {
+    switch (error.status) {
+      case 401:
+        this.handleUnauthorized();
+        break;
+      case 403:
+        this.handleForbidden(error.data);
+        break;
+      case 400:
+        this.handleBadRequest(error.data);
+        break;
+      case 500:
+        this.handleServerError();
+        break;
+      default:
+        this.handleUnknownError(error);
+    }
+  }
   
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-      
-      // Don't retry on client errors (4xx)
-      if (axios.isAxiosError(error) && error.response?.status < 500) {
-        throw error;
-      }
-      
-      if (i < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+  private handleUnauthorized(): void {
+    // Clear auth state
+    authStore.logout();
+    // Redirect to login with return URL
+    navigate('/login', { state: { from: location.pathname } });
+  }
+  
+  private handleForbidden(data: ErrorResponse): void {
+    if (data.error_code === 'ONBOARDING_REQUIRED') {
+      // Show progress info and redirect
+      toast.info(`Complete onboarding: ${data.onboarding_progress?.completion_percentage}% done`);
+      navigate(data.redirect || '/onboarding');
+    } else if (data.error_code === 'AGENT_NOT_ALLOWED') {
+      // Show error in chat
+      chatStore.addSystemMessage(data.message);
+    }
+  }
+  
+  private handleBadRequest(data: any): void {
+    if (data.detail?.includes('State mismatch')) {
+      // Resync state
+      chatStore.addSystemMessage('Syncing your progress...');
+      onboardingStore.fetchProgress();
+    } else {
+      // Show validation errors
+      toast.error(data.detail || 'Invalid request');
+    }
+  }
+  
+  private handleServerError(): void {
+    toast.error('Something went wrong. Please try again.', {
+      action: {
+        label: 'Retry',
+        onClick: () => this.retry(),
+      },
+    });
+  }
+}
+```
+
+### Offline Handling
+
+```typescript
+class OfflineManager {
+  private messageQueue: QueuedMessage[] = [];
+  private isOnline: boolean = navigator.onLine;
+  
+  constructor() {
+    window.addEventListener('online', () => this.handleOnline());
+    window.addEventListener('offline', () => this.handleOffline());
+  }
+  
+  queueMessage(message: QueuedMessage): void {
+    this.messageQueue.push(message);
+    this.persistQueue();
+  }
+  
+  private async handleOnline(): Promise<void> {
+    this.isOnline = true;
+    toast.success('Back online. Sending queued messages...');
+    
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue[0];
+      try {
+        await this.sendMessage(message);
+        this.messageQueue.shift();
+        this.persistQueue();
+      } catch (error) {
+        // If send fails, stop processing queue
+        toast.error('Failed to send queued messages');
+        break;
       }
     }
   }
   
-  throw lastError!;
+  private handleOffline(): void {
+    this.isOnline = false;
+    toast.warning('You are offline. Messages will be sent when connection is restored.');
+  }
 }
 ```
 
+## Testing Strategy
+
+### Testing Approach
+
+The frontend implementation requires a dual testing approach combining unit tests and property-based tests:
+
+**Unit Tests**: Focus on specific examples, edge cases, and integration points
+- Component rendering with specific props
+- User interaction flows (click, type, submit)
+- API error scenarios with specific error codes
+- Edge cases (empty messages, invalid states)
+
+**Property-Based Tests**: Verify universal properties across all inputs
+- State management invariants
+- Routing logic for all user states
+- UI rendering for all valid state combinations
+- Error handling for all error types
+
+### Testing Framework
+
+**Primary Framework**: Jest + React Testing Library
+- `@testing-library/react`: Component testing with user-centric queries
+- `@testing-library/user-event`: Realistic user interaction simulation
+- `@testing-library/jest-dom`: Custom matchers for DOM assertions
+- `msw` (Mock Service Worker): API mocking for integration tests
+- `fast-check`: Property-based testing library for JavaScript/TypeScript
+
+### Test Organization
+
+```
+frontend/src/
+├── components/
+│   ├── OnboardingGuard/
+│   │   ├── OnboardingGuard.tsx
+│   │   ├── OnboardingGuard.test.tsx
+│   │   └── OnboardingGuard.properties.test.tsx
+│   ├── ProgressIndicator/
+│   │   ├── ProgressIndicator.tsx
+│   │   ├── ProgressIndicator.test.tsx
+│   │   └── ProgressIndicator.properties.test.tsx
+│   └── ChatInterface/
+│       ├── ChatInterface.tsx
+│       ├── ChatInterface.test.tsx
+│       └── ChatInterface.properties.test.tsx
+├── hooks/
+│   ├── useOnboarding.ts
+│   ├── useOnboarding.test.ts
+│   └── useOnboarding.properties.test.ts
+└── services/
+    ├── apiClient.ts
+    ├── apiClient.test.ts
+    └── apiClient.properties.test.ts
+```
+
+### Property-Based Test Configuration
+
+Each property test must:
+- Run minimum 100 iterations (due to randomization)
+- Reference the design document property number
+- Use appropriate generators for test data
+- Tag format: `Feature: frontend-backend-api-alignment, Property {number}: {property_text}`
+
+### Example Property Test
+
+```typescript
+import fc from 'fast-check';
+import { render, screen } from '@testing-library/react';
+import { NavigationMenu } from './NavigationMenu';
+
+describe('Property 1: Navigation Lock State Consistency', () => {
+  it('should disable all nav items when onboarding incomplete, enable when complete', () => {
+    // Feature: frontend-backend-api-alignment, Property 1: Navigation Lock State Consistency
+    
+    fc.assert(
+      fc.property(
+        fc.record({
+          id: fc.uuid(),
+          email: fc.emailAddress(),
+          onboarding_completed: fc.boolean(),
+        }),
+        (user) => {
+          const { container } = render(
+            <NavigationMenu user={user} />
+          );
+          
+          const navButtons = container.querySelectorAll('.nav-item');
+          
+          navButtons.forEach((button) => {
+            if (user.onboarding_completed) {
+              expect(button).not.toBeDisabled();
+              expect(button).not.toHaveClass('locked');
+            } else {
+              expect(button).toBeDisabled();
+              expect(button).toHaveClass('locked');
+            }
+          });
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+```
+
+### Example Unit Test
+
+```typescript
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ChatInterface } from './ChatInterface';
+import { server } from '../mocks/server';
+import { rest } from 'msw';
+
+describe('ChatInterface', () => {
+  it('should display welcome message on first entry to onboarding', () => {
+    render(
+      <ChatInterface mode="onboarding" currentState={1} />
+    );
+    
+    expect(screen.getByText(/welcome to shuren/i)).toBeInTheDocument();
+    expect(screen.getByText(/let's get started/i)).toBeInTheDocument();
+  });
+  
+  it('should handle state mismatch error and resync', async () => {
+    const user = userEvent.setup();
+    
+    // Mock 400 error response
+    server.use(
+      rest.post('/api/v1/chat/onboarding', (req, res, ctx) => {
+        return res(
+          ctx.status(400),
+          ctx.json({
+            detail: 'State mismatch. Current: 3, Requested: 2'
+          })
+        );
+      })
+    );
+    
+    render(
+      <ChatInterface mode="onboarding" currentState={2} />
+    );
+    
+    const input = screen.getByPlaceholderText(/type your response/i);
+    await user.type(input, 'My response');
+    await user.click(screen.getByRole('button', { name: /send/i }));
+    
+    await waitFor(() => {
+      expect(screen.getByText(/syncing your progress/i)).toBeInTheDocument();
+    });
+  });
+});
+```
+
+### Test Coverage Requirements
+
+- **Unit Test Coverage**: 80%+ for all components and services
+- **Property Test Coverage**: All 39 correctness properties must have corresponding property tests
+- **Integration Test Coverage**: All critical user flows (login → onboarding → completion → chat)
+- **Accessibility Test Coverage**: All interactive components tested with axe-core
+
+### Continuous Integration
+
+Tests should run automatically on:
+- Pull requests to main branch
+- Commits to feature branches
+- Pre-deployment checks
+
+Minimum requirements for passing:
+- All unit tests pass
+- All property tests pass (100 iterations each)
+- Coverage >= 80%
+- No accessibility violations
+- No TypeScript errors
+
+## Performance Considerations
+
+### Optimization Strategies
+
+1. **Code Splitting**
+   - Lazy load onboarding components
+   - Lazy load main app components
+   - Separate vendor bundles
+
+2. **State Management**
+   - Use React Context for global state
+   - Memoize expensive computations
+   - Debounce user input events
+
+3. **API Optimization**
+   - Cache onboarding progress (30s TTL)
+   - Batch multiple state updates
+   - Use HTTP/2 multiplexing
+
+4. **Rendering Optimization**
+   - Virtual scrolling for long message lists
+   - Memoize message components
+   - Use CSS animations over JavaScript
+
+### Performance Budgets
+
+- Initial page load: < 2s
+- Time to interactive: < 3s
+- API response handling: < 50ms
+- State update rendering: < 16ms (60fps)
+- Bundle size: < 200KB (gzipped)
 
 ## Security Considerations
 
-### Authentication Token Management
+### Authentication Security
 
-1. **Token Storage**: Store JWT tokens in localStorage (current implementation)
-2. **Token Refresh**: Implement token refresh logic before expiration
-3. **Secure Transmission**: Always use HTTPS in production
-4. **Token Cleanup**: Clear tokens on logout and 401 errors
+- Store JWT tokens in httpOnly cookies (preferred) or secure localStorage
+- Implement token refresh mechanism
+- Clear tokens on logout or 401 errors
+- Use HTTPS for all API requests
 
-### API Security Best Practices
+### XSS Prevention
 
-```typescript
-// services/api.ts - Enhanced security
-import axios from 'axios';
+- Sanitize all user-generated content before rendering
+- Use React's built-in XSS protection (JSX escaping)
+- Implement Content Security Policy headers
+- Validate and sanitize API responses
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: false, // Set to true if using cookies
-});
+### CSRF Protection
 
-// Request interceptor: Add JWT token and security headers
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    // Add security headers
-    config.headers['X-Requested-With'] = 'XMLHttpRequest';
-    
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+- Include CSRF tokens in state-changing requests
+- Validate origin headers
+- Use SameSite cookie attribute
 
-// Response interceptor: Handle authentication errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Clear authentication state
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
-      
-      // Redirect to login
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+## Deployment Considerations
 
-export default api;
-```
-
-## Documentation Requirements
-
-### JSDoc Comments
-
-All service methods must include comprehensive JSDoc comments:
+### Environment Configuration
 
 ```typescript
-/**
- * Get current user's workout plan with all exercises
- * 
- * @returns {Promise<WorkoutPlanResponse>} Complete workout plan including:
- *   - Plan metadata (name, duration, rationale)
- *   - All workout days with exercises
- *   - Exercise library details with GIF URLs
- * 
- * @throws {Error} If workout plan not found (404)
- * @throws {Error} If user not authenticated (401)
- * @throws {Error} If server error occurs (500)
- * 
- * @example
- * ```typescript
- * const plan = await workoutService.getWorkoutPlan();
- * console.log(plan.plan_name); // "Beginner Full Body"
- * console.log(plan.workout_days.length); // 4
- * ```
- */
-async getWorkoutPlan(): Promise<WorkoutPlanResponse> {
-  const response = await api.get<WorkoutPlanResponse>('/workouts/plan');
-  return response.data;
+interface EnvironmentConfig {
+  API_BASE_URL: string;
+  AUTH_COOKIE_DOMAIN: string;
+  ENABLE_ANALYTICS: boolean;
+  LOG_LEVEL: 'debug' | 'info' | 'warn' | 'error';
 }
+
+const config: EnvironmentConfig = {
+  API_BASE_URL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000',
+  AUTH_COOKIE_DOMAIN: process.env.REACT_APP_AUTH_COOKIE_DOMAIN || 'localhost',
+  ENABLE_ANALYTICS: process.env.REACT_APP_ENABLE_ANALYTICS === 'true',
+  LOG_LEVEL: (process.env.REACT_APP_LOG_LEVEL as any) || 'info',
+};
 ```
 
-### API Documentation
-
-Create a comprehensive API documentation file:
-
-```markdown
-# Frontend API Services Documentation
-
-## Overview
-
-This document describes all frontend API service methods and their usage.
-
-## Authentication Service
-
-### `register(email: string, password: string): Promise<TokenResponse>`
-
-Registers a new user account.
-
-**Parameters:**
-- `email` - User's email address
-- `password` - User's password (min 8 characters)
-
-**Returns:** TokenResponse with access_token and user_id
-
-**Example:**
-```typescript
-const response = await authService.register('user@example.com', 'password123');
-localStorage.setItem('auth_token', response.access_token);
-```
-
-[Continue for all services...]
-```
-
-
-## Validation and Constraints
-
-### Input Validation
-
-All service methods should validate inputs before making API calls:
-
-```typescript
-// utils/validation.ts
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
-
-export function validateEmail(email: string): void {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    throw new ValidationError('Invalid email format');
-  }
-}
-
-export function validateStep(step: number): void {
-  if (step < 0 || step > 11) {
-    throw new ValidationError('Step must be between 0 and 11');
-  }
-}
-
-export function validateWeeks(weeks: number): void {
-  if (weeks < 1 || weeks > 4) {
-    throw new ValidationError('Weeks must be between 1 and 4');
-  }
-}
-```
-
-### Response Validation
-
-Validate API responses match expected schema:
-
-```typescript
-// utils/responseValidation.ts
-import { z } from 'zod';
-
-// Define Zod schemas for validation
-const TokenResponseSchema = z.object({
-  access_token: z.string(),
-  token_type: z.string(),
-  user_id: z.string().uuid(),
-});
-
-const MealPlanResponseSchema = z.object({
-  id: z.string().uuid(),
-  meals_per_day: z.number().int().positive(),
-  daily_calories_target: z.number().positive(),
-  protein_grams_target: z.number().positive(),
-  carbs_grams_target: z.number().positive(),
-  fats_grams_target: z.number().positive(),
-  is_locked: z.boolean(),
-});
-
-export function validateTokenResponse(data: unknown): TokenResponse {
-  return TokenResponseSchema.parse(data);
-}
-
-export function validateMealPlanResponse(data: unknown): MealPlanResponse {
-  return MealPlanResponseSchema.parse(data);
-}
-```
-
-## Monitoring and Logging
-
-### Request Logging
-
-Implement request/response logging for debugging:
-
-```typescript
-// utils/logger.ts
-export class APILogger {
-  private static isDevelopment = import.meta.env.DEV;
-
-  static logRequest(method: string, url: string, data?: any): void {
-    if (this.isDevelopment) {
-      console.group(`🔵 API Request: ${method} ${url}`);
-      if (data) console.log('Data:', data);
-      console.groupEnd();
-    }
-  }
-
-  static logResponse(method: string, url: string, status: number, data?: any): void {
-    if (this.isDevelopment) {
-      console.group(`🟢 API Response: ${method} ${url} (${status})`);
-      if (data) console.log('Data:', data);
-      console.groupEnd();
-    }
-  }
-
-  static logError(method: string, url: string, error: any): void {
-    console.group(`🔴 API Error: ${method} ${url}`);
-    console.error('Error:', error);
-    console.groupEnd();
-  }
-}
-
-// Add to axios interceptors
-api.interceptors.request.use(
-  (config) => {
-    APILogger.logRequest(config.method?.toUpperCase() || 'GET', config.url || '');
-    return config;
-  }
-);
-
-api.interceptors.response.use(
-  (response) => {
-    APILogger.logResponse(
-      response.config.method?.toUpperCase() || 'GET',
-      response.config.url || '',
-      response.status,
-      response.data
-    );
-    return response;
-  },
-  (error) => {
-    APILogger.logError(
-      error.config?.method?.toUpperCase() || 'GET',
-      error.config?.url || '',
-      error
-    );
-    return Promise.reject(error);
-  }
-);
-```
-
-
-## Summary of Changes
-
-### Files to Create
-
-1. **`frontend/src/services/dishService.ts`** - New service for dish operations
-2. **`frontend/src/services/mealTemplateService.ts`** - New service for meal templates
-3. **`frontend/src/services/shoppingListService.ts`** - New service for shopping lists
-4. **`frontend/src/types/api.ts`** - Centralized type exports
-5. **`frontend/src/types/auth.types.ts`** - Authentication types
-6. **`frontend/src/types/onboarding.types.ts`** - Onboarding types
-7. **`frontend/src/types/profile.types.ts`** - Profile types
-8. **`frontend/src/types/chat.types.ts`** - Chat types
-9. **`frontend/src/types/meal.types.ts`** - Meal types
-10. **`frontend/src/types/dish.types.ts`** - Dish types
-11. **`frontend/src/types/mealTemplate.types.ts`** - Meal template types
-12. **`frontend/src/types/shoppingList.types.ts`** - Shopping list types
-13. **`frontend/src/types/workout.types.ts`** - Workout types
-14. **`frontend/src/types/voice.types.ts`** - Voice session types
-15. **`frontend/src/utils/validation.ts`** - Input validation utilities
-16. **`frontend/src/utils/responseValidation.ts`** - Response validation utilities
-17. **`frontend/src/utils/cache.ts`** - API caching utilities
-18. **`frontend/src/utils/retry.ts`** - Request retry utilities
-19. **`frontend/src/utils/logger.ts`** - API logging utilities
-
-### Files to Modify
-
-1. **`frontend/src/services/authService.ts`**
-   - Add `getCurrentUser()` method
-   - Add proper type imports
-
-2. **`frontend/src/services/onboardingService.ts`**
-   - Change endpoint from `/progress` to `/state`
-   - Rename `getProgress()` to `getOnboardingState()`
-   - Add `completeOnboarding()` method
-   - Add backward compatibility wrapper
-
-3. **`frontend/src/services/profileService.ts`**
-   - Change `updateProfile()` from PUT to PATCH
-   - Update request structure to include `reason` field
-   - Remove `unlockProfile()` method
-   - Add `lockProfile()` method
-
-4. **`frontend/src/services/chatService.ts`**
-   - Remove `conversation_id` from request body
-   - Update `getHistory()` to use `limit` parameter
-   - Fix `streamMessage()` to use query parameters for SSE
-   - Add `clearHistory()` method
-
-5. **`frontend/src/services/mealService.ts`**
-   - Remove date filtering from `getMealPlan()`
-   - Remove `getMealDetails()` method
-   - Remove `searchDishes()` method (moved to dishService)
-   - Remove `generateShoppingList()` method (moved to shoppingListService)
-   - Add `updateMealPlan()` method
-   - Add `getMealSchedule()` method
-   - Add `updateMealSchedule()` method
-   - Add `getTodayMeals()` method
-   - Add `getNextMeal()` method
-
-6. **`frontend/src/services/workoutService.ts`**
-   - Add `getWorkoutPlan()` method
-   - Add `getWorkoutDay()` method
-   - Add `getWeekWorkouts()` method
-   - Add `updateWorkoutPlan()` method
-   - Add `updateWorkoutSchedule()` method
-   - Remove `logSet()` method
-   - Remove `completeWorkout()` method
-   - Remove `getHistory()` method
-
-7. **`frontend/src/services/voiceService.ts`**
-   - Add `getActiveSessions()` method
-   - Add proper type imports
-
-8. **`frontend/src/services/api.ts`**
-   - Add enhanced security headers
-   - Add logging interceptors
-   - Add retry logic for failed requests
-
-### Breaking Changes
-
-The following methods are being removed or changed:
-
-1. **Removed Methods:**
-   - `onboardingService.getProgress()` → Use `getOnboardingState()` instead
-   - `profileService.unlockProfile()` → No backend support
-   - `mealService.getMealDetails(mealId)` → No backend support
-   - `mealService.searchDishes()` → Moved to `dishService.searchDishes()`
-   - `mealService.generateShoppingList()` → Moved to `shoppingListService.getShoppingList()`
-   - `workoutService.logSet()` → No backend support
-   - `workoutService.completeWorkout()` → No backend support
-   - `workoutService.getHistory()` → No backend support
-
-2. **Changed Method Signatures:**
-   - `profileService.updateProfile(data)` → `updateProfile(updates, reason)`
-   - `chatService.sendMessage(message, agentType, conversationId)` → `sendMessage(message, agentType)`
-   - `chatService.getHistory(conversationId)` → `getHistory(limit)`
-   - `mealService.getMealPlan(startDate, endDate)` → `getMealPlan()`
-
-3. **HTTP Method Changes:**
-   - `profileService.updateProfile()`: PUT → PATCH
-
-
-## Risk Assessment
-
-### High Risk Areas
-
-1. **Breaking Changes Impact**
-   - **Risk**: Existing frontend code may break when methods are removed
-   - **Mitigation**: Provide backward compatibility wrappers with deprecation warnings
-   - **Timeline**: 2-week deprecation period before removal
-
-2. **Type Safety Gaps**
-   - **Risk**: Runtime errors if response types don't match expectations
-   - **Mitigation**: Implement runtime validation with Zod schemas
-   - **Timeline**: Add validation in Phase 1
-
-3. **Authentication Flow**
-   - **Risk**: Token management issues could lock users out
-   - **Mitigation**: Thorough testing of auth flows, implement token refresh
-   - **Timeline**: Test in Phase 2
-
-### Medium Risk Areas
-
-1. **SSE Streaming Implementation**
-   - **Risk**: EventSource doesn't support custom headers
-   - **Mitigation**: Use query parameters for authentication
-   - **Timeline**: Test in Phase 2
-
-2. **Data Migration**
-   - **Risk**: Existing cached data may be incompatible
-   - **Mitigation**: Clear cache on deployment, version cache keys
-   - **Timeline**: Implement in Phase 3
-
-### Low Risk Areas
-
-1. **New Service Creation**
-   - **Risk**: Minimal - new services don't affect existing code
-   - **Mitigation**: Comprehensive unit tests
-   - **Timeline**: Phase 2
-
-2. **Documentation Updates**
-   - **Risk**: Minimal - documentation-only changes
-   - **Mitigation**: Peer review
-   - **Timeline**: Phase 6
-
-## Deployment Strategy
-
-### Pre-Deployment Checklist
-
-- [ ] All unit tests passing
-- [ ] All integration tests passing
-- [ ] Property-based tests passing
-- [ ] TypeScript compilation successful with no errors
-- [ ] ESLint checks passing
-- [ ] API documentation updated
-- [ ] Migration guide created
-- [ ] Backward compatibility wrappers in place
-- [ ] Deprecation warnings added
-- [ ] Cache invalidation strategy implemented
-
-### Deployment Steps
-
-1. **Stage 1: Type Definitions** (Low Risk)
-   - Deploy new type definition files
-   - No breaking changes
-   - Can be deployed independently
-
-2. **Stage 2: New Services** (Low Risk)
-   - Deploy dishService, mealTemplateService, shoppingListService
-   - No breaking changes
-   - Can be deployed independently
-
-3. **Stage 3: Service Updates** (Medium Risk)
-   - Deploy updated services with backward compatibility
-   - Monitor error rates
-   - Rollback plan: Revert to previous version
-
-4. **Stage 4: Deprecation Warnings** (Low Risk)
-   - Enable deprecation warnings in console
-   - Monitor usage of deprecated methods
-   - Communicate with team
-
-5. **Stage 5: Breaking Changes** (High Risk)
-   - Remove deprecated methods after 2-week period
-   - Ensure all code updated
-   - Monitor error rates closely
-
-### Rollback Plan
-
-If critical issues are discovered:
-
-1. **Immediate Actions:**
-   - Revert to previous version via Git
-   - Clear browser caches
-   - Notify users of temporary issues
-
-2. **Investigation:**
-   - Review error logs
-   - Identify root cause
-   - Create hotfix if needed
-
-3. **Re-deployment:**
-   - Fix issues in development
-   - Re-test thoroughly
-   - Deploy with increased monitoring
-
-
-## Success Metrics
-
-### Technical Metrics
-
-1. **API Call Success Rate**
-   - Target: 99.5% success rate for all API calls
-   - Measurement: Monitor 4xx and 5xx error rates
-   - Baseline: Current error rate (to be measured)
-
-2. **Type Safety Coverage**
-   - Target: 100% of API calls use TypeScript interfaces
-   - Measurement: TypeScript compiler checks
-   - Baseline: Current coverage (to be measured)
-
-3. **Test Coverage**
-   - Target: 90% code coverage for service layer
-   - Measurement: Vitest coverage reports
-   - Baseline: Current coverage (to be measured)
-
-4. **Response Time**
-   - Target: 95th percentile < 500ms for all API calls
-   - Measurement: Performance monitoring
-   - Baseline: Current response times (to be measured)
-
-### User Experience Metrics
-
-1. **Error Rate Reduction**
-   - Target: 50% reduction in API-related errors
-   - Measurement: Error tracking (Sentry/similar)
-   - Timeline: Within 2 weeks of deployment
-
-2. **Feature Availability**
-   - Target: 100% of documented features working
-   - Measurement: Integration test results
-   - Timeline: Before deployment
-
-### Development Metrics
-
-1. **Code Maintainability**
-   - Target: All services have JSDoc comments
-   - Measurement: Documentation coverage
-   - Timeline: Phase 6
-
-2. **Developer Onboarding**
-   - Target: New developers can understand API layer in < 1 hour
-   - Measurement: Onboarding feedback
-   - Timeline: After documentation complete
+### Build Configuration
+
+- Production build with minification
+- Source maps for debugging
+- Environment-specific configurations
+- CDN for static assets
+
+### Monitoring and Logging
+
+- Log all API errors with context
+- Track user flows through analytics
+- Monitor performance metrics
+- Alert on error rate thresholds
 
 ## Conclusion
 
-This design provides a comprehensive solution for aligning the Shuren frontend API service layer with the actual backend API endpoints. The implementation follows industry best practices for:
+This design provides a comprehensive frontend architecture that integrates seamlessly with the validated backend onboarding system. The implementation focuses on three core pillars:
 
-- **Type Safety**: Strong TypeScript typing throughout
-- **Error Handling**: Consistent error handling across all services
-- **Testing**: Comprehensive unit, integration, and property-based tests
-- **Documentation**: Clear JSDoc comments and API documentation
-- **Security**: Proper authentication and authorization
-- **Performance**: Caching, retry logic, and request optimization
-- **Maintainability**: Clean code structure and separation of concerns
+1. **Robust State Management**: Tracking user authentication and onboarding status with proper synchronization
+2. **Intelligent API Integration**: Correct endpoint routing, comprehensive error handling, and offline support
+3. **Rich User Experience**: Navigation locks, progress indicators, responsive design, and accessibility
 
-The phased migration strategy ensures minimal disruption to existing functionality while providing a clear path to full alignment. Backward compatibility wrappers allow for gradual migration of existing code, and comprehensive testing ensures reliability.
-
-### Next Steps
-
-1. Review and approve this design document
-2. Create implementation tasks from this design
-3. Begin Phase 1: Type Definitions
-4. Continue through phases 2-6 as outlined
-5. Monitor metrics and adjust as needed
-
-### References
-
-- Backend API Documentation: `backend/app/api/v1/endpoints/`
-- Frontend Services: `frontend/src/services/`
-- Type Definitions: `frontend/src/types/`
-- Product Requirements: `docs/product/RFP.md`
-- User Journey: `docs/product/how_completed_product_will_look.md`
-
+The design ensures that all users complete the mandatory 9-state onboarding flow before accessing application features, with clear visual feedback and error recovery throughout the journey.

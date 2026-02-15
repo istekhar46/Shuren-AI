@@ -1,10 +1,12 @@
 import api from './api';
 import type {
   AgentType,
+} from '../types';
+import type {
   VoiceSessionResponse,
   VoiceSessionStatus,
   ActiveSessionsResponse,
-} from '../types';
+} from '../types/voice.types';
 
 export const voiceService = {
   /**

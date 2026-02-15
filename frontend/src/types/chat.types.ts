@@ -47,3 +47,14 @@ export interface MessageDict {
   agent_type: string | null;
   created_at: string;
 }
+
+/**
+ * Structured error for chat service
+ * Used to provide detailed error information to UI components
+ */
+export interface ChatServiceError {
+  status: number;
+  code?: string;
+  message: string;
+  redirect?: string;
+}

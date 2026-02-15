@@ -2,155 +2,150 @@
 
 ## Introduction
 
-This specification addresses the critical misalignment between the Shuren frontend API service layer and the actual backend API endpoints. The frontend currently makes incorrect API calls with wrong endpoints, HTTP methods, request parameters, and response structures. This causes runtime errors, failed requests, and broken functionality across authentication, onboarding, profiles, chat, meals, and workouts.
+This document defines the requirements for frontend integration to support the onboarding-first approach in the Shuren AI fitness application. The backend implementation is complete and validated. This specification ensures the frontend properly implements navigation locks, progress indicators, endpoint routing, and user state management to create a seamless onboarding experience.
 
-The goal is to update all frontend API service files to correctly integrate with the actual backend endpoints, ensuring type-safe communication and proper error handling.
+The frontend must enforce that all users complete the mandatory 9-state onboarding flow before accessing any application features. During onboarding, users interact with specialized AI agents through a chat interface. After completion, users gain full access to the application and interact exclusively with the general AI assistant.
 
 ## Glossary
 
-- **Frontend_Service**: TypeScript service module that encapsulates API calls to the backend
-- **Backend_Endpoint**: FastAPI route handler that processes HTTP requests
-- **API_Contract**: The agreed-upon interface between frontend and backend including URL, method, request body, query parameters, and response structure
-- **Type_Definition**: TypeScript interface defining the shape of request/response data
-- **HTTP_Method**: The HTTP verb used for the request (GET, POST, PATCH, PUT, DELETE)
-- **Query_Parameter**: URL parameter passed in the query string
-- **Request_Body**: JSON payload sent in the HTTP request body
-- **Response_Schema**: The structure of data returned by the backend
+- **Onboarding_State**: The current step (1-9) in the onboarding process
+- **Navigation_Lock**: UI mechanism that prevents access to features until onboarding completes
+- **Specialized_Agent**: AI agents (Workout, Diet, Scheduler, Supplement) available only during onboarding
+- **General_Agent**: AI assistant available only after onboarding completion
+- **State_Metadata**: Rich information about each onboarding state (name, description, required fields)
+- **Progress_Indicator**: Visual UI element showing onboarding completion status
+- **Onboarding_Completed_Flag**: Boolean property on User model indicating onboarding status
+- **State_Updated_Flag**: Boolean in API response indicating if onboarding progressed
+- **Chat_Endpoint**: POST /api/v1/chat - endpoint for post-onboarding conversations
+- **Onboarding_Chat_Endpoint**: POST /api/v1/chat/onboarding - endpoint for onboarding conversations
+- **HTTP_403_Error**: Forbidden status code returned when accessing locked features
+- **Redirect_Path**: URL path to navigate user when access is denied
 
 ## Requirements
 
-### Requirement 1: Onboarding API Alignment
+### Requirement 1: Navigation Lock Implementation
 
-**User Story:** As a developer, I want the onboarding service to use the correct backend endpoints, so that users can successfully save onboarding progress and retrieve their current state.
-
-#### Acceptance Criteria
-
-1. WHEN the frontend calls `getProgress()`, THE Frontend_Service SHALL send a GET request to `/onboarding/state`
-2. WHEN the backend returns onboarding state, THE Frontend_Service SHALL map the response fields `current_step` and `is_complete` to the expected frontend format
-3. WHEN the frontend calls `saveStep()`, THE Frontend_Service SHALL send a POST request to `/onboarding/step` with `{step, data}` in the request body
-4. WHEN the frontend calls `completeOnboarding()`, THE Frontend_Service SHALL send a POST request to `/onboarding/complete`
-5. THE Frontend_Service SHALL define TypeScript interfaces matching the backend's `OnboardingStateResponse` schema
-
-### Requirement 2: Profile API Alignment
-
-**User Story:** As a developer, I want the profile service to use the correct HTTP methods and endpoints, so that profile operations succeed without errors.
+**User Story:** As a new user, I want clear visual feedback that features are locked during onboarding, so that I understand I must complete onboarding first.
 
 #### Acceptance Criteria
 
-1. WHEN the frontend calls `getProfile()`, THE Frontend_Service SHALL send a GET request to `/profiles/me`
-2. WHEN the frontend calls `updateProfile()`, THE Frontend_Service SHALL send a PATCH request (not PUT) to `/profiles/me`
-3. WHEN the frontend calls `lockProfile()`, THE Frontend_Service SHALL send a POST request to `/profiles/me/lock`
-4. THE Frontend_Service SHALL remove the `unlockProfile()` method as the backend does not support profile unlocking
-5. WHEN updating a profile, THE Frontend_Service SHALL send a request body with `{reason, updates}` structure matching `ProfileUpdateRequest`
-6. THE Frontend_Service SHALL define TypeScript interfaces matching the backend's `UserProfileResponse` schema
+1. WHEN a user has not completed onboarding, THEN THE Frontend SHALL disable all navigation menu items except the onboarding chat interface
+2. WHEN a user hovers over a locked navigation item, THEN THE Frontend SHALL display a tooltip with the message "Complete onboarding to unlock this feature"
+3. WHEN a user attempts to navigate to a locked route directly via URL, THEN THE Frontend SHALL redirect to /onboarding with a message "Complete onboarding to access this feature"
+4. WHEN a user completes onboarding, THEN THE Frontend SHALL automatically unlock all navigation items without requiring page refresh
+5. WHEN the Frontend receives a 403 error with error_code "ONBOARDING_REQUIRED", THEN THE Frontend SHALL redirect to the path specified in the redirect field
 
-### Requirement 3: Chat API Alignment
+### Requirement 2: Progress Indicator Display
 
-**User Story:** As a developer, I want the chat service to correctly handle conversation context and streaming, so that users can have coherent conversations with AI agents.
-
-#### Acceptance Criteria
-
-1. WHEN the frontend calls `sendMessage()`, THE Frontend_Service SHALL send a POST request to `/chat/chat` with `{message, agent_type}` only
-2. THE Frontend_Service SHALL remove `conversation_id` from the request body as the backend does not accept it
-3. WHEN the backend returns a chat response, THE Frontend_Service SHALL extract `conversation_id` from the response for tracking
-4. WHEN the frontend calls `getHistory()`, THE Frontend_Service SHALL send a GET request with query parameter `limit` (not `conversation_id`)
-5. WHEN the frontend calls `streamMessage()`, THE Frontend_Service SHALL send a POST request to `/chat/stream` with `{message, agent_type}` in the request body
-6. THE Frontend_Service SHALL handle Server-Sent Events (SSE) responses from the streaming endpoint
-7. WHEN the frontend calls `clearHistory()`, THE Frontend_Service SHALL send a DELETE request to `/chat/history`
-8. THE Frontend_Service SHALL define TypeScript interfaces matching `ChatRequest`, `ChatResponse`, and `ChatHistoryResponse` schemas
-
-### Requirement 4: Meal API Alignment
-
-**User Story:** As a developer, I want the meal service to use the correct endpoints and parameters, so that users can view meal plans, search dishes, and generate shopping lists.
+**User Story:** As a user going through onboarding, I want to see my progress visually, so that I know how many steps remain and feel motivated to complete the process.
 
 #### Acceptance Criteria
 
-1. WHEN the frontend calls `getMealPlan()`, THE Frontend_Service SHALL send a GET request to `/meals/plan` without date parameters
-2. THE Frontend_Service SHALL remove date filtering parameters as the backend does not support them
-3. WHEN the frontend calls `getMealSchedule()`, THE Frontend_Service SHALL send a GET request to `/meals/schedule`
-4. WHEN the frontend calls `getTodayMeals()`, THE Frontend_Service SHALL send a GET request to `/meals/today`
-5. WHEN the frontend calls `getNextMeal()`, THE Frontend_Service SHALL send a GET request to `/meals/next`
-6. THE Frontend_Service SHALL remove `getMealDetails(mealId)` as the backend does not have individual meal endpoints
-7. WHEN the frontend calls `searchDishes()`, THE Frontend_Service SHALL send a GET request to `/dishes/search` (not `/meals/dishes/search`)
-8. WHEN searching dishes, THE Frontend_Service SHALL support query parameters: `meal_type`, `diet_type`, `max_prep_time`, `max_calories`, `limit`, `offset`
-9. WHEN the frontend calls `getDishDetails()`, THE Frontend_Service SHALL send a GET request to `/dishes/{dish_id}`
-10. WHEN the frontend calls `generateShoppingList()`, THE Frontend_Service SHALL send a GET request to `/shopping-list/` with query parameter `weeks`
-11. THE Frontend_Service SHALL remove date-based shopping list parameters and use week-based parameters instead
-12. THE Frontend_Service SHALL define TypeScript interfaces matching `MealPlanResponse`, `MealScheduleResponse`, `DishResponse`, and `ShoppingListResponse` schemas
+1. WHEN a user is on the onboarding page, THEN THE Frontend SHALL display a progress bar showing "Step X of 9" where X is the current state number
+2. WHEN displaying onboarding progress, THEN THE Frontend SHALL show a list of all 9 states with checkmarks for completed states
+3. WHEN displaying onboarding progress, THEN THE Frontend SHALL highlight the current state with distinct visual styling
+4. WHEN displaying onboarding progress, THEN THE Frontend SHALL show upcoming states in a grayed-out or disabled visual style
+5. WHEN the Frontend fetches state metadata from the backend, THEN THE Frontend SHALL display the state name and description from STATE_METADATA for each state
+6. WHEN a state is updated during chat, THEN THE Frontend SHALL animate the transition to the new state and update the progress indicator
 
-### Requirement 5: Workout API Alignment
+### Requirement 3: Endpoint Routing Logic
 
-**User Story:** As a developer, I want the workout service to correctly retrieve workout data, so that users can view their workout plans and schedules.
+**User Story:** As a developer, I want the frontend to route chat messages to the correct backend endpoint based on onboarding status, so that users interact with the appropriate agents.
 
 #### Acceptance Criteria
 
-1. WHEN the frontend calls `getWorkoutPlan()`, THE Frontend_Service SHALL send a GET request to `/workouts/plan`
-2. WHEN the frontend calls `getWorkoutDay()`, THE Frontend_Service SHALL send a GET request to `/workouts/plan/day/{day_number}`
-3. WHEN the frontend calls `getTodayWorkout()`, THE Frontend_Service SHALL send a GET request to `/workouts/today`
-4. WHEN the frontend calls `getWeekWorkouts()`, THE Frontend_Service SHALL send a GET request to `/workouts/week`
-5. WHEN the frontend calls `getWorkoutSchedule()`, THE Frontend_Service SHALL send a GET request to `/workouts/schedule`
-6. WHEN the frontend calls `updateWorkoutSchedule()`, THE Frontend_Service SHALL send a PATCH request to `/workouts/schedule`
-7. THE Frontend_Service SHALL remove `logSet()` method as the backend does not have a workout logging endpoint
-8. THE Frontend_Service SHALL remove `completeWorkout()` method as the backend does not have a workout completion endpoint
-9. THE Frontend_Service SHALL remove `getHistory()` method as the backend does not have a workout history endpoint
-10. THE Frontend_Service SHALL define TypeScript interfaces matching `WorkoutPlanResponse`, `WorkoutDayResponse`, and `WorkoutScheduleResponse` schemas
+1. WHEN a user has not completed onboarding, THEN THE Frontend SHALL send all chat messages to POST /api/v1/chat/onboarding
+2. WHEN a user has completed onboarding, THEN THE Frontend SHALL send all chat messages to POST /api/v1/chat
+3. WHEN the Frontend receives a 403 error from POST /api/v1/chat with error_code "ONBOARDING_REQUIRED", THEN THE Frontend SHALL redirect to /onboarding and display the onboarding_progress information
+4. WHEN the Frontend receives a 403 error from POST /api/v1/chat/onboarding indicating onboarding is complete, THEN THE Frontend SHALL redirect to the main chat interface
+5. WHEN sending a message to POST /api/v1/chat/onboarding, THEN THE Frontend SHALL include the current_state field matching the user's current onboarding step
+6. WHEN the Frontend receives a 400 error indicating state mismatch, THEN THE Frontend SHALL fetch the current state from GET /api/v1/onboarding/progress and resync
 
-### Requirement 6: Meal Template API Integration
+### Requirement 4: Onboarding Chat Interface
 
-**User Story:** As a developer, I want to integrate meal template endpoints, so that users can view and regenerate their meal templates with assigned dishes.
+**User Story:** As a user, I want a conversational onboarding experience, so that providing my information feels natural and guided.
 
 #### Acceptance Criteria
 
-1. WHEN the frontend calls `getTodayMealsWithDishes()`, THE Frontend_Service SHALL send a GET request to `/meal-templates/today`
-2. WHEN the frontend calls `getNextMealWithDishes()`, THE Frontend_Service SHALL send a GET request to `/meal-templates/next`
-3. WHEN the frontend calls `getMealTemplate()`, THE Frontend_Service SHALL send a GET request to `/meal-templates/template` with optional query parameter `week_number`
-4. WHEN the frontend calls `regenerateMealTemplate()`, THE Frontend_Service SHALL send a POST request to `/meal-templates/template/regenerate` with request body matching `TemplateRegenerateRequest`
-5. THE Frontend_Service SHALL define TypeScript interfaces matching `TodayMealsResponse`, `NextMealResponse`, and `MealTemplateResponse` schemas
+1. WHEN a user first enters onboarding, THEN THE Frontend SHALL display a welcome message explaining the onboarding process
+2. WHEN a user sends a message during onboarding, THEN THE Frontend SHALL display the message in the chat interface with "user" role styling
+3. WHEN the Frontend receives a response from POST /api/v1/chat/onboarding, THEN THE Frontend SHALL display the agent's response with "assistant" role styling
+4. WHEN the response includes state_updated: true, THEN THE Frontend SHALL display a confirmation message indicating progress to the next state
+5. WHEN the response includes state_updated: true, THEN THE Frontend SHALL update the current_state to the new_state value for subsequent messages
+6. WHEN the response includes progress information, THEN THE Frontend SHALL update the progress indicator to reflect the new completion percentage
+7. WHEN onboarding is complete (is_complete: true in progress), THEN THE Frontend SHALL display a completion message and redirect to the main application after 3 seconds
 
-### Requirement 7: Authentication API Verification
+### Requirement 5: User State Management
 
-**User Story:** As a developer, I want to verify that authentication endpoints are correctly implemented, so that users can register, login, and access protected resources.
-
-#### Acceptance Criteria
-
-1. WHEN the frontend calls `register()`, THE Frontend_Service SHALL send a POST request to `/auth/register` with `{email, password}`
-2. WHEN the frontend calls `login()`, THE Frontend_Service SHALL send a POST request to `/auth/login` with `{email, password}`
-3. WHEN the frontend calls `getCurrentUser()`, THE Frontend_Service SHALL send a GET request to `/auth/me`
-4. WHEN authentication succeeds, THE Frontend_Service SHALL store the `access_token` from the `TokenResponse`
-5. THE Frontend_Service SHALL define TypeScript interfaces matching `TokenResponse` and `UserResponse` schemas
-
-### Requirement 8: Voice Session API Verification
-
-**User Story:** As a developer, I want to verify that voice session endpoints are correctly implemented, so that users can start, monitor, and end voice coaching sessions.
+**User Story:** As a user, I want the application to remember my onboarding status across sessions, so that I don't have to restart if I close the app.
 
 #### Acceptance Criteria
 
-1. WHEN the frontend calls `startSession()`, THE Frontend_Service SHALL send a POST request to `/voice-sessions/start` with `{agent_type}`
-2. WHEN the frontend calls `getSessionStatus()`, THE Frontend_Service SHALL send a GET request to `/voice-sessions/{room_name}/status`
-3. WHEN the frontend calls `endSession()`, THE Frontend_Service SHALL send a DELETE request to `/voice-sessions/{room_name}`
-4. WHEN the frontend calls `getActiveSessions()`, THE Frontend_Service SHALL send a GET request to `/voice-sessions/active`
-5. THE Frontend_Service SHALL define TypeScript interfaces matching `VoiceSessionResponse` and `VoiceSessionStatus` schemas
+1. WHEN a user logs in, THEN THE Frontend SHALL check the onboarding_completed property from the user object
+2. WHEN onboarding_completed is false, THEN THE Frontend SHALL redirect to /onboarding immediately after login
+3. WHEN onboarding_completed is true, THEN THE Frontend SHALL allow access to the main application
+4. WHEN the Frontend loads the onboarding page, THEN THE Frontend SHALL fetch current progress from GET /api/v1/onboarding/progress
+5. WHEN the progress response indicates is_complete: true, THEN THE Frontend SHALL redirect to the main application
+6. WHEN a state transition occurs, THEN THE Frontend SHALL update the local state to match the new_state from the API response
+7. WHEN the user refreshes the page during onboarding, THEN THE Frontend SHALL resume from the current_state without losing progress
 
-### Requirement 9: Type Safety and Validation
+### Requirement 6: Error Handling and Recovery
 
-**User Story:** As a developer, I want all API calls to be type-safe, so that type errors are caught at compile time rather than runtime.
-
-#### Acceptance Criteria
-
-1. THE Frontend_Service SHALL define TypeScript interfaces for all request payloads
-2. THE Frontend_Service SHALL define TypeScript interfaces for all response payloads
-3. THE Frontend_Service SHALL use generic typing for axios responses to ensure type safety
-4. WHEN an API call is made, THE Frontend_Service SHALL validate request data against TypeScript interfaces at compile time
-5. WHEN a response is received, THE Frontend_Service SHALL type the response data according to the expected schema
-
-### Requirement 10: Error Handling and Response Mapping
-
-**User Story:** As a developer, I want consistent error handling across all API services, so that errors are properly caught and reported to users.
+**User Story:** As a user, I want clear error messages when something goes wrong, so that I know how to proceed.
 
 #### Acceptance Criteria
 
-1. WHEN an API call fails with a 4xx error, THE Frontend_Service SHALL throw an error with the backend's error message
-2. WHEN an API call fails with a 5xx error, THE Frontend_Service SHALL throw a generic server error
-3. WHEN a network error occurs, THE Frontend_Service SHALL throw a network connectivity error
-4. WHEN the backend returns a 401 Unauthorized, THE Frontend_Service SHALL clear authentication tokens and redirect to login
-5. THE Frontend_Service SHALL preserve error details from the backend for debugging purposes
+1. WHEN the Frontend receives a 403 error with error_code "ONBOARDING_REQUIRED", THEN THE Frontend SHALL display the message field and redirect to the redirect path
+2. WHEN the Frontend receives a 403 error with error_code "AGENT_NOT_ALLOWED", THEN THE Frontend SHALL display an error message explaining only the general agent is available
+3. WHEN the Frontend receives a 400 error indicating state mismatch, THEN THE Frontend SHALL fetch the correct state and display a message "Syncing your progress..."
+4. WHEN the Frontend receives a 500 error, THEN THE Frontend SHALL display a user-friendly error message and provide a retry button
+5. WHEN the Frontend loses network connectivity during onboarding, THEN THE Frontend SHALL display an offline indicator and queue messages for retry
+6. WHEN network connectivity is restored, THEN THE Frontend SHALL automatically retry queued messages
+
+### Requirement 7: Post-Onboarding Experience
+
+**User Story:** As a user who completed onboarding, I want seamless access to all features, so that I can start using the application immediately.
+
+#### Acceptance Criteria
+
+1. WHEN onboarding is complete, THEN THE Frontend SHALL unlock all navigation menu items
+2. WHEN onboarding is complete, THEN THE Frontend SHALL route all chat messages to POST /api/v1/chat
+3. WHEN onboarding is complete, THEN THE Frontend SHALL not include agent_type in chat requests (backend forces general agent)
+4. WHEN the Frontend receives a response from POST /api/v1/chat, THEN THE Frontend SHALL display the agent_type in the chat interface
+5. WHEN a completed user attempts to access /onboarding, THEN THE Frontend SHALL redirect to the main chat interface with a message "You've already completed onboarding"
+
+### Requirement 8: Responsive Design and Accessibility
+
+**User Story:** As a user on any device, I want the onboarding interface to work smoothly, so that I can complete it on mobile, tablet, or desktop.
+
+#### Acceptance Criteria
+
+1. WHEN the onboarding interface is displayed on mobile devices, THEN THE Frontend SHALL adapt the progress indicator to a compact vertical layout
+2. WHEN the onboarding interface is displayed on desktop, THEN THE Frontend SHALL show the progress indicator in a sidebar with full state names
+3. WHEN a user navigates using keyboard only, THEN THE Frontend SHALL support tab navigation through all interactive elements
+4. WHEN a screen reader is used, THEN THE Frontend SHALL announce progress updates and state transitions
+5. WHEN the chat input receives focus, THEN THE Frontend SHALL ensure the input is visible above the mobile keyboard
+
+### Requirement 9: Performance and Optimization
+
+**User Story:** As a user, I want fast responses during onboarding, so that the experience feels smooth and responsive.
+
+#### Acceptance Criteria
+
+1. WHEN the Frontend sends a chat message, THEN THE Frontend SHALL display a loading indicator within 100ms
+2. WHEN the Frontend receives an API response, THEN THE Frontend SHALL render the message within 50ms
+3. WHEN fetching onboarding progress, THEN THE Frontend SHALL cache the result for 30 seconds to avoid redundant requests
+4. WHEN a state transition occurs, THEN THE Frontend SHALL invalidate the progress cache and fetch fresh data
+5. WHEN the user types in the chat input, THEN THE Frontend SHALL debounce typing indicators to avoid excessive updates
+
+### Requirement 10: Data Validation and Security
+
+**User Story:** As a developer, I want the frontend to validate data before sending to the backend, so that we catch errors early and reduce server load.
+
+#### Acceptance Criteria
+
+1. WHEN a user sends an empty message, THEN THE Frontend SHALL prevent the request and display a validation message "Please enter a message"
+2. WHEN the Frontend stores authentication tokens, THEN THE Frontend SHALL use secure storage mechanisms (httpOnly cookies or secure localStorage)
+3. WHEN the Frontend makes API requests, THEN THE Frontend SHALL include the JWT token in the Authorization header
+4. WHEN the Frontend receives a 401 error, THEN THE Frontend SHALL clear stored credentials and redirect to login
+5. WHEN the Frontend receives user data, THEN THE Frontend SHALL sanitize all text content before rendering to prevent XSS attacks

@@ -5,6 +5,10 @@ import type {
   OnboardingStepResponse,
   UserProfileResponse,
 } from '../types/api';
+import type {
+  OnboardingProgress,
+  OnboardingChatResponse,
+} from '../types/onboarding.types';
 
 /**
  * Onboarding service for managing user onboarding flow
@@ -52,5 +56,33 @@ export const onboardingService = {
       currentStep: state.current_step,
       completed: state.is_complete,
     };
+  },
+
+  /**
+   * Get onboarding progress with state metadata
+   * Calls GET /api/v1/onboarding/progress
+   * @returns Onboarding progress with current state info and metadata
+   */
+  async getOnboardingProgress(): Promise<OnboardingProgress> {
+    const response = await api.get<OnboardingProgress>('/onboarding/progress');
+    return response.data;
+  },
+
+  /**
+   * Send message during onboarding
+   * Calls POST /api/v1/chat/onboarding
+   * @param message - User's message
+   * @param currentState - Current onboarding state number
+   * @returns Agent response with state update information
+   */
+  async sendOnboardingMessage(
+    message: string,
+    currentState: number
+  ): Promise<OnboardingChatResponse> {
+    const response = await api.post<OnboardingChatResponse>('/chat/onboarding', {
+      message,
+      current_state: currentState,
+    });
+    return response.data;
   },
 };

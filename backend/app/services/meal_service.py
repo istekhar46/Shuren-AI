@@ -1,387 +1,228 @@
-"""Meal service for managing meal plans and schedules."""
+"""Meal service for managing meal plans, templates, and recipes."""
 
-from datetime import datetime, time
-from decimal import Decimal
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ProfileLockedException
+from app.models.dish import Dish, DishIngredient, Ingredient
+from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule
-from app.models.profile import UserProfile, UserProfileVersion
+from app.models.profile import UserProfile
 
 
 class MealService:
-    """Service for managing meal plans and schedules.
+    """Service for meal-related database operations."""
     
-    Handles meal plan retrieval, meal schedule management, profile locking,
-    and versioning for modifications.
-    """
-    
-    def __init__(self, db: AsyncSession):
-        """Initialize meal service.
+    @staticmethod
+    async def get_today_meal_plan(
+        user_id: UUID,
+        db_session: AsyncSession
+    ) -> Optional[dict[str, Any]]:
+        """Get today's meal plan for a user.
+        
+        Queries MealTemplate, TemplateMeal, Dish, MealSchedule, and MealPlan tables
+        to build a complete meal plan for today with nutritional information.
         
         Args:
-            db: Async database session
-        """
-        self.db = db
-    
-    async def get_meal_plan(self, user_id: UUID) -> MealPlan | None:
-        """Retrieve meal plan for user.
-        
-        Queries meal plan through user profile relationship.
-        
-        Args:
-            user_id: User's unique identifier
+            user_id: User's UUID
+            db_session: Database session
             
         Returns:
-            MealPlan with all nutritional targets, or None if not found
+            Dict with meal details or None if no meal plan configured
             
         Raises:
-            HTTPException: 404 if user profile not found
+            ValueError: If user profile not found
         """
-        result = await self.db.execute(
-            select(UserProfile)
-            .where(
-                UserProfile.user_id == user_id,
-                UserProfile.deleted_at.is_(None)
-            )
-            .options(selectinload(UserProfile.meal_plan))
-        )
-        profile = result.scalar_one_or_none()
-        
-        if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
-        
-        # Return None if no meal plan (not an error)
-        return profile.meal_plan
-    
-    async def get_meal_schedule(self, user_id: UUID) -> list[MealSchedule]:
-        """Retrieve meal schedule (timing for all meals).
-        
-        Returns all configured meal times from the user's profile.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            List of MealSchedule objects
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        result = await self.db.execute(
-            select(UserProfile)
-            .where(
-                UserProfile.user_id == user_id,
-                UserProfile.deleted_at.is_(None)
-            )
-            .options(selectinload(UserProfile.meal_schedules))
-        )
-        profile = result.scalar_one_or_none()
-        
-        if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
-        
-        return profile.meal_schedules
-    
-    async def get_today_meals(self, user_id: UUID) -> list[MealSchedule]:
-        """Retrieve today's meal schedule with timing.
-        
-        Filters meal_schedules for active meals. Returns all meals
-        scheduled for today.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            List of MealSchedule objects for today
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        # Get all meal schedules
-        meal_schedules = await self.get_meal_schedule(user_id)
-        
-        # Return all schedules (they represent today's meals)
-        # In the current schema, meal schedules don't have date filtering
-        # so all schedules represent the daily recurring meal times
-        return meal_schedules
-    
-    async def get_next_meal(self, user_id: UUID) -> Optional[MealSchedule]:
-        """Retrieve next upcoming meal based on current time.
-        
-        Queries meal_schedules, finds next scheduled_time > now.
-        Returns None if no more meals today.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            MealSchedule if next meal exists, None otherwise
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        # Get all meal schedules
-        meal_schedules = await self.get_meal_schedule(user_id)
-        
-        if not meal_schedules:
-            return None
-        
-        # Get current time
-        current_time = datetime.now().time()
-        
-        # Find meals scheduled after current time
-        upcoming_meals = [
-            meal for meal in meal_schedules
-            if meal.scheduled_time > current_time
-        ]
-        
-        if not upcoming_meals:
-            return None
-        
-        # Return the earliest upcoming meal
-        return min(upcoming_meals, key=lambda m: m.scheduled_time)
-    
-    async def check_profile_lock(self, user_id: UUID) -> bool:
-        """Check if user's profile is locked.
-        
-        Verifies profile lock status before allowing modifications.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            True if profile is locked, False otherwise
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        result = await self.db.execute(
-            select(UserProfile)
-            .where(
-                UserProfile.user_id == user_id,
-                UserProfile.deleted_at.is_(None)
-            )
-        )
-        profile = result.scalar_one_or_none()
-        
-        if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
-        
-        return profile.is_locked
-    
-    async def create_profile_version(self, user_id: UUID, reason: str) -> None:
-        """Create profile version record before modification.
-        
-        Creates immutable snapshot of profile state for audit trail.
-        Captures complete profile state including all relationships.
-        
-        Args:
-            user_id: User's unique identifier
-            reason: Reason for profile modification
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        # Get profile with all relationships
-        result = await self.db.execute(
+        # Get user's profile to verify existence
+        profile_result = await db_session.execute(
             select(UserProfile)
             .where(
                 UserProfile.user_id == user_id,
                 UserProfile.deleted_at.is_(None)
             )
             .options(
-                selectinload(UserProfile.meal_plan),
                 selectinload(UserProfile.meal_schedules),
-                selectinload(UserProfile.versions)
+                selectinload(UserProfile.meal_plan),
+                selectinload(UserProfile.meal_templates)
             )
         )
-        profile = result.scalar_one_or_none()
+        profile = profile_result.scalar_one_or_none()
         
         if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
+            raise ValueError(f"User profile not found for user_id: {user_id}")
+        
+        # Check if user has meal plan configured
+        if not profile.meal_plan:
+            return None
+        
+        # Check if user has meal templates
+        if not profile.meal_templates:
+            return None
+        
+        # Get current day of week (0=Monday, 6=Sunday)
+        current_day = datetime.now().weekday()
+        
+        # Find active meal template
+        active_template = None
+        for template in profile.meal_templates:
+            if template.is_active and template.deleted_at is None:
+                active_template = template
+                break
+        
+        if not active_template:
+            return None
+        
+        # Get template meals for today with dish and meal schedule details
+        template_meals_result = await db_session.execute(
+            select(TemplateMeal)
+            .where(
+                TemplateMeal.template_id == active_template.id,
+                TemplateMeal.day_of_week == current_day,
+                TemplateMeal.is_primary == True,
+                TemplateMeal.deleted_at.is_(None)
             )
+            .options(
+                selectinload(TemplateMeal.dish),
+                selectinload(TemplateMeal.meal_schedule)
+            )
+        )
+        template_meals = template_meals_result.scalars().all()
         
-        # Determine next version number
-        version_number = 1
-        if profile.versions:
-            version_number = max(v.version_number for v in profile.versions) + 1
+        if not template_meals:
+            return None
         
-        # Create snapshot of current state
-        snapshot = {
-            "profile_id": str(profile.id),
-            "user_id": str(profile.user_id),
-            "is_locked": profile.is_locked,
-            "fitness_level": profile.fitness_level,
-            "meal_plan": None,
-            "meal_schedules": []
-        }
+        # Build meals list
+        meals = []
+        daily_calories = 0.0
+        daily_protein = 0.0
+        daily_carbs = 0.0
+        daily_fats = 0.0
         
-        # Add meal plan to snapshot
-        if profile.meal_plan:
-            snapshot["meal_plan"] = {
-                "id": str(profile.meal_plan.id),
+        for template_meal in template_meals:
+            dish = template_meal.dish
+            meal_schedule = template_meal.meal_schedule
+            
+            # Skip if dish or meal_schedule is soft deleted
+            if dish.deleted_at is not None or meal_schedule.deleted_at is not None:
+                continue
+            
+            # Add to daily totals
+            daily_calories += float(dish.calories)
+            daily_protein += float(dish.protein_g)
+            daily_carbs += float(dish.carbs_g)
+            daily_fats += float(dish.fats_g)
+            
+            meals.append({
+                "meal_name": meal_schedule.meal_name,
+                "scheduled_time": meal_schedule.scheduled_time.isoformat() if meal_schedule.scheduled_time else None,
+                "dish_name": dish.name,
+                "dish_name_hindi": dish.name_hindi,
+                "calories": float(dish.calories),
+                "protein_g": float(dish.protein_g),
+                "carbs_g": float(dish.carbs_g),
+                "fats_g": float(dish.fats_g),
+                "serving_size_g": float(dish.serving_size_g),
+                "prep_time_minutes": dish.prep_time_minutes,
+                "cook_time_minutes": dish.cook_time_minutes,
+                "is_vegetarian": dish.is_vegetarian,
+                "is_vegan": dish.is_vegan
+            })
+        
+        # Build response dict matching design spec
+        return {
+            "day_of_week": current_day,
+            "meals": meals,
+            "daily_totals": {
+                "calories": daily_calories,
+                "protein_g": daily_protein,
+                "carbs_g": daily_carbs,
+                "fats_g": daily_fats
+            },
+            "targets": {
                 "daily_calorie_target": profile.meal_plan.daily_calorie_target,
                 "protein_percentage": float(profile.meal_plan.protein_percentage),
                 "carbs_percentage": float(profile.meal_plan.carbs_percentage),
                 "fats_percentage": float(profile.meal_plan.fats_percentage)
             }
-        
-        # Add meal schedules to snapshot
-        for schedule in profile.meal_schedules:
-            snapshot["meal_schedules"].append({
-                "id": str(schedule.id),
-                "meal_name": schedule.meal_name,
-                "scheduled_time": schedule.scheduled_time.isoformat(),
-                "enable_notifications": schedule.enable_notifications
-            })
-        
-        # Create version record
-        version = UserProfileVersion(
-            profile_id=profile.id,
-            version_number=version_number,
-            change_reason=reason,
-            snapshot=snapshot
-        )
-        
-        self.db.add(version)
-        await self.db.commit()
-
-    async def update_meal_plan(
-        self,
-        user_id: UUID,
-        update: dict
-    ) -> MealPlan:
-        """Update meal plan with lock validation.
-        
-        Validates profile lock status before applying changes.
-        Creates profile version if locked profile is modified.
-        
-        Args:
-            user_id: User's unique identifier
-            update: Dictionary of fields to update
-            
-        Returns:
-            Updated MealPlan
-            
-        Raises:
-            HTTPException: 403 if profile is locked
-            HTTPException: 404 if meal plan not found
-        """
-        # Check profile lock
-        is_locked = await self.check_profile_lock(user_id)
-        
-        if is_locked:
-            raise ProfileLockedException()
-        
-        # Get meal plan
-        meal_plan = await self.get_meal_plan(user_id)
-        
-        # Apply updates
-        for field, value in update.items():
-            if value is not None and hasattr(meal_plan, field):
-                setattr(meal_plan, field, value)
-        
-        # Validate macro percentages if any were updated
-        if any(k in update for k in ['protein_percentage', 'carbs_percentage', 'fats_percentage']):
-            if not self.validate_macro_percentages(meal_plan):
-                raise HTTPException(
-                    status_code=422,
-                    detail="Macro percentages must sum to 100"
-                )
-        
-        # Save changes
-        await self.db.commit()
-        await self.db.refresh(meal_plan)
-        
-        return meal_plan
+        }
     
-    async def update_meal_schedule(
-        self,
-        user_id: UUID,
-        updates: list[dict]
-    ) -> list[MealSchedule]:
-        """Update meal schedule with lock validation.
+    @staticmethod
+    async def get_recipe_details(
+        dish_name: str,
+        db_session: AsyncSession
+    ) -> Optional[dict[str, Any]]:
+        """Get recipe details including ingredients and cooking instructions.
         
-        Validates profile lock status before applying changes.
-        Updates meal timing and notification preferences.
-        
-        Args:
-            user_id: User's unique identifier
-            updates: List of meal schedule updates
-            
-        Returns:
-            Updated list of MealSchedule objects
-            
-        Raises:
-            HTTPException: 403 if profile is locked
-            HTTPException: 404 if profile not found
-        """
-        # Check profile lock
-        is_locked = await self.check_profile_lock(user_id)
-        
-        if is_locked:
-            raise ProfileLockedException()
-        
-        # Get current meal schedules
-        meal_schedules = await self.get_meal_schedule(user_id)
-        
-        # Create a mapping of meal_name to schedule for easy lookup
-        schedule_map = {schedule.meal_name: schedule for schedule in meal_schedules}
-        
-        # Apply updates
-        for update_data in updates:
-            meal_name = update_data.get('meal_name')
-            if meal_name and meal_name in schedule_map:
-                schedule = schedule_map[meal_name]
-                
-                # Update fields
-                for field, value in update_data.items():
-                    if value is not None and hasattr(schedule, field) and field != 'meal_name':
-                        setattr(schedule, field, value)
-        
-        # Save changes
-        await self.db.commit()
-        
-        # Refresh all schedules
-        for schedule in meal_schedules:
-            await self.db.refresh(schedule)
-        
-        return meal_schedules
-    
-    def validate_macro_percentages(self, meal_plan: MealPlan) -> bool:
-        """Validate that macro percentages sum to 100.
-        
-        Ensures protein, carbs, and fats percentages total exactly 100%.
+        Queries Dish, DishIngredient, and Ingredient tables with case-insensitive
+        partial match to find recipe details.
         
         Args:
-            meal_plan: MealPlan to validate
+            dish_name: Name of dish (case-insensitive partial match)
+            db_session: Database session
             
         Returns:
-            True if valid, False otherwise
+            Dict with recipe details or None if not found
         """
-        total = (
-            meal_plan.protein_percentage +
-            meal_plan.carbs_percentage +
-            meal_plan.fats_percentage
+        # Query Dish with case-insensitive partial match
+        dish_result = await db_session.execute(
+            select(Dish)
+            .where(
+                func.lower(Dish.name).contains(func.lower(dish_name)),
+                Dish.deleted_at.is_(None),
+                Dish.is_active == True
+            )
+            .options(
+                selectinload(Dish.dish_ingredients)
+                .selectinload(DishIngredient.ingredient)
+            )
+            .limit(1)
         )
+        dish = dish_result.scalar_one_or_none()
         
-        # Allow small floating point tolerance
-        return abs(total - Decimal('100.00')) < Decimal('0.01')
+        if not dish:
+            return None
+        
+        # Build ingredients list
+        ingredients = []
+        for dish_ingredient in dish.dish_ingredients:
+            if dish_ingredient.deleted_at is None and dish_ingredient.ingredient.deleted_at is None:
+                ingredients.append({
+                    "name": dish_ingredient.ingredient.name,
+                    "name_hindi": dish_ingredient.ingredient.name_hindi,
+                    "quantity": float(dish_ingredient.quantity),
+                    "unit": dish_ingredient.unit,
+                    "preparation_note": dish_ingredient.preparation_note,
+                    "is_optional": dish_ingredient.is_optional
+                })
+        
+        # Build response dict matching design spec
+        return {
+            "dish_name": dish.name,
+            "dish_name_hindi": dish.name_hindi,
+            "description": dish.description,
+            "cuisine_type": dish.cuisine_type,
+            "meal_type": dish.meal_type,
+            "difficulty_level": dish.difficulty_level,
+            "prep_time_minutes": dish.prep_time_minutes,
+            "cook_time_minutes": dish.cook_time_minutes,
+            "serving_size_g": float(dish.serving_size_g),
+            "nutrition": {
+                "calories": float(dish.calories),
+                "protein_g": float(dish.protein_g),
+                "carbs_g": float(dish.carbs_g),
+                "fats_g": float(dish.fats_g),
+                "fiber_g": float(dish.fiber_g) if dish.fiber_g else None
+            },
+            "dietary_tags": {
+                "is_vegetarian": dish.is_vegetarian,
+                "is_vegan": dish.is_vegan,
+                "is_gluten_free": dish.is_gluten_free,
+                "is_dairy_free": dish.is_dairy_free,
+                "is_nut_free": dish.is_nut_free
+            },
+            "ingredients": ingredients
+        }
