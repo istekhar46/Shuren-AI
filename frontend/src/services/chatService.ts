@@ -2,13 +2,23 @@ import api from './api';
 import type { ChatResponse, ChatHistoryResponse, ChatServiceError } from '../types/api';
 
 /**
+ * Callbacks for streaming message responses
+ */
+interface StreamCallbacks {
+  onChunk: (chunk: string) => void;
+  onComplete: (agentType?: string) => void;
+  onError: (error: string) => void;
+}
+
+/**
  * Chat Service
  * 
  * Handles text-based AI agent interactions including sending messages,
  * retrieving chat history, and streaming responses via Server-Sent Events.
  * All operations require authentication.
  */
-export const chatService = {
+class ChatService {
+  private activeStream: EventSource | null = null;
   /**
    * Send a message to an AI agent (post-onboarding)
    * 
@@ -58,7 +68,7 @@ export const chatService = {
       // Re-throw other errors as-is
       throw error;
     }
-  },
+  }
 
   /**
    * Get chat history
@@ -80,7 +90,7 @@ export const chatService = {
       params: { limit },
     });
     return response.data;
-  },
+  }
 
   /**
    * Clear all chat history
@@ -98,7 +108,7 @@ export const chatService = {
   async clearHistory(): Promise<{ status: string }> {
     const response = await api.delete<{ status: string }>('/chat/history');
     return response.data;
-  },
+  }
 
   /**
    * Stream a message to an agent using Server-Sent Events (SSE)
@@ -108,73 +118,107 @@ export const chatService = {
    * Uses EventSource for SSE connection. Authentication token is passed as
    * a query parameter due to EventSource limitations with custom headers.
    * 
-   * Note: For post-onboarding chat, agentType is omitted as backend routes
-   * to general agent only.
+   * Official MDN documentation:
+   * https://developer.mozilla.org/en-US/docs/Web/API/EventSource
    * 
    * @param {string} message - User's message text
-   * @param {(chunk: string) => void} onChunk - Callback invoked for each chunk of the response
-   * @param {(agentType: string) => void} onComplete - Callback invoked when streaming completes, receives agent type
-   * @param {(error: Error) => void} onError - Callback invoked on errors
-   * @returns {EventSource} EventSource instance for managing the connection (call .close() to terminate)
+   * @param {StreamCallbacks} callbacks - Callbacks for chunk, completion, and error events
+   * @param {boolean} [isOnboarding=false] - Whether this is an onboarding chat session
+   * @returns {() => void} Cancellation function to close the stream
    * 
    * @example
-   * const eventSource = chatService.streamMessage(
+   * const cancelStream = chatService.streamMessage(
    *   'Tell me about protein intake',
-   *   (chunk) => console.log('Received:', chunk),
-   *   (agentType) => console.log('Complete! Agent:', agentType),
-   *   (error) => console.error('Error:', error)
+   *   {
+   *     onChunk: (chunk) => console.log('Received:', chunk),
+   *     onComplete: (agentType) => console.log('Complete! Agent:', agentType),
+   *     onError: (error) => console.error('Error:', error)
+   *   },
+   *   false
    * );
    * 
    * // Later, to stop streaming:
-   * eventSource.close();
+   * cancelStream();
    */
   streamMessage(
     message: string,
-    onChunk: (chunk: string) => void,
-    onComplete: (agentType: string) => void,
-    onError: (error: Error) => void
-  ): EventSource {
+    callbacks: StreamCallbacks,
+    isOnboarding: boolean = false
+  ): () => void {
     const token = localStorage.getItem('auth_token');
     const baseURL = api.defaults.baseURL || 'http://localhost:8000/api/v1';
     
-    // Create URL with query params for SSE
-    const url = new URL('/chat/stream', baseURL);
+    // Determine endpoint based on chat type
+    const endpoint = isOnboarding ? '/chat/onboarding-stream' : '/chat/stream';
     
-    // Add authentication token as query param (SSE limitation)
+    // Create URL with query params for SSE
+    const url = new URL(endpoint, baseURL);
+    
+    // Add authentication token as query param (EventSource limitation)
     if (token) {
       url.searchParams.append('token', token);
     }
     
     // Add message as query param
     url.searchParams.append('message', message);
-    // agent_type omitted - backend forces general agent for post-onboarding
 
-    const eventSource = new EventSource(url.toString());
+    // Create EventSource connection
+    this.activeStream = new EventSource(url.toString());
 
-    eventSource.onmessage = (event) => {
+    // Handle incoming messages
+    this.activeStream.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         
         if (data.error) {
-          onError(new Error(data.error));
-          eventSource.close();
+          callbacks.onError(data.error);
+          this.activeStream?.close();
+          this.activeStream = null;
         } else if (data.done) {
-          onComplete(data.agent_type);
-          eventSource.close();
+          callbacks.onComplete(data.agent_type);
+          this.activeStream?.close();
+          this.activeStream = null;
         } else if (data.chunk) {
-          onChunk(data.chunk);
+          callbacks.onChunk(data.chunk);
         }
       } catch (error) {
-        onError(new Error('Failed to parse stream data'));
-        eventSource.close();
+        callbacks.onError('Failed to parse response');
+        this.activeStream?.close();
+        this.activeStream = null;
       }
     };
 
-    eventSource.onerror = () => {
-      onError(new Error('Stream connection failed'));
-      eventSource.close();
+    // Handle connection errors
+    this.activeStream.onerror = () => {
+      callbacks.onError('Connection error');
+      this.activeStream?.close();
+      this.activeStream = null;
     };
 
-    return eventSource;
-  },
-};
+    // Return cancellation function
+    return () => {
+      if (this.activeStream) {
+        this.activeStream.close();
+        this.activeStream = null;
+      }
+    };
+  }
+
+  /**
+   * Cancel active streaming connection
+   * 
+   * Closes the active EventSource connection if one exists.
+   * Safe to call even if no stream is active.
+   * 
+   * @example
+   * chatService.cancelStream();
+   */
+  cancelStream(): void {
+    if (this.activeStream) {
+      this.activeStream.close();
+      this.activeStream = null;
+    }
+  }
+}
+
+export const chatService = new ChatService();

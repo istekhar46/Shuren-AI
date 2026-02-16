@@ -259,6 +259,9 @@ async def chat_onboarding(
                 detail="Onboarding state not found"
             )
         
+        # NEW: Store initial state for comparison
+        initial_step = state.current_step
+        
         # 3. Verify current_state matches
         if state.current_step != request.current_state:
             raise HTTPException(
@@ -306,7 +309,7 @@ async def chat_onboarding(
         
         # 7. Check if state was updated (agent called save function)
         updated_state = await onboarding_service.get_onboarding_state(current_user.id)
-        state_updated = updated_state.current_step > state.current_step
+        state_updated = updated_state.current_step > initial_step
         
         # 8. Get progress
         progress = await onboarding_service.get_progress(current_user.id)
@@ -336,7 +339,8 @@ async def chat_onboarding(
         # Log successful request
         logger.info(
             f"Onboarding chat processed: user={user_id}, agent={agent_response.agent_type}, "
-            f"state={request.current_state}, state_updated={state_updated}, time={elapsed_ms}ms"
+            f"initial_state={initial_step}, final_state={updated_state.current_step}, "
+            f"state_updated={state_updated}, time={elapsed_ms}ms"
         )
         
         return OnboardingChatResponse(
@@ -367,6 +371,195 @@ async def chat_onboarding(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred"
         )
+
+
+@router.get("/onboarding-stream", status_code=status.HTTP_200_OK)
+async def chat_onboarding_stream(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    message: str = Query(..., description="User message to send to onboarding agent"),
+    token: str = Query(..., description="JWT authentication token")
+) -> StreamingResponse:
+    """
+    Stream onboarding chat responses using Server-Sent Events (SSE).
+    
+    This endpoint processes user messages during onboarding and streams the response
+    in real-time. It routes messages to the appropriate specialized agent based on
+    the current onboarding state. The agent can save onboarding data via function
+    tools, advancing the state.
+    
+    EventSource API limitation: Cannot send custom headers, so authentication token
+    must be passed as a query parameter instead of Authorization header.
+    
+    Args:
+        message: User message to send to onboarding agent
+        token: JWT authentication token (query parameter)
+        db: Database session from dependency injection
+        
+    Returns:
+        StreamingResponse: SSE stream with response chunks and completion event
+        
+    Raises:
+        HTTPException(401): If authentication fails
+        HTTPException(403): If user has already completed onboarding
+        HTTPException(500): If agent processing fails (sent as error event in stream)
+    """
+    from app.core.deps import get_current_user_from_token
+    
+    # Authenticate user from token query parameter
+    try:
+        current_user = await get_current_user_from_token(token, db)
+    except HTTPException:
+        # Re-raise authentication errors
+        raise
+    
+    user_id = str(current_user.id)
+    
+    # Check if user has already completed onboarding
+    if current_user.onboarding_completed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Onboarding already completed"
+        )
+    
+    async def generate():
+        """Async generator function for SSE streaming"""
+        start_time = time.time()
+        full_response = ""
+        agent_type_value = None
+        initial_step = None
+        
+        try:
+            # Load onboarding state
+            onboarding_service = OnboardingService(db)
+            state = await onboarding_service.get_onboarding_state(current_user.id)
+            
+            if not state:
+                yield f"data: {json.dumps({'error': 'Onboarding state not found'})}\n\n"
+                return
+            
+            initial_step = state.current_step
+            
+            # Route to appropriate agent based on current_state
+            agent_type = STATE_TO_AGENT_MAP.get(state.current_step)
+            if not agent_type:
+                yield f"data: {json.dumps({'error': f'Invalid state number: {state.current_step}'})}\n\n"
+                return
+            
+            agent_type_value = agent_type.value
+            
+            # Load user context
+            try:
+                context = await load_agent_context(
+                    db=db,
+                    user_id=user_id,
+                    include_history=True
+                )
+            except ValueError as e:
+                logger.error(f"Context loading failed for user {user_id}: {e}")
+                yield f"data: {json.dumps({'error': 'Failed to load user context'})}\n\n"
+                return
+            
+            # Initialize AgentOrchestrator in text mode
+            orchestrator = AgentOrchestrator(db_session=db, mode="text")
+            
+            # Get or create agent instance
+            agent = orchestrator._get_or_create_agent(agent_type, context)
+            
+            # Stream response chunks via agent.stream_response()
+            try:
+                async for chunk in agent.stream_response(message):
+                    full_response += chunk
+                    # Send each chunk as SSE data event with JSON payload
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                
+                # Check if state was updated (agent called save function)
+                updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+                state_updated = updated_state.current_step > initial_step
+                
+                # Get progress
+                progress = await onboarding_service.get_progress(current_user.id)
+                
+                # Send final event with "done: true", agent_type, and progress info
+                yield f"data: {json.dumps({
+                    'done': True,
+                    'agent_type': agent_type_value,
+                    'state_updated': state_updated,
+                    'new_state': updated_state.current_step if state_updated else None,
+                    'progress': {
+                        'current_state': progress.current_state,
+                        'total_states': progress.total_states,
+                        'completed_states': progress.completed_states,
+                        'completion_percentage': progress.completion_percentage,
+                        'is_complete': progress.is_complete,
+                        'can_complete': progress.can_complete
+                    }
+                })}\n\n"
+                
+            except Exception as e:
+                logger.error(
+                    f"Agent streaming failed for user {user_id}, "
+                    f"query: {message[:50]}, error: {e}",
+                    exc_info=True
+                )
+                yield f"data: {json.dumps({'error': 'Failed to process message'})}\n\n"
+                return
+            
+            # Save user message and complete assistant response after streaming
+            try:
+                user_message = ConversationMessage(
+                    user_id=current_user.id,
+                    role="user",
+                    content=message,
+                    agent_type=None
+                )
+                db.add(user_message)
+                
+                assistant_message = ConversationMessage(
+                    user_id=current_user.id,
+                    role="assistant",
+                    content=full_response,
+                    agent_type=agent_type_value
+                )
+                db.add(assistant_message)
+                
+                # Commit transaction
+                await db.commit()
+                
+            except Exception as e:
+                logger.error(
+                    f"Failed to save conversation for user {user_id}: {e}",
+                    exc_info=True
+                )
+                # Don't send error to client since streaming already completed
+            
+            # Calculate response time
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            
+            # Log successful request
+            logger.info(
+                f"Onboarding stream processed: user={user_id}, agent={agent_type_value}, "
+                f"initial_state={initial_step}, final_state={updated_state.current_step}, "
+                f"time={elapsed_ms}ms, chunks={len(full_response)}"
+            )
+            
+        except Exception as e:
+            # Handle errors with error events in stream
+            logger.error(
+                f"Unexpected error in onboarding streaming endpoint for user {user_id}: {e}",
+                exc_info=True
+            )
+            yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+    
+    # Return StreamingResponse with SSE headers
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.post("/stream", status_code=status.HTTP_200_OK)
@@ -406,6 +599,7 @@ async def chat_stream(
         start_time = time.time()
         full_response = ""
         agent_type_value = None
+        last_chunk_time = time.time()
         
         try:
             # Parse optional agent_type from request
@@ -453,8 +647,16 @@ async def chat_stream(
             try:
                 async for chunk in agent.stream_response(request.message):
                     full_response += chunk
+                    last_chunk_time = time.time()
+                    
                     # Send each chunk as SSE data event with JSON payload
                     yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                    
+                    # Check for timeout (30 seconds of no chunks)
+                    if time.time() - last_chunk_time > 30:
+                        logger.warning(f"Stream timeout for user {user_id} after 30s of no chunks")
+                        yield f"data: {json.dumps({'error': 'Stream timeout - no response from AI'})}\n\n"
+                        return
                 
                 # Send final event with "done: true" and agent_type
                 yield f"data: {json.dumps({'done': True, 'agent_type': agent_type_value})}\n\n"
@@ -465,6 +667,7 @@ async def chat_stream(
                     f"query: {request.message[:50]}, error: {e}",
                     exc_info=True
                 )
+                # Send error event before closing stream
                 yield f"data: {json.dumps({'error': 'Failed to process message'})}\n\n"
                 return
             
@@ -511,10 +714,19 @@ async def chat_stream(
                 f"Unexpected error in streaming endpoint for user {user_id}: {e}",
                 exc_info=True
             )
+            # Send error event before closing stream
             yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
     
-    # Return StreamingResponse with media_type="text/event-stream"
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    # Return StreamingResponse with proper SSE headers
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 

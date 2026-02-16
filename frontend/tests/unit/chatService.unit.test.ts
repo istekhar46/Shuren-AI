@@ -548,38 +548,47 @@ describe('chatService Unit Tests', () => {
       localStorage.setItem('auth_token', 'test-token-123');
     });
 
-    it('should create EventSource with correct URL and query params (no agent_type)', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+    it('should create EventSource with correct URL and token for regular chat', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Tell me about protein',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Tell me about protein', callbacks, false);
 
       expect(globalThis.EventSource).toHaveBeenCalledTimes(1);
       const calledUrl = (globalThis.EventSource as any).mock.calls[0][0];
       expect(calledUrl).toContain('/chat/stream');
       expect(calledUrl).toContain('message=Tell');
       expect(calledUrl).toContain('protein');
-      expect(calledUrl).not.toContain('agent_type=');
+      expect(calledUrl).toContain('token=test-token-123');
+    });
+
+    it('should create EventSource with onboarding endpoint when isOnboarding is true', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      chatService.streamMessage('Tell me about protein', callbacks, true);
+
+      expect(globalThis.EventSource).toHaveBeenCalledTimes(1);
+      const calledUrl = (globalThis.EventSource as any).mock.calls[0][0];
+      expect(calledUrl).toContain('/chat/onboarding-stream');
+      expect(calledUrl).toContain('message=Tell');
       expect(calledUrl).toContain('token=test-token-123');
     });
 
     it('should handle chunk messages correctly', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       // Simulate receiving a chunk
       const chunkEvent = {
@@ -587,23 +596,20 @@ describe('chatService Unit Tests', () => {
       };
       mockEventSource.onmessage(chunkEvent);
 
-      expect(onChunk).toHaveBeenCalledWith('Here is your workout');
-      expect(onChunk).toHaveBeenCalledTimes(1);
-      expect(onComplete).not.toHaveBeenCalled();
-      expect(onError).not.toHaveBeenCalled();
+      expect(callbacks.onChunk).toHaveBeenCalledWith('Here is your workout');
+      expect(callbacks.onChunk).toHaveBeenCalledTimes(1);
+      expect(callbacks.onComplete).not.toHaveBeenCalled();
+      expect(callbacks.onError).not.toHaveBeenCalled();
     });
 
     it('should handle completion message correctly', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       // Simulate completion
       const doneEvent = {
@@ -611,23 +617,20 @@ describe('chatService Unit Tests', () => {
       };
       mockEventSource.onmessage(doneEvent);
 
-      expect(onComplete).toHaveBeenCalledWith('conversational_assistant');
-      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(callbacks.onComplete).toHaveBeenCalledWith('conversational_assistant');
+      expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
       expect(mockEventSource.close).toHaveBeenCalled();
-      expect(onChunk).not.toHaveBeenCalled();
+      expect(callbacks.onChunk).not.toHaveBeenCalled();
     });
 
     it('should handle error messages from stream', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       // Simulate error in stream data
       const errorEvent = {
@@ -635,24 +638,21 @@ describe('chatService Unit Tests', () => {
       };
       mockEventSource.onmessage(errorEvent);
 
-      expect(onError).toHaveBeenCalledWith(new Error('Agent not available'));
-      expect(onError).toHaveBeenCalledTimes(1);
+      expect(callbacks.onError).toHaveBeenCalledWith('Agent not available');
+      expect(callbacks.onError).toHaveBeenCalledTimes(1);
       expect(mockEventSource.close).toHaveBeenCalled();
-      expect(onChunk).not.toHaveBeenCalled();
-      expect(onComplete).not.toHaveBeenCalled();
+      expect(callbacks.onChunk).not.toHaveBeenCalled();
+      expect(callbacks.onComplete).not.toHaveBeenCalled();
     });
 
     it('should handle malformed JSON in stream', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       // Simulate malformed JSON
       const malformedEvent = {
@@ -660,74 +660,185 @@ describe('chatService Unit Tests', () => {
       };
       mockEventSource.onmessage(malformedEvent);
 
-      expect(onError).toHaveBeenCalledWith(new Error('Failed to parse stream data'));
+      expect(callbacks.onError).toHaveBeenCalledWith('Failed to parse response');
       expect(mockEventSource.close).toHaveBeenCalled();
     });
 
     it('should handle EventSource connection errors', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       // Simulate connection error
       mockEventSource.onerror();
 
-      expect(onError).toHaveBeenCalledWith(new Error('Stream connection failed'));
+      expect(callbacks.onError).toHaveBeenCalledWith('Connection error');
       expect(mockEventSource.close).toHaveBeenCalled();
-    });
-
-    it('should work without agent_type', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
-
-      chatService.streamMessage('Test message', onChunk, onComplete, onError);
-
-      const calledUrl = (globalThis.EventSource as any).mock.calls[0][0];
-      expect(calledUrl).toContain('message=Test');
-      expect(calledUrl).toContain('message');
-      expect(calledUrl).not.toContain('agent_type=');
     });
 
     it('should work without auth token', () => {
       localStorage.clear();
 
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      chatService.streamMessage('Test message', callbacks);
 
       const calledUrl = (globalThis.EventSource as any).mock.calls[0][0];
       expect(calledUrl).not.toContain('token=');
     });
 
-    it('should return EventSource instance', () => {
-      const onChunk = vi.fn();
-      const onComplete = vi.fn();
-      const onError = vi.fn();
+    it('should return cancellation function', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
 
-      const eventSource = chatService.streamMessage(
-        'Test message',
-        onChunk,
-        onComplete,
-        onError
-      );
+      const cancelFn = chatService.streamMessage('Test message', callbacks);
 
-      expect(eventSource).toBe(mockEventSource);
-      expect(eventSource.close).toBeDefined();
+      expect(typeof cancelFn).toBe('function');
+      
+      // Call cancellation function
+      cancelFn();
+      
+      expect(mockEventSource.close).toHaveBeenCalled();
+    });
+
+    it('should handle cancellation via returned function', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      const cancelFn = chatService.streamMessage('Test message', callbacks);
+      
+      // Cancel the stream
+      cancelFn();
+
+      expect(mockEventSource.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle multiple chunk messages', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      chatService.streamMessage('Test message', callbacks);
+
+      // Simulate multiple chunks
+      mockEventSource.onmessage({ data: JSON.stringify({ chunk: 'First ' }) });
+      mockEventSource.onmessage({ data: JSON.stringify({ chunk: 'second ' }) });
+      mockEventSource.onmessage({ data: JSON.stringify({ chunk: 'third' }) });
+
+      expect(callbacks.onChunk).toHaveBeenCalledTimes(3);
+      expect(callbacks.onChunk).toHaveBeenNthCalledWith(1, 'First ');
+      expect(callbacks.onChunk).toHaveBeenNthCalledWith(2, 'second ');
+      expect(callbacks.onChunk).toHaveBeenNthCalledWith(3, 'third');
+    });
+
+    it('should close connection on error and set activeStream to null', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      chatService.streamMessage('Test message', callbacks);
+
+      // Simulate error
+      const errorEvent = {
+        data: JSON.stringify({ error: 'Test error' }),
+      };
+      mockEventSource.onmessage(errorEvent);
+
+      expect(mockEventSource.close).toHaveBeenCalled();
+      expect(callbacks.onError).toHaveBeenCalledWith('Test error');
+    });
+
+    it('should close connection on completion and set activeStream to null', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      chatService.streamMessage('Test message', callbacks);
+
+      // Simulate completion
+      const doneEvent = {
+        data: JSON.stringify({ done: true, agent_type: 'test_agent' }),
+      };
+      mockEventSource.onmessage(doneEvent);
+
+      expect(mockEventSource.close).toHaveBeenCalled();
+      expect(callbacks.onComplete).toHaveBeenCalledWith('test_agent');
+    });
+  });
+
+  describe('cancelStream', () => {
+    let mockEventSource: any;
+
+    beforeEach(() => {
+      mockEventSource = {
+        onmessage: null,
+        onerror: null,
+        close: vi.fn(),
+      };
+      
+      (globalThis as any).EventSource = vi.fn(function (this: any, url: string) {
+        return mockEventSource;
+      });
+      
+      localStorage.setItem('auth_token', 'test-token-123');
+    });
+
+    it('should close active stream when called', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      // Start a stream
+      chatService.streamMessage('Test message', callbacks);
+
+      // Cancel the stream
+      chatService.cancelStream();
+
+      expect(mockEventSource.close).toHaveBeenCalled();
+    });
+
+    it('should be safe to call when no stream is active', () => {
+      // Should not throw error
+      expect(() => chatService.cancelStream()).not.toThrow();
+    });
+
+    it('should be safe to call multiple times', () => {
+      const callbacks = {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      chatService.streamMessage('Test message', callbacks);
+      
+      chatService.cancelStream();
+      chatService.cancelStream();
+      chatService.cancelStream();
+
+      // Should only close once (subsequent calls do nothing)
+      expect(mockEventSource.close).toHaveBeenCalledTimes(1);
     });
   });
 });

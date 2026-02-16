@@ -108,3 +108,76 @@ async def get_current_user(
         )
     
     return user
+
+
+async def get_current_user_from_token(
+    token: str,
+    db: AsyncSession
+) -> User:
+    """
+    Authenticate user from JWT token string (for query parameter authentication).
+    
+    This function is used for endpoints that cannot use Authorization headers,
+    such as Server-Sent Events (SSE) endpoints where EventSource API doesn't
+    support custom headers.
+    
+    Args:
+        token: JWT token string from query parameter
+        db: AsyncSession database connection
+        
+    Returns:
+        User: The authenticated user object
+        
+    Raises:
+        HTTPException(401): If token is invalid, expired, missing user_id,
+                           user not found, or user is soft-deleted
+    """
+    # Decode and validate JWT token
+    try:
+        payload = decode_access_token(token)
+        user_id_str = payload.get("user_id")
+        
+        if user_id_str is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing user_id",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        # Convert user_id string to UUID
+        try:
+            user_id = UUID(user_id_str)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: malformed user_id",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+            
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # Fetch user from database with eager loading of onboarding_state
+    from sqlalchemy.orm import selectinload
+    
+    stmt = select(User).where(
+        User.id == user_id,
+        User.deleted_at.is_(None)
+    ).options(
+        selectinload(User.onboarding_state)
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or has been deleted",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    return user
