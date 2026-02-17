@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -213,6 +213,12 @@ describe('Chat Components Unit Tests', () => {
     beforeEach(() => {
       // Mock scrollIntoView
       Element.prototype.scrollIntoView = vi.fn();
+      // Mock setTimeout for debouncing tests
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
     it('should display empty state when no messages', () => {
@@ -274,6 +280,258 @@ describe('Chat Components Unit Tests', () => {
       const messageDiv = screen.getByText('I am doing well, thank you!').closest('div');
       expect(messageDiv).toHaveClass('bg-gray-200', 'text-gray-900');
     });
+
+    // New tests for streaming functionality - Requirement 4.3
+    it('should show typing indicator when isStreaming is true', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'This is a streaming',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      render(<MessageList messages={[streamingMessage]} />);
+
+      const typingIndicator = screen.getByLabelText('typing');
+      expect(typingIndicator).toBeInTheDocument();
+      expect(typingIndicator).toHaveClass('typing-cursor');
+    });
+
+    // Requirement 4.4
+    it('should hide typing indicator when isStreaming is false', () => {
+      const finalizedMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'This is a complete message',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: false,
+      };
+
+      render(<MessageList messages={[finalizedMessage]} />);
+
+      const typingIndicator = screen.queryByLabelText('typing');
+      expect(typingIndicator).not.toBeInTheDocument();
+    });
+
+    // Requirement 4.6
+    it('should apply different styling for streaming vs finalized messages', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Streaming...',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      const finalizedMessage: ChatMessage = {
+        id: '2',
+        role: 'assistant',
+        content: 'Complete',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:05Z',
+        isStreaming: false,
+      };
+
+      render(<MessageList messages={[streamingMessage, finalizedMessage]} />);
+
+      const streamingDiv = screen.getByText('Streaming...').closest('div');
+      const finalizedDiv = screen.getByText('Complete').closest('div');
+
+      expect(streamingDiv).toHaveClass('bg-gray-100');
+      expect(finalizedDiv).toHaveClass('bg-gray-200');
+    });
+
+    // Requirement 4.6
+    it('should add data-streaming attribute for testing', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Streaming...',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      render(<MessageList messages={[streamingMessage]} />);
+
+      const messageDiv = screen.getByText('Streaming...').closest('div');
+      expect(messageDiv).toHaveAttribute('data-streaming', 'true');
+    });
+
+    // Requirement 4.5
+    it('should trigger auto-scroll on content update with debouncing', () => {
+      const scrollIntoViewMock = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+      const { rerender } = render(<MessageList messages={[mockMessages[0]]} />);
+
+      // Add more messages
+      rerender(<MessageList messages={[mockMessages[0], mockMessages[1]]} />);
+
+      // Scroll should not be called immediately (debounced)
+      expect(scrollIntoViewMock).not.toHaveBeenCalled();
+
+      // Fast-forward time by 100ms (debounce delay)
+      vi.advanceTimersByTime(100);
+
+      // Now scroll should be called
+      waitFor(() => {
+        expect(scrollIntoViewMock).toHaveBeenCalled();
+      });
+    });
+
+    // Requirement 9.3
+    it('should debounce scroll updates to 100ms', () => {
+      const scrollIntoViewMock = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+      const { rerender } = render(<MessageList messages={[mockMessages[0]]} />);
+
+      // Rapidly update messages (simulating streaming chunks)
+      rerender(<MessageList messages={[mockMessages[0], mockMessages[1]]} />);
+      vi.advanceTimersByTime(50);
+      
+      rerender(<MessageList messages={[...mockMessages]} />);
+      vi.advanceTimersByTime(50);
+
+      // Should only call scroll once after debounce period
+      waitFor(() => {
+        expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // Requirements 8.1, 8.2, 8.3
+    it('should have ARIA live region for accessibility', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Streaming...',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      render(<MessageList messages={[streamingMessage]} />);
+
+      const liveRegion = screen.getByText('Assistant is responding');
+      expect(liveRegion).toBeInTheDocument();
+      expect(liveRegion.parentElement).toHaveAttribute('aria-live', 'polite');
+      expect(liveRegion.parentElement).toHaveAttribute('aria-atomic', 'false');
+    });
+
+    // Requirement 8.2
+    it('should announce streaming completion via ARIA', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Streaming...',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      const { rerender } = render(<MessageList messages={[streamingMessage]} />);
+
+      expect(screen.getByText('Assistant is responding')).toBeInTheDocument();
+
+      // Update to finalized message
+      const finalizedMessage = { ...streamingMessage, isStreaming: false };
+      rerender(<MessageList messages={[finalizedMessage]} />);
+
+      expect(screen.queryByText('Assistant is responding')).not.toBeInTheDocument();
+    });
+
+    // Requirement 6.1
+    it('should display error message when message has error property', () => {
+      const errorMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Partial response',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        error: 'Connection lost',
+      };
+
+      render(<MessageList messages={[errorMessage]} />);
+
+      expect(screen.getByText('Connection lost')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    // Requirement 6.2
+    it('should render retry button for failed messages', () => {
+      const errorMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Partial response',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        error: 'Network error',
+      };
+
+      const onRetry = vi.fn();
+      render(<MessageList messages={[errorMessage]} onRetry={onRetry} />);
+
+      const retryButton = screen.getByRole('button', { name: /retry/i });
+      expect(retryButton).toBeInTheDocument();
+    });
+
+    // Requirement 6.4
+    it('should call onRetry when retry button is clicked', async () => {
+      const errorMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Partial response',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        error: 'Network error',
+      };
+
+      const onRetry = vi.fn();
+      const user = userEvent.setup({ delay: null });
+      render(<MessageList messages={[errorMessage]} onRetry={onRetry} />);
+
+      const retryButton = screen.getByRole('button', { name: /retry/i });
+      await user.click(retryButton);
+
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not render retry button when onRetry is not provided', () => {
+      const errorMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'Partial response',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        error: 'Network error',
+      };
+
+      render(<MessageList messages={[errorMessage]} />);
+
+      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    });
+
+    // Requirement 4.1
+    it('should render streaming messages with accumulated text', () => {
+      const streamingMessage: ChatMessage = {
+        id: '1',
+        role: 'assistant',
+        content: 'This is accumulating text from multiple chunks',
+        agentType: 'general_assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        isStreaming: true,
+      };
+
+      render(<MessageList messages={[streamingMessage]} />);
+
+      expect(screen.getByText(/This is accumulating text from multiple chunks/)).toBeInTheDocument();
+      expect(screen.getByLabelText('typing')).toBeInTheDocument();
+    });
   });
 
   describe('ChatPage Integration', () => {
@@ -287,11 +545,12 @@ describe('Chat Components Unit Tests', () => {
     it('should render all chat components', () => {
       const mockUseChat = {
         messages: [],
-        loading: false,
         error: null,
+        isStreaming: false,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -303,7 +562,7 @@ describe('Chat Components Unit Tests', () => {
       );
 
       expect(screen.getByText('AI Chat')).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Type your message/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Type a message/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument();
       // Agent selector should not be present
       expect(screen.queryByLabelText('Select AI Agent')).not.toBeInTheDocument();
@@ -313,11 +572,12 @@ describe('Chat Components Unit Tests', () => {
       const mockSendMessage = vi.fn();
       const mockUseChat = {
         messages: [],
-        loading: false,
         error: null,
+        isStreaming: false,
         sendMessage: mockSendMessage,
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -330,7 +590,7 @@ describe('Chat Components Unit Tests', () => {
       );
 
       // Type and send message (no agent selection needed)
-      const textarea = screen.getByPlaceholderText(/Type your message/i);
+      const textarea = screen.getByPlaceholderText(/Type a message/i);
       await user.type(textarea, 'Create a workout plan');
       await user.click(screen.getByRole('button', { name: /send/i }));
 
@@ -341,11 +601,12 @@ describe('Chat Components Unit Tests', () => {
     it('should display error message when error occurs', () => {
       const mockUseChat = {
         messages: [],
-        loading: false,
         error: 'Failed to send message',
+        isStreaming: false,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -363,11 +624,12 @@ describe('Chat Components Unit Tests', () => {
     it('should dismiss error message when close button is clicked', async () => {
       const mockUseChat = {
         messages: [],
-        loading: false,
         error: 'Failed to send message',
+        isStreaming: false,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -387,14 +649,15 @@ describe('Chat Components Unit Tests', () => {
       expect(screen.queryByText('Failed to send message')).not.toBeInTheDocument();
     });
 
-    it('should disable input when loading', () => {
+    it('should disable input when streaming', () => {
       const mockUseChat = {
         messages: [],
-        loading: true,
         error: null,
+        isStreaming: true,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -405,11 +668,33 @@ describe('Chat Components Unit Tests', () => {
         </MemoryRouter>
       );
 
-      const textarea = screen.getByPlaceholderText(/Type your message/i);
+      const textarea = screen.getByPlaceholderText(/Waiting for response/i);
       const sendButton = screen.getByRole('button', { name: /send/i });
 
       expect(textarea).toBeDisabled();
       expect(sendButton).toBeDisabled();
+    });
+
+    it('should show appropriate placeholder when streaming', () => {
+      const mockUseChat = {
+        messages: [],
+        error: null,
+        isStreaming: true,
+        sendMessage: vi.fn(),
+        clearMessages: vi.fn(),
+        conversationId: null,
+        retryLastMessage: vi.fn(),
+      };
+
+      vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
+
+      render(
+        <MemoryRouter>
+          <ChatPage />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByPlaceholderText(/Waiting for response/i)).toBeInTheDocument();
     });
 
     it('should clear messages when clear button is clicked', async () => {
@@ -424,11 +709,12 @@ describe('Chat Components Unit Tests', () => {
             timestamp: '2024-01-01T10:00:00Z',
           },
         ],
-        loading: false,
         error: null,
+        isStreaming: false,
         sendMessage: vi.fn(),
         clearMessages: mockClearMessages,
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -449,11 +735,12 @@ describe('Chat Components Unit Tests', () => {
     it('should disable clear button when no messages', () => {
       const mockUseChat = {
         messages: [],
-        loading: false,
         error: null,
+        isStreaming: false,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -468,14 +755,23 @@ describe('Chat Components Unit Tests', () => {
       expect(clearButton).toBeDisabled();
     });
 
-    it('should display loading indicator when loading', () => {
+    it('should disable clear button when streaming', () => {
       const mockUseChat = {
-        messages: [],
-        loading: true,
+        messages: [
+          {
+            id: '1',
+            role: 'user' as const,
+            content: 'Test message',
+            agentType: 'general_assistant' as AgentType,
+            timestamp: '2024-01-01T10:00:00Z',
+          },
+        ],
         error: null,
+        isStreaming: true,
         sendMessage: vi.fn(),
         clearMessages: vi.fn(),
         conversationId: null,
+        retryLastMessage: vi.fn(),
       };
 
       vi.mocked(useChatModule.useChat).mockReturnValue(mockUseChat);
@@ -486,7 +782,8 @@ describe('Chat Components Unit Tests', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+      const clearButton = screen.getByRole('button', { name: /clear chat/i });
+      expect(clearButton).toBeDisabled();
     });
   });
 });

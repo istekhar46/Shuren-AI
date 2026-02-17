@@ -132,6 +132,8 @@ export interface ChatMessage {
   content: string;
   agentType: AgentType;
   timestamp: string;
+  isStreaming?: boolean;
+  error?: string;
 }
 
 export interface ChatRequest {

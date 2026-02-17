@@ -34,10 +34,12 @@ from app.services.agent_orchestrator import AgentOrchestrator, AgentType
 from app.services.chat_service import ChatService
 from app.services.context_loader import load_agent_context
 from app.services.onboarding_service import OnboardingService, STATE_TO_AGENT_MAP
+from app.core.metrics import get_metrics_tracker
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+metrics_tracker = get_metrics_tracker()
 
 
 @router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
@@ -375,7 +377,6 @@ async def chat_onboarding(
 
 @router.get("/onboarding-stream", status_code=status.HTTP_200_OK)
 async def chat_onboarding_stream(
-    db: Annotated[AsyncSession, Depends(get_db)],
     message: str = Query(..., description="User message to send to onboarding agent"),
     token: str = Query(..., description="JWT authentication token")
 ) -> StreamingResponse:
@@ -390,10 +391,14 @@ async def chat_onboarding_stream(
     EventSource API limitation: Cannot send custom headers, so authentication token
     must be passed as a query parameter instead of Authorization header.
     
+    NOTE: Database session is managed manually within the generator to keep it alive
+    during the entire streaming operation. This is required because FastAPI's
+    dependency injection closes sessions after the endpoint returns, but
+    StreamingResponse generators continue running after that point.
+    
     Args:
         message: User message to send to onboarding agent
         token: JWT authentication token (query parameter)
-        db: Database session from dependency injection
         
     Returns:
         StreamingResponse: SSE stream with response chunks and completion event
@@ -404,13 +409,21 @@ async def chat_onboarding_stream(
         HTTPException(500): If agent processing fails (sent as error event in stream)
     """
     from app.core.deps import get_current_user_from_token
+    import uuid
     
-    # Authenticate user from token query parameter
-    try:
-        current_user = await get_current_user_from_token(token, db)
-    except HTTPException:
-        # Re-raise authentication errors
-        raise
+    # Generate unique message ID for tracking
+    message_id = str(uuid.uuid4())
+    
+    # Create database session for authentication
+    # This session is only for auth and will be closed before streaming
+    from app.db.session import AsyncSessionLocal
+    async with AsyncSessionLocal() as auth_db:
+        # Authenticate user from token query parameter
+        try:
+            current_user = await get_current_user_from_token(token, auth_db)
+        except HTTPException:
+            # Re-raise authentication errors
+            raise
     
     user_id = str(current_user.id)
     
@@ -422,133 +435,282 @@ async def chat_onboarding_stream(
         )
     
     async def generate():
-        """Async generator function for SSE streaming"""
-        start_time = time.time()
-        full_response = ""
-        agent_type_value = None
-        initial_step = None
-        
-        try:
-            # Load onboarding state
-            onboarding_service = OnboardingService(db)
-            state = await onboarding_service.get_onboarding_state(current_user.id)
+        """Async generator function for SSE streaming with managed database session"""
+        # Create a new database session that will live for the entire streaming operation
+        # This is the official pattern for StreamingResponse with database dependencies
+        async with AsyncSessionLocal() as db:
+            start_time = time.time()
+            full_response = ""
+            agent_type_value = None
+            initial_step = None
+            chunk_count = 0
+            error_occurred = False
             
-            if not state:
-                yield f"data: {json.dumps({'error': 'Onboarding state not found'})}\n\n"
-                return
+            # Start metrics tracking
+            session_metrics = metrics_tracker.start_session(user_id, message_id)
             
-            initial_step = state.current_step
-            
-            # Route to appropriate agent based on current_state
-            agent_type = STATE_TO_AGENT_MAP.get(state.current_step)
-            if not agent_type:
-                yield f"data: {json.dumps({'error': f'Invalid state number: {state.current_step}'})}\n\n"
-                return
-            
-            agent_type_value = agent_type.value
-            
-            # Load user context
             try:
-                context = await load_agent_context(
-                    db=db,
-                    user_id=user_id,
-                    include_history=True
-                )
-            except ValueError as e:
-                logger.error(f"Context loading failed for user {user_id}: {e}")
-                yield f"data: {json.dumps({'error': 'Failed to load user context'})}\n\n"
-                return
-            
-            # Initialize AgentOrchestrator in text mode
-            orchestrator = AgentOrchestrator(db_session=db, mode="text")
-            
-            # Get or create agent instance
-            agent = orchestrator._get_or_create_agent(agent_type, context)
-            
-            # Stream response chunks via agent.stream_response()
-            try:
-                async for chunk in agent.stream_response(message):
-                    full_response += chunk
-                    # Send each chunk as SSE data event with JSON payload
-                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-                
-                # Check if state was updated (agent called save function)
-                updated_state = await onboarding_service.get_onboarding_state(current_user.id)
-                state_updated = updated_state.current_step > initial_step
-                
-                # Get progress
-                progress = await onboarding_service.get_progress(current_user.id)
-                
-                # Send final event with "done: true", agent_type, and progress info
-                yield f"data: {json.dumps({
-                    'done': True,
-                    'agent_type': agent_type_value,
-                    'state_updated': state_updated,
-                    'new_state': updated_state.current_step if state_updated else None,
-                    'progress': {
-                        'current_state': progress.current_state,
-                        'total_states': progress.total_states,
-                        'completed_states': progress.completed_states,
-                        'completion_percentage': progress.completion_percentage,
-                        'is_complete': progress.is_complete,
-                        'can_complete': progress.can_complete
+                # Log stream start with user_id and message_id
+                logger.info(
+                    "Onboarding stream started",
+                    extra={
+                        "event": "stream_start",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "message_preview": message[:100] if len(message) > 100 else message,
+                        "message_length": len(message)
                     }
-                })}\n\n"
+                )
+                # Load onboarding state
+                onboarding_service = OnboardingService(db)
+                state = await onboarding_service.get_onboarding_state(current_user.id)
+                
+                if not state:
+                    error_msg = 'Onboarding state not found'
+                    error_type = "state_not_found"
+                    logger.error(
+                        "Onboarding state not found",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": error_type
+                        }
+                    )
+                    error_occurred = True
+                    
+                    # Complete metrics tracking with error
+                    metrics_tracker.complete_session(
+                        message_id=message_id,
+                        agent_type="unknown",
+                        chunk_count=chunk_count,
+                        response_length=len(full_response),
+                        error_type=error_type
+                    )
+                    
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    return
+                
+                initial_step = state.current_step
+                
+                # Route to appropriate agent based on current_state
+                agent_type = STATE_TO_AGENT_MAP.get(state.current_step)
+                if not agent_type:
+                    error_msg = f'Invalid state number: {state.current_step}'
+                    error_type = "invalid_state"
+                    logger.error(
+                        "Invalid onboarding state",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": error_type,
+                            "state": state.current_step
+                        }
+                    )
+                    error_occurred = True
+                    
+                    # Complete metrics tracking with error
+                    metrics_tracker.complete_session(
+                        message_id=message_id,
+                        agent_type="unknown",
+                        chunk_count=chunk_count,
+                        response_length=len(full_response),
+                        error_type=error_type
+                    )
+                    
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    return
+                
+                agent_type_value = agent_type.value
+                
+                # Load user context (onboarding mode)
+                try:
+                    context = await load_agent_context(
+                        db=db,
+                        user_id=user_id,
+                        include_history=True,
+                        onboarding_mode=True
+                    )
+                except ValueError as e:
+                    error_msg = 'Failed to load user context'
+                    logger.error(
+                        "Context loading failed",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "context_load_failed",
+                            "error_message": str(e)
+                        }
+                    )
+                    error_occurred = True
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    return
+                
+                # Initialize AgentOrchestrator in text mode
+                orchestrator = AgentOrchestrator(db_session=db, mode="text")
+                
+                # Get or create agent instance
+                agent = orchestrator._get_or_create_agent(agent_type, context)
+                
+                # Stream response chunks via agent.stream_response()
+                # Note: Agent tools may be called during streaming and need db_session
+                try:
+                    async for chunk in agent.stream_response(message):
+                        full_response += chunk
+                        chunk_count += 1
+                        # Send each chunk as SSE data event with JSON payload
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                    
+                    # Check if state was updated (agent called save function)
+                    updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+                    state_updated = updated_state.current_step > initial_step
+                    
+                    # Get progress
+                    progress = await onboarding_service.get_progress(current_user.id)
+                    
+                    # Send final event with "done: true", agent_type, and progress info
+                    yield f"data: {json.dumps({
+                        'done': True,
+                        'agent_type': agent_type_value,
+                        'state_updated': state_updated,
+                        'new_state': updated_state.current_step if state_updated else None,
+                        'progress': {
+                            'current_state': progress.current_state,
+                            'total_states': progress.total_states,
+                            'completed_states': progress.completed_states,
+                            'completion_percentage': progress.completion_percentage,
+                            'is_complete': progress.is_complete,
+                            'can_complete': progress.can_complete
+                        }
+                    })}\n\n"
+                    
+                except Exception as e:
+                    error_msg = 'Failed to process message'
+                    logger.error(
+                        "Agent streaming failed",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "agent_streaming_failed",
+                            "error_message": str(e),
+                            "agent_type": agent_type_value,
+                            "chunks_sent": chunk_count
+                        },
+                        exc_info=True
+                    )
+                    error_occurred = True
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    return
+                
+                # Save user message and complete assistant response after streaming
+                try:
+                    user_message = ConversationMessage(
+                        user_id=current_user.id,
+                        role="user",
+                        content=message,
+                        agent_type=None
+                    )
+                    db.add(user_message)
+                    
+                    assistant_message = ConversationMessage(
+                        user_id=current_user.id,
+                        role="assistant",
+                        content=full_response,
+                        agent_type=agent_type_value
+                    )
+                    db.add(assistant_message)
+                    
+                    # Commit transaction
+                    await db.commit()
+                    
+                except Exception as e:
+                    logger.error(
+                        "Failed to save conversation",
+                        extra={
+                            "event": "database_save_failed",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "conversation_save_failed",
+                            "error_message": str(e)
+                        },
+                        exc_info=True
+                    )
+                    # Mark database save failure in metrics
+                    metrics_tracker.mark_database_save_failed(message_id)
+                    # Don't send error to client since streaming already completed
+                
+                # Calculate response time and metrics
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                
+                # Complete metrics tracking
+                metrics_tracker.complete_session(
+                    message_id=message_id,
+                    agent_type=agent_type_value,
+                    chunk_count=chunk_count,
+                    response_length=len(full_response),
+                    error_type=None
+                )
+                
+                # Log stream completion with duration and chunk count
+                logger.info(
+                    "Onboarding stream completed",
+                    extra={
+                        "event": "stream_complete",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "agent_type": agent_type_value,
+                        "initial_state": initial_step,
+                        "final_state": updated_state.current_step,
+                        "state_updated": state_updated,
+                        "duration_ms": elapsed_ms,
+                        "chunk_count": chunk_count,
+                        "response_length": len(full_response)
+                    }
+                )
                 
             except Exception as e:
+                # Handle errors with error events in stream
                 logger.error(
-                    f"Agent streaming failed for user {user_id}, "
-                    f"query: {message[:50]}, error: {e}",
+                    "Unexpected error in onboarding streaming",
+                    extra={
+                        "event": "stream_error",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "error_type": "unexpected_error",
+                        "error_message": str(e)
+                    },
                     exc_info=True
                 )
-                yield f"data: {json.dumps({'error': 'Failed to process message'})}\n\n"
-                return
-            
-            # Save user message and complete assistant response after streaming
-            try:
-                user_message = ConversationMessage(
-                    user_id=current_user.id,
-                    role="user",
-                    content=message,
-                    agent_type=None
-                )
-                db.add(user_message)
+                error_occurred = True
                 
-                assistant_message = ConversationMessage(
-                    user_id=current_user.id,
-                    role="assistant",
-                    content=full_response,
-                    agent_type=agent_type_value
-                )
-                db.add(assistant_message)
+                # Complete metrics tracking with error
+                if agent_type_value:
+                    metrics_tracker.complete_session(
+                        message_id=message_id,
+                        agent_type=agent_type_value or "unknown",
+                        chunk_count=chunk_count,
+                        response_length=len(full_response),
+                        error_type="unexpected_error"
+                    )
                 
-                # Commit transaction
-                await db.commit()
-                
-            except Exception as e:
-                logger.error(
-                    f"Failed to save conversation for user {user_id}: {e}",
-                    exc_info=True
-                )
-                # Don't send error to client since streaming already completed
-            
-            # Calculate response time
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            
-            # Log successful request
-            logger.info(
-                f"Onboarding stream processed: user={user_id}, agent={agent_type_value}, "
-                f"initial_state={initial_step}, final_state={updated_state.current_step}, "
-                f"time={elapsed_ms}ms, chunks={len(full_response)}"
-            )
-            
-        except Exception as e:
-            # Handle errors with error events in stream
-            logger.error(
-                f"Unexpected error in onboarding streaming endpoint for user {user_id}: {e}",
-                exc_info=True
-            )
-            yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+                yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+            finally:
+                # Log cleanup event
+                if error_occurred:
+                    logger.info(
+                        "Onboarding stream cleanup after error",
+                        extra={
+                            "event": "stream_cleanup",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "duration_ms": int((time.time() - start_time) * 1000),
+                            "chunks_sent": chunk_count,
+                            "error": True
+                        }
+                    )
     
     # Return StreamingResponse with SSE headers
     return StreamingResponse(
@@ -592,7 +754,11 @@ async def chat_stream(
         HTTPException(400): If agent_type is invalid
         Error events in stream: If agent processing fails
     """
+    import uuid
+    
     user_id = str(current_user.id)
+    # Generate unique message ID for tracking
+    message_id = str(uuid.uuid4())
     
     async def generate():
         """Async generator function for SSE streaming"""
@@ -600,18 +766,44 @@ async def chat_stream(
         full_response = ""
         agent_type_value = None
         last_chunk_time = time.time()
+        chunk_count = 0
+        error_occurred = False
+        
+        # Start metrics tracking
+        session_metrics = metrics_tracker.start_session(user_id, message_id)
         
         try:
+            # Log stream start with user_id and message_id
+            logger.info(
+                "Chat stream started",
+                extra={
+                    "event": "stream_start",
+                    "user_id": user_id,
+                    "message_id": message_id,
+                    "message_preview": request.message[:100] if len(request.message) > 100 else request.message,
+                    "message_length": len(request.message),
+                    "requested_agent_type": request.agent_type
+                }
+            )
             # Parse optional agent_type from request
             agent_type = None
             if request.agent_type:
                 try:
                     agent_type = AgentType(request.agent_type)
                 except ValueError:
-                    logger.info(
-                        f"Invalid agent_type '{request.agent_type}' provided by user {user_id}"
+                    error_msg = f'Invalid agent_type. Must be one of: workout, diet, supplement, tracker, scheduler, general'
+                    logger.error(
+                        "Invalid agent_type provided",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "invalid_agent_type",
+                            "requested_agent_type": request.agent_type
+                        }
                     )
-                    yield f"data: {json.dumps({'error': f'Invalid agent_type. Must be one of: workout, diet, supplement, tracker, scheduler, general'})}\n\n"
+                    error_occurred = True
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
             
             # Load user context
@@ -622,8 +814,19 @@ async def chat_stream(
                     include_history=True
                 )
             except ValueError as e:
-                logger.error(f"Context loading failed for user {user_id}: {e}")
-                yield f"data: {json.dumps({'error': 'Failed to load user context'})}\n\n"
+                error_msg = 'Failed to load user context'
+                logger.error(
+                    "Context loading failed",
+                    extra={
+                        "event": "stream_error",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "error_type": "context_load_failed",
+                        "error_message": str(e)
+                    }
+                )
+                error_occurred = True
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 return
             
             # Initialize AgentOrchestrator in text mode
@@ -634,8 +837,19 @@ async def chat_stream(
                 try:
                     agent_type = await orchestrator._classify_query(request.message)
                 except Exception as e:
-                    logger.error(f"Query classification failed for user {user_id}: {e}")
-                    yield f"data: {json.dumps({'error': 'Failed to classify query'})}\n\n"
+                    error_msg = 'Failed to classify query'
+                    logger.error(
+                        "Query classification failed",
+                        extra={
+                            "event": "stream_error",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "classification_failed",
+                            "error_message": str(e)
+                        }
+                    )
+                    error_occurred = True
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
             
             agent_type_value = agent_type.value
@@ -647,6 +861,7 @@ async def chat_stream(
             try:
                 async for chunk in agent.stream_response(request.message):
                     full_response += chunk
+                    chunk_count += 1
                     last_chunk_time = time.time()
                     
                     # Send each chunk as SSE data event with JSON payload
@@ -654,21 +869,42 @@ async def chat_stream(
                     
                     # Check for timeout (30 seconds of no chunks)
                     if time.time() - last_chunk_time > 30:
-                        logger.warning(f"Stream timeout for user {user_id} after 30s of no chunks")
-                        yield f"data: {json.dumps({'error': 'Stream timeout - no response from AI'})}\n\n"
+                        error_msg = 'Stream timeout - no response from AI'
+                        logger.warning(
+                            "Stream timeout",
+                            extra={
+                                "event": "stream_timeout",
+                                "user_id": user_id,
+                                "message_id": message_id,
+                                "timeout_seconds": 30,
+                                "chunks_sent": chunk_count
+                            }
+                        )
+                        error_occurred = True
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
                         return
                 
                 # Send final event with "done: true" and agent_type
                 yield f"data: {json.dumps({'done': True, 'agent_type': agent_type_value})}\n\n"
                 
             except Exception as e:
+                error_msg = 'Failed to process message'
                 logger.error(
-                    f"Agent streaming failed for user {user_id}, "
-                    f"query: {request.message[:50]}, error: {e}",
+                    "Agent streaming failed",
+                    extra={
+                        "event": "stream_error",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "error_type": "agent_streaming_failed",
+                        "error_message": str(e),
+                        "agent_type": agent_type_value,
+                        "chunks_sent": chunk_count
+                    },
                     exc_info=True
                 )
+                error_occurred = True
                 # Send error event before closing stream
-                yield f"data: {json.dumps({'error': 'Failed to process message'})}\n\n"
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 return
             
             # Save user message and complete assistant response after streaming
@@ -694,28 +930,87 @@ async def chat_stream(
                 
             except Exception as e:
                 logger.error(
-                    f"Failed to save conversation for user {user_id}: {e}",
+                    "Failed to save conversation",
+                    extra={
+                        "event": "database_save_failed",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "error_type": "conversation_save_failed",
+                        "error_message": str(e)
+                    },
                     exc_info=True
                 )
+                # Mark database save failure in metrics
+                metrics_tracker.mark_database_save_failed(message_id)
                 # Don't send error to client since streaming already completed
             
-            # Calculate response time
+            # Calculate response time and metrics
             elapsed_ms = int((time.time() - start_time) * 1000)
             
-            # Add logging for streaming requests
+            # Complete metrics tracking
+            metrics_tracker.complete_session(
+                message_id=message_id,
+                agent_type=agent_type_value,
+                chunk_count=chunk_count,
+                response_length=len(full_response),
+                error_type=None
+            )
+            
+            # Log stream completion with duration and chunk count
             logger.info(
-                f"Chat stream processed: user={user_id}, agent={agent_type_value}, "
-                f"time={elapsed_ms}ms, chunks={len(full_response)}"
+                "Chat stream completed",
+                extra={
+                    "event": "stream_complete",
+                    "user_id": user_id,
+                    "message_id": message_id,
+                    "agent_type": agent_type_value,
+                    "duration_ms": elapsed_ms,
+                    "chunk_count": chunk_count,
+                    "response_length": len(full_response)
+                }
             )
             
         except Exception as e:
             # Handle errors with error events in stream
             logger.error(
-                f"Unexpected error in streaming endpoint for user {user_id}: {e}",
+                "Unexpected error in streaming",
+                extra={
+                    "event": "stream_error",
+                    "user_id": user_id,
+                    "message_id": message_id,
+                    "error_type": "unexpected_error",
+                    "error_message": str(e)
+                },
                 exc_info=True
             )
+            error_occurred = True
+            
+            # Complete metrics tracking with error
+            if agent_type_value:
+                metrics_tracker.complete_session(
+                    message_id=message_id,
+                    agent_type=agent_type_value or "unknown",
+                    chunk_count=chunk_count,
+                    response_length=len(full_response),
+                    error_type="unexpected_error"
+                )
+            
             # Send error event before closing stream
             yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+        finally:
+            # Log cleanup event
+            if error_occurred:
+                logger.info(
+                    "Chat stream cleanup after error",
+                    extra={
+                        "event": "stream_cleanup",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "duration_ms": int((time.time() - start_time) * 1000),
+                        "chunks_sent": chunk_count,
+                        "error": True
+                    }
+                )
     
     # Return StreamingResponse with proper SSE headers
     return StreamingResponse(

@@ -24,12 +24,37 @@ from app.core.exceptions import ProfileLockedException
 from app.schemas.error import ErrorResponse
 
 
+# Custom logging filter to suppress harmless CancelledError during connection cleanup
+class SuppressCancelledErrorFilter(logging.Filter):
+    """
+    Filter to suppress CancelledError logs during database connection termination.
+    
+    When StreamingResponse completes, FastAPI cancels the request task as part of
+    normal cleanup. SQLAlchemy tries to gracefully close connections, but the
+    cancellation can interrupt this process, causing harmless CancelledError logs.
+    
+    This filter suppresses these specific errors to reduce log noise while keeping
+    other important error logs intact.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Suppress "Exception terminating connection" errors with CancelledError
+        if record.levelno == logging.ERROR:
+            message = record.getMessage()
+            if "Exception terminating connection" in message and "CancelledError" in message:
+                return False
+        return True
+
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper()),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
+
+# Add filter to SQLAlchemy pool logger to suppress harmless CancelledError
+sqlalchemy_pool_logger = logging.getLogger("sqlalchemy.pool.impl.AsyncAdaptedQueuePool")
+sqlalchemy_pool_logger.addFilter(SuppressCancelledErrorFilter())
 
 logger = logging.getLogger(__name__)
 

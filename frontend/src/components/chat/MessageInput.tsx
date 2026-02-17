@@ -3,9 +3,10 @@ import { useState, type KeyboardEvent } from 'react';
 interface MessageInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  placeholder?: string;
 }
 
-export const MessageInput = ({ onSend, disabled }: MessageInputProps) => {
+export const MessageInput = ({ onSend, disabled, placeholder }: MessageInputProps) => {
   const [message, setMessage] = useState('');
 
   const handleSend = () => {
@@ -29,7 +30,7 @@ export const MessageInput = ({ onSend, disabled }: MessageInputProps) => {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
+          placeholder={placeholder || "Type your message... (Press Enter to send, Shift+Enter for new line)"}
           disabled={disabled}
           rows={3}
           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"

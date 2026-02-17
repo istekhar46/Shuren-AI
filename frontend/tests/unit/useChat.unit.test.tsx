@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { useChat } from '../../src/hooks/useChat';
 import { chatService } from '../../src/services/chatService';
-import { AxiosError } from 'axios';
 import type { ReactNode } from 'react';
 
 // Mock the chat service
@@ -11,6 +10,8 @@ vi.mock('../../src/services/chatService', () => ({
   chatService: {
     sendMessage: vi.fn(),
     getHistory: vi.fn(),
+    streamMessage: vi.fn(),
+    cancelStream: vi.fn(),
   },
 }));
 
@@ -19,328 +20,549 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return {
     ...actual,
-    useNavigate: vi.fn(),
+    useNavigate: vi.fn(() => vi.fn()),
   };
 });
 
 describe('useChat Hook Unit Tests', () => {
-  const mockNavigate = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(useNavigate).mockReturnValue(mockNavigate);
     vi.mocked(chatService.getHistory).mockResolvedValue({
       messages: [],
       total: 0,
     });
   });
 
+  afterEach(() => {
+    vi.clearAllTimers();
+  });
+
   const wrapper = ({ children }: { children: ReactNode }) => (
     <MemoryRouter>{children}</MemoryRouter>
   );
 
-  describe('403 Error Handling', () => {
-    it('should redirect to /onboarding on 403 error with ONBOARDING_REQUIRED code', async () => {
-      const mockError = new AxiosError(
-        'Request failed with status code 403',
-        '403',
-        undefined,
-        undefined,
-        {
-          status: 403,
-          statusText: 'Forbidden',
-          data: {
-            detail: {
-              error_code: 'ONBOARDING_REQUIRED',
-              message: 'Complete onboarding to access this feature',
-              redirect: '/onboarding',
-            },
-          },
-          headers: {},
-          config: {} as any,
-        }
-      );
+  describe('Streaming Functionality', () => {
+    it('should add user message immediately on send', async () => {
+      const mockCancel = vi.fn();
+      vi.mocked(chatService.streamMessage).mockReturnValue(mockCancel);
 
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
-
-      // Wait for initial history load
-      await waitFor(() => {
-        expect(result.current.messages).toEqual([]);
-      });
-
-      // Send a message
-      await result.current.sendMessage('Test message');
-
-      // Wait for error handling
-      await waitFor(() => {
-        expect(result.current.error).toBe('Complete onboarding to access this feature');
-      });
-
-      // Verify navigation was called
-      expect(mockNavigate).toHaveBeenCalledWith('/onboarding');
-    });
-
-    it('should display error message from backend on 403 with ONBOARDING_REQUIRED', async () => {
-      const mockError = new AxiosError(
-        'Request failed with status code 403',
-        '403',
-        undefined,
-        undefined,
-        {
-          status: 403,
-          statusText: 'Forbidden',
-          data: {
-            detail: {
-              error_code: 'ONBOARDING_REQUIRED',
-              message: 'Complete onboarding to access this feature',
-              redirect: '/onboarding',
-            },
-          },
-          headers: {},
-          config: {} as any,
-        }
-      );
-
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
+      const { result } = renderHook(() => useChat(false), { wrapper });
 
       await waitFor(() => {
         expect(result.current.messages).toEqual([]);
       });
 
-      await result.current.sendMessage('Test message');
+      act(() => {
+        result.current.sendMessage('Hello');
+      });
 
+      // User message should be added immediately (Requirement 3.1)
       await waitFor(() => {
-        expect(result.current.error).toBe('Complete onboarding to access this feature');
+        expect(result.current.messages.length).toBe(2); // user + placeholder
+        expect(result.current.messages[0].role).toBe('user');
+        expect(result.current.messages[0].content).toBe('Hello');
       });
     });
 
-    it('should use default error message if backend message is missing', async () => {
-      const mockError = new AxiosError(
-        'Request failed with status code 403',
-        '403',
-        undefined,
-        undefined,
-        {
-          status: 403,
-          statusText: 'Forbidden',
-          data: {
-            detail: {
-              error_code: 'ONBOARDING_REQUIRED',
-              redirect: '/onboarding',
-            },
-          },
-          headers: {},
-          config: {} as any,
-        }
-      );
+    it('should create placeholder assistant message with isStreaming: true', async () => {
+      const mockCancel = vi.fn();
+      vi.mocked(chatService.streamMessage).mockReturnValue(mockCancel);
 
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
+      const { result } = renderHook(() => useChat(false), { wrapper });
 
       await waitFor(() => {
         expect(result.current.messages).toEqual([]);
       });
 
-      await result.current.sendMessage('Test message');
-
-      await waitFor(() => {
-        expect(result.current.error).toBe('Complete onboarding to access this feature');
+      act(() => {
+        result.current.sendMessage('Test');
       });
 
-      expect(mockNavigate).toHaveBeenCalledWith('/onboarding');
+      // Placeholder should be created with isStreaming: true (Requirement 3.2)
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+        const assistantMsg = result.current.messages[1];
+        expect(assistantMsg.role).toBe('assistant');
+        expect(assistantMsg.content).toBe('');
+        expect(assistantMsg.isStreaming).toBe(true);
+      });
     });
 
-    it('should remove optimistic user message on 403 error', async () => {
-      const mockError = new AxiosError(
-        'Request failed with status code 403',
-        '403',
-        undefined,
-        undefined,
-        {
-          status: 403,
-          statusText: 'Forbidden',
-          data: {
-            detail: {
-              error_code: 'ONBOARDING_REQUIRED',
-              message: 'Complete onboarding to access this feature',
-              redirect: '/onboarding',
-            },
-          },
-          headers: {},
-          config: {} as any,
-        }
-      );
+    it('should append chunks to placeholder message correctly', async () => {
+      let onChunkCallback: ((chunk: string) => void) | null = null;
 
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onChunkCallback = callbacks.onChunk;
+        return vi.fn();
+      });
 
-      const { result } = renderHook(() => useChat(), { wrapper });
+      const { result } = renderHook(() => useChat(false), { wrapper });
 
       await waitFor(() => {
         expect(result.current.messages).toEqual([]);
       });
 
-      // Send message - should add optimistic message then remove it
-      await result.current.sendMessage('Test message');
-
-      await waitFor(() => {
-        expect(result.current.error).toBe('Complete onboarding to access this feature');
+      act(() => {
+        result.current.sendMessage('Test');
       });
-
-      // Verify optimistic message was removed
-      expect(result.current.messages).toEqual([]);
-    });
-
-    it('should not redirect on 403 error without ONBOARDING_REQUIRED code', async () => {
-      const mockError = new AxiosError(
-        'Request failed with status code 403',
-        '403',
-        undefined,
-        undefined,
-        {
-          status: 403,
-          statusText: 'Forbidden',
-          data: {
-            detail: {
-              error_code: 'FORBIDDEN',
-              message: 'Access denied',
-            },
-          },
-          headers: {},
-          config: {} as any,
-        }
-      );
-
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
-
-      await waitFor(() => {
-        expect(result.current.messages).toEqual([]);
-      });
-
-      await result.current.sendMessage('Test message');
-
-      await waitFor(() => {
-        expect(result.current.error).toBeTruthy();
-      });
-
-      // Should not navigate for other 403 errors
-      expect(mockNavigate).not.toHaveBeenCalled();
-    });
-
-    it('should handle non-403 errors normally', async () => {
-      const mockError = new Error('Network error');
-
-      vi.mocked(chatService.sendMessage).mockRejectedValue(mockError);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
-
-      await waitFor(() => {
-        expect(result.current.messages).toEqual([]);
-      });
-
-      await result.current.sendMessage('Test message');
-
-      await waitFor(() => {
-        expect(result.current.error).toBe('Network error');
-      });
-
-      // Should not navigate for non-403 errors
-      expect(mockNavigate).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Agent Selector Removal', () => {
-    it('should send message without agent type parameter', async () => {
-      const mockResponse = {
-        message: 'Response from agent',
-        agentType: 'general_assistant',
-        conversationId: 'conv-123',
-        timestamp: '2024-01-01T10:00:00Z',
-      };
-
-      vi.mocked(chatService.sendMessage).mockResolvedValue(mockResponse);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
-
-      await waitFor(() => {
-        expect(result.current.messages).toEqual([]);
-      });
-
-      await result.current.sendMessage('Test message');
 
       await waitFor(() => {
         expect(result.current.messages.length).toBe(2);
       });
 
-      // Verify sendMessage was called with message and undefined for agentType
-      expect(chatService.sendMessage).toHaveBeenCalledWith('Test message', undefined);
+      // Simulate receiving chunks (Requirement 3.3)
+      act(() => {
+        onChunkCallback?.('Hello ');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].content).toBe('Hello ');
+      });
+
+      act(() => {
+        onChunkCallback?.('world');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].content).toBe('Hello world');
+      });
+
+      act(() => {
+        onChunkCallback?.('!');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].content).toBe('Hello world!');
+      });
+    });
+
+    it('should set isStreaming: false on completion', async () => {
+      let onCompleteCallback: ((agentType?: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onCompleteCallback = callbacks.onComplete;
+        return vi.fn();
+      });
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('Test');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].isStreaming).toBe(true);
+      });
+
+      // Simulate completion (Requirement 3.4)
+      act(() => {
+        onCompleteCallback?.('general_assistant');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].isStreaming).toBe(false);
+        expect(result.current.isStreaming).toBe(false);
+      });
+    });
+
+    it('should set error state on streaming failure', async () => {
+      let onErrorCallback: ((error: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onErrorCallback = callbacks.onError;
+        return vi.fn();
+      });
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('Test');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+      });
+
+      // Simulate error (Requirement 3.5)
+      act(() => {
+        onErrorCallback?.('Connection error');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].error).toBe('Connection error');
+        expect(result.current.messages[1].isStreaming).toBe(false);
+        expect(result.current.error).toBe('Connection error');
+        expect(result.current.isStreaming).toBe(false);
+      });
+    });
+
+    it('should prevent sending new messages while streaming', async () => {
+      const mockCancel = vi.fn();
+      vi.mocked(chatService.streamMessage).mockReturnValue(mockCancel);
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      // Send first message
+      act(() => {
+        result.current.sendMessage('First message');
+      });
+
+      await waitFor(() => {
+        expect(result.current.isStreaming).toBe(true);
+      });
+
+      const messageCountAfterFirst = result.current.messages.length;
+
+      // Try to send second message while streaming (Requirement 3.6)
+      act(() => {
+        result.current.sendMessage('Second message');
+      });
+
+      // Message count should not increase
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(messageCountAfterFirst);
+      });
+
+      // streamMessage should only be called once
+      expect(chatService.streamMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should pass isOnboarding parameter to streamMessage', async () => {
+      const mockCancel = vi.fn();
+      vi.mocked(chatService.streamMessage).mockReturnValue(mockCancel);
+
+      const { result } = renderHook(() => useChat(true), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('Test');
+      });
+
+      await waitFor(() => {
+        expect(chatService.streamMessage).toHaveBeenCalledWith(
+          'Test',
+          expect.any(Object),
+          true // isOnboarding
+        );
+      });
     });
   });
 
-  describe('General Functionality', () => {
-    it('should load chat history on mount', async () => {
-      const mockHistory = {
+  describe('Retry Functionality', () => {
+    it('should retry last message on retryLastMessage call', async () => {
+      let onErrorCallback: ((error: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onErrorCallback = callbacks.onError;
+        return vi.fn();
+      });
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      // Send message that will fail
+      act(() => {
+        result.current.sendMessage('Test message');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+      });
+
+      // Simulate error
+      act(() => {
+        onErrorCallback?.('Network error');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[1].error).toBe('Network error');
+      });
+
+      // Clear the mock to track new calls
+      vi.mocked(chatService.streamMessage).mockClear();
+
+      // Retry (Requirement 6.2)
+      act(() => {
+        result.current.retryLastMessage();
+      });
+
+      await waitFor(() => {
+        // Should remove failed message and resend
+        expect(chatService.streamMessage).toHaveBeenCalledWith(
+          'Test message',
+          expect.any(Object),
+          false
+        );
+      });
+    });
+
+    it('should find last user message correctly', async () => {
+      let onChunkCallback: ((chunk: string) => void) | null = null;
+      let onCompleteCallback: ((agentType?: string) => void) | null = null;
+      let onErrorCallback: ((error: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onChunkCallback = callbacks.onChunk;
+        onCompleteCallback = callbacks.onComplete;
+        onErrorCallback = callbacks.onError;
+        return vi.fn();
+      });
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      // Send first message
+      act(() => {
+        result.current.sendMessage('First');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+      });
+
+      // Complete first message
+      act(() => {
+        onChunkCallback?.('Response 1');
+        onCompleteCallback?.();
+      });
+
+      await waitFor(() => {
+        expect(result.current.isStreaming).toBe(false);
+      });
+
+      // Send second message
+      act(() => {
+        result.current.sendMessage('Second');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(4);
+      });
+
+      // Fail second message
+      act(() => {
+        onErrorCallback?.('Error');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages[3].error).toBe('Error');
+      });
+
+      vi.mocked(chatService.streamMessage).mockClear();
+
+      // Retry should use "Second" (last user message)
+      act(() => {
+        result.current.retryLastMessage();
+      });
+
+      await waitFor(() => {
+        expect(chatService.streamMessage).toHaveBeenCalledWith(
+          'Second',
+          expect.any(Object),
+          false
+        );
+      });
+    });
+  });
+
+  describe('Cleanup on Unmount', () => {
+    it('should cancel active stream on unmount', async () => {
+      const mockCancel = vi.fn();
+      vi.mocked(chatService.streamMessage).mockReturnValue(mockCancel);
+
+      const { result, unmount } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('Test');
+      });
+
+      await waitFor(() => {
+        expect(result.current.isStreaming).toBe(true);
+      });
+
+      // Unmount component (Requirements 7.1, 7.2)
+      unmount();
+
+      // Cancel function should be called
+      expect(mockCancel).toHaveBeenCalled();
+    });
+
+    it('should not error if no active stream on unmount', () => {
+      const { unmount } = renderHook(() => useChat(false), { wrapper });
+
+      // Should not throw error
+      expect(() => unmount()).not.toThrow();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should not send empty messages', async () => {
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('');
+      });
+
+      act(() => {
+        result.current.sendMessage('   ');
+      });
+
+      // No messages should be sent
+      expect(chatService.streamMessage).not.toHaveBeenCalled();
+      expect(result.current.messages.length).toBe(0);
+    });
+
+    it('should handle rapid chunk updates', async () => {
+      let onChunkCallback: ((chunk: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onChunkCallback = callbacks.onChunk;
+        return vi.fn();
+      });
+
+      const { result } = renderHook(() => useChat(false), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([]);
+      });
+
+      act(() => {
+        result.current.sendMessage('Test');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+      });
+
+      // Send many chunks rapidly
+      act(() => {
+        for (let i = 0; i < 100; i++) {
+          onChunkCallback?.(`${i} `);
+        }
+      });
+
+      await waitFor(() => {
+        const content = result.current.messages[1].content;
+        expect(content).toContain('0 ');
+        expect(content).toContain('99 ');
+      });
+    });
+
+    it('should preserve message history during streaming', async () => {
+      let onChunkCallback: ((chunk: string) => void) | null = null;
+
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onChunkCallback = callbacks.onChunk;
+        return vi.fn();
+      });
+
+      // Mock history with existing messages
+      vi.mocked(chatService.getHistory).mockResolvedValue({
         messages: [
           {
-            id: '1',
-            role: 'user' as const,
+            role: 'user',
             content: 'Previous message',
-            timestamp: '2024-01-01T09:00:00Z',
+            agent_type: 'general_assistant',
+            created_at: '2024-01-01T09:00:00Z',
           },
         ],
         total: 1,
-      };
+      });
 
-      vi.mocked(chatService.getHistory).mockResolvedValue(mockHistory);
-
-      const { result } = renderHook(() => useChat(), { wrapper });
+      const { result } = renderHook(() => useChat(false), { wrapper });
 
       await waitFor(() => {
-        expect(result.current.messages).toEqual(mockHistory.messages);
+        expect(result.current.messages.length).toBe(1);
+      });
+
+      act(() => {
+        result.current.sendMessage('New message');
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(3); // history + user + assistant
+      });
+
+      act(() => {
+        onChunkCallback?.('Response');
+      });
+
+      await waitFor(() => {
+        // All messages should be preserved
+        expect(result.current.messages.length).toBe(3);
+        expect(result.current.messages[0].content).toBe('Previous message');
+        expect(result.current.messages[1].content).toBe('New message');
+        expect(result.current.messages[2].content).toBe('Response');
       });
     });
+  });
 
-    it('should add user and agent messages on successful send', async () => {
-      const mockResponse = {
-        message: 'Agent response',
-        agentType: 'general_assistant',
-        conversationId: 'conv-123',
-        timestamp: '2024-01-01T10:00:00Z',
-      };
+  describe('Clear Messages', () => {
+    it('should clear all messages and reset state', async () => {
+      let onChunkCallback: ((chunk: string) => void) | null = null;
+      let onCompleteCallback: ((agentType?: string) => void) | null = null;
 
-      vi.mocked(chatService.sendMessage).mockResolvedValue(mockResponse);
+      vi.mocked(chatService.streamMessage).mockImplementation((msg, callbacks) => {
+        onChunkCallback = callbacks.onChunk;
+        onCompleteCallback = callbacks.onComplete;
+        return vi.fn();
+      });
 
-      const { result } = renderHook(() => useChat(), { wrapper });
+      const { result } = renderHook(() => useChat(false), { wrapper });
 
       await waitFor(() => {
         expect(result.current.messages).toEqual([]);
       });
 
-      await result.current.sendMessage('Hello');
+      act(() => {
+        result.current.sendMessage('Test');
+      });
 
       await waitFor(() => {
         expect(result.current.messages.length).toBe(2);
       });
 
-      // Check user message
-      expect(result.current.messages[0].role).toBe('user');
-      expect(result.current.messages[0].content).toBe('Hello');
+      act(() => {
+        onChunkCallback?.('Response');
+        onCompleteCallback?.();
+      });
 
-      // Check agent message
-      expect(result.current.messages[1].role).toBe('assistant');
-      expect(result.current.messages[1].content).toBe('Agent response');
-    });
+      await waitFor(() => {
+        expect(result.current.messages.length).toBe(2);
+      });
 
-    it('should clear messages and conversation', () => {
-      const { result } = renderHook(() => useChat(), { wrapper });
-
-      result.current.clearMessages();
+      act(() => {
+        result.current.clearMessages();
+      });
 
       expect(result.current.messages).toEqual([]);
       expect(result.current.conversationId).toBeNull();

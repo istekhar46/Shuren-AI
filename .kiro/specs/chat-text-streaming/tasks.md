@@ -87,8 +87,8 @@ This implementation plan breaks down the chat text streaming feature into increm
     - **Validates: Requirements 2.4, 2.5, 2.6**
     - Generate random SSE events and verify correct callbacks invoked
 
-- [ ] 5. Frontend: Implement chat state management
-  - [ ] 5.1 Update `useChat` hook in `frontend/src/hooks/useChat.ts`
+- [x] 5. Frontend: Implement chat state management
+  - [x] 5.1 Update `useChat` hook in `frontend/src/hooks/useChat.ts`
     - Add immediate user message to state on send
     - Create placeholder assistant message with `isStreaming: true`
     - Implement `onChunk` callback to append chunks to placeholder
@@ -97,18 +97,18 @@ This implementation plan breaks down the chat text streaming feature into increm
     - Prevent sending new messages while streaming
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ] 5.2 Add `retryLastMessage()` method to useChat
+  - [x] 5.2 Add `retryLastMessage()` method to useChat
     - Find last user message in history
     - Remove failed assistant message
     - Resend user message
     - _Requirements: 6.2_
 
-  - [ ] 5.3 Add cleanup effect for component unmount
+  - [x] 5.3 Add cleanup effect for component unmount
     - Cancel active stream on unmount
     - Use useEffect cleanup function
     - _Requirements: 7.1, 7.2_
 
-  - [ ]* 5.4 Write unit tests for useChat hook
+  - [x]* 5.4 Write unit tests for useChat hook
     - Test user message added immediately
     - Test placeholder created on stream start
     - Test chunks appended correctly
@@ -118,18 +118,18 @@ This implementation plan breaks down the chat text streaming feature into increm
     - Test cleanup on unmount
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 7.1, 7.2_
 
-  - [ ]* 5.5 Write property test for content accumulation
+  - [x]* 5.5 Write property test for content accumulation
     - **Property 9: Content Accumulation Invariant**
     - **Validates: Requirements 3.3, 4.1**
     - Generate random chunk sequences and verify final content equals concatenation
 
-  - [ ]* 5.6 Write property test for conversation history
+  - [x]* 5.6 Write property test for conversation history
     - **Property 13: Conversation History Preservation**
     - **Validates: Requirements 3.7**
     - Send random sequences of messages and verify all preserved in order
 
-- [ ] 6. Frontend: Implement message display components
-  - [ ] 6.1 Update `MessageList` component in `frontend/src/components/MessageList.tsx`
+- [x] 6. Frontend: Implement message display components
+  - [x] 6.1 Update `MessageList` component in `frontend/src/components/MessageList.tsx`
     - Render streaming messages with current accumulated text
     - Show typing indicator (cursor) when `isStreaming` is true
     - Hide typing indicator when `isStreaming` is false
@@ -137,24 +137,24 @@ This implementation plan breaks down the chat text streaming feature into increm
     - Add ARIA labels to typing indicator
     - _Requirements: 4.1, 4.3, 4.4, 8.1, 8.2, 8.3_
 
-  - [ ] 6.2 Implement auto-scroll with debouncing
+  - [x] 6.2 Implement auto-scroll with debouncing
     - Use useRef for scroll target
     - Debounce scroll updates to 100ms
     - Use requestAnimationFrame for smooth scrolling
     - _Requirements: 4.5, 9.3_
 
-  - [ ] 6.3 Add visual distinction for streaming vs finalized messages
+  - [x] 6.3 Add visual distinction for streaming vs finalized messages
     - Apply different CSS classes based on `isStreaming` state
     - Add data attributes for testing
     - _Requirements: 4.6_
 
-  - [ ] 6.4 Add error display and retry button
+  - [x] 6.4 Add error display and retry button
     - Show error message when message has error property
     - Render retry button for failed messages
     - Wire retry button to `retryLastMessage()` from useChat
     - _Requirements: 6.1, 6.2, 6.4_
 
-  - [ ]* 6.5 Write unit tests for MessageList
+  - [x] 6.5 Write unit tests for MessageList
     - Test typing indicator shown when isStreaming is true
     - Test typing indicator hidden when isStreaming is false
     - Test auto-scroll triggered on content update
@@ -163,58 +163,58 @@ This implementation plan breaks down the chat text streaming feature into increm
     - Test retry button rendered for failed messages
     - _Requirements: 4.3, 4.4, 4.5, 6.1, 6.2, 8.1, 8.2, 8.3_
 
-- [ ] 7. Checkpoint - Frontend streaming functional
+- [x] 7. Checkpoint - Frontend streaming functional
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Frontend: Update chat pages
-  - [ ] 8.1 Update `ChatPage` in `frontend/src/pages/ChatPage.tsx`
+- [x] 8. Frontend: Update chat pages
+  - [x] 8.1 Update `ChatPage` in `frontend/src/pages/ChatPage.tsx`
     - Replace LoadingIndicator with streaming from useChat
     - Pass `isOnboarding: false` to useChat
     - Update input placeholder based on streaming state
     - Disable input while streaming
     - _Requirements: 3.1, 3.6_
 
-  - [ ] 8.2 Update `OnboardingChatPage` in `frontend/src/pages/OnboardingChatPage.tsx`
+  - [x] 8.2 Update `OnboardingChatPage` in `frontend/src/pages/OnboardingChatPage.tsx`
     - Replace LoadingIndicator with streaming from useChat
     - Pass `isOnboarding: true` to useChat
     - Ensure UI matches regular chat (same MessageList component)
     - Update input placeholder based on streaming state
     - _Requirements: 5.1, 5.2, 5.5_
 
-  - [ ]* 8.3 Write integration tests for chat pages
+  - [x]* 8.3 Write integration tests for chat pages
     - Test complete streaming flow in ChatPage
     - Test complete streaming flow in OnboardingChatPage
     - Test UI consistency between both pages
     - _Requirements: 5.5_
 
-- [ ] 9. Backend: Add monitoring and logging
-  - [ ] 9.1 Add structured logging to streaming endpoints
+- [x] 9. Backend: Add monitoring and logging
+  - [x] 9.1 Add structured logging to streaming endpoints
     - Log stream start with user_id and message_id
     - Log stream completion with duration and chunk count
     - Log all errors with full context
     - Log cleanup events
     - _Requirements: 6.6_
 
-  - [ ] 9.2 Add metrics tracking
+  - [x] 9.2 Add metrics tracking
     - Track streaming session duration (avg, p95, p99)
     - Track chunks per session
     - Track error rate by error type
     - Track database save success rate
     - _Requirements: 6.6_
 
-  - [ ]* 9.3 Write property test for error logging
+  - [x]* 9.3 Write property test for error logging
     - **Property 23: Error Logging**
     - **Validates: Requirements 6.6**
     - Trigger random errors and verify all are logged
 
-- [ ] 10. Frontend: Add performance optimizations
-  - [ ] 10.1 Implement render batching for rapid chunks
+- [x] 10. Frontend: Add performance optimizations
+  - [x] 10.1 Implement render batching for rapid chunks
     - Use React 18 automatic batching
     - Verify multiple setState calls in same event are batched
     - Add manual batching if needed for older React versions
     - _Requirements: 9.1_
 
-  - [ ] 10.2 Add memory management for long conversations
+  - [x] 10.2 Add memory management for long conversations
     - Limit message history to last 50 messages
     - Clear old messages when limit exceeded
     - Preserve conversation in backend
@@ -290,21 +290,21 @@ This implementation plan breaks down the chat text streaming feature into increm
 - [ ] 14. Final checkpoint - Complete feature validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 15. Documentation and deployment preparation
-  - [ ] 15.1 Update API documentation
+- [x] 15. Documentation and deployment preparation
+  - [x] 15.1 Update API documentation
     - Document `/chat/stream` endpoint
     - Document `/chat/onboarding-stream` endpoint
     - Include SSE event format examples
     - Add authentication requirements
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 15.2 Add nginx configuration for SSE
+  - [x] 15.2 Add nginx configuration for SSE
     - Disable buffering for streaming endpoints
     - Set appropriate headers
     - Document configuration in deployment guide
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 15.3 Create migration guide
+  - [x] 15.3 Create migration guide
     - Document feature flag rollout plan
     - Document monitoring metrics to watch
     - Document rollback procedure

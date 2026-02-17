@@ -151,8 +151,10 @@ class ChatService {
     // Determine endpoint based on chat type
     const endpoint = isOnboarding ? '/chat/onboarding-stream' : '/chat/stream';
     
-    // Create URL with query params for SSE
-    const url = new URL(endpoint, baseURL);
+    // Create full URL by combining baseURL and endpoint
+    // Remove trailing slash from baseURL if present, then append endpoint
+    const fullURL = `${baseURL.replace(/\/$/, '')}${endpoint}`;
+    const url = new URL(fullURL);
     
     // Add authentication token as query param (EventSource limitation)
     if (token) {

@@ -45,12 +45,18 @@ def get_async_database_url(url: str) -> str:
 # - echo=settings.DEBUG: Log SQL queries in debug mode
 # - pool_pre_ping=True: Verify connections before using them
 # - pool_size=5: Connection pool size for production
+# - pool_recycle=3600: Recycle connections after 1 hour (prevents timeout)
+# - pool_timeout=30: Wait up to 30 seconds for a connection from the pool
+# - pool_reset_on_return="rollback": Reset connection state on return to pool
 engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_size=5,
-    max_overflow=10
+    max_overflow=10,
+    pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_timeout=30,
+    pool_reset_on_return="rollback"  # Ensure clean connection state
 )
 
 # Create async session factory
