@@ -188,13 +188,16 @@ async def test_user(db_session: AsyncSession) -> User:
     )
     db_session.add(user)
     
-    # Create onboarding state for the user
+    # Create onboarding state for the user with agent foundation fields
     onboarding_state = OnboardingState(
         id=uuid4(),
         user_id=user.id,
         current_step=0,
         is_complete=False,
         step_data={},
+        current_agent=None,
+        agent_context={},
+        conversation_history=[],
         created_at=datetime.now(timezone.utc)
     )
     db_session.add(onboarding_state)
@@ -229,13 +232,16 @@ async def oauth_user(db_session: AsyncSession) -> User:
     )
     db_session.add(user)
     
-    # Create onboarding state for the user
+    # Create onboarding state for the user with agent foundation fields
     onboarding_state = OnboardingState(
         id=uuid4(),
         user_id=user.id,
         current_step=0,
         is_complete=False,
         step_data={},
+        current_agent=None,
+        agent_context={},
+        conversation_history=[],
         created_at=datetime.now(timezone.utc)
     )
     db_session.add(onboarding_state)

@@ -129,11 +129,11 @@ class MealPlan(BaseModel):
         nullable=False
     )
     
-    # Nutritional targets
+    # Nutritional targets (in grams for precision and clarity)
     daily_calorie_target = Column(Integer, nullable=False)
-    protein_percentage = Column(Numeric(5, 2), nullable=False)
-    carbs_percentage = Column(Numeric(5, 2), nullable=False)
-    fats_percentage = Column(Numeric(5, 2), nullable=False)
+    protein_grams = Column(Numeric(6, 2), nullable=False)
+    carbs_grams = Column(Numeric(6, 2), nullable=False)
+    fats_grams = Column(Numeric(6, 2), nullable=False)
     
     # Relationships
     profile = relationship("UserProfile", back_populates="meal_plan")
@@ -141,10 +141,6 @@ class MealPlan(BaseModel):
     # Table constraints
     __table_args__ = (
         UniqueConstraint('profile_id', name='unique_profile_meal_plan'),
-        CheckConstraint(
-            'protein_percentage + carbs_percentage + fats_percentage = 100',
-            name='valid_macro_sum'
-        ),
         Index(
             'idx_meal_plans_profile',
             'profile_id',

@@ -322,6 +322,116 @@ Authorization: Bearer <jwt_token>
 
 ---
 
+### 5. Chat with Onboarding Agent
+
+**Endpoint:** `POST /api/v1/onboarding/chat`
+
+**Description:** Chat with the current onboarding agent based on user's step. The agent is automatically determined by the current onboarding step and has access to all previous context from earlier steps.
+
+**Authentication:** Required
+
+**Request Body:**
+
+```json
+{
+  "message": "I can do 10 pushups",
+  "step": 1
+}
+```
+
+**Field Descriptions:**
+- `message` (required): User's message text (1-2000 characters)
+- `step` (optional): Current onboarding step for validation
+
+**Response:** `200 OK`
+
+```json
+{
+  "message": "Great! 10 pushups shows good upper body strength. Let's continue assessing your fitness level...",
+  "agent_type": "FITNESS_ASSESSMENT",
+  "current_step": 1,
+  "step_complete": false,
+  "next_action": "continue"
+}
+```
+
+**Field Descriptions:**
+- `message`: Agent's response text
+- `agent_type`: Type of agent that handled the message (FITNESS_ASSESSMENT, GOAL_SETTING, WORKOUT_PLANNING, DIET_PLANNING, SCHEDULING)
+- `current_step`: User's current onboarding step (0-9)
+- `step_complete`: Whether the current step is complete
+- `next_action`: Suggested next action ("continue", "next_step", "complete")
+
+**Step-to-Agent Mapping:**
+- Steps 0-2: `FITNESS_ASSESSMENT` - Assessing current fitness level
+- Step 3: `GOAL_SETTING` - Defining fitness goals
+- Steps 4-5: `WORKOUT_PLANNING` - Creating workout plans
+- Steps 6-7: `DIET_PLANNING` - Building meal plans
+- Steps 8-9: `SCHEDULING` - Setting up daily schedule
+
+**Error Responses:**
+- `401 Unauthorized`: Missing or invalid JWT token
+- `404 Not Found`: Onboarding state not found for user
+- `422 Unprocessable Entity`: Invalid request body (empty message, message too long)
+- `500 Internal Server Error`: Server error processing message
+
+**Example Usage:**
+
+```bash
+curl -X POST https://api.shuren.app/api/v1/onboarding/chat \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "I am a beginner with no gym experience"
+  }'
+```
+
+---
+
+### 6. Get Current Onboarding Agent
+
+**Endpoint:** `GET /api/v1/onboarding/current-agent`
+
+**Description:** Get information about the current onboarding agent to help the client display appropriate UI and context.
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+
+```json
+{
+  "agent_type": "FITNESS_ASSESSMENT",
+  "current_step": 1,
+  "agent_description": "I'll help assess your current fitness level",
+  "context_summary": {
+    "fitness_assessment": {
+      "pushups": 10,
+      "experience": "beginner"
+    }
+  }
+}
+```
+
+**Field Descriptions:**
+- `agent_type`: Current agent type handling this step
+- `current_step`: User's current onboarding step (0-9)
+- `agent_description`: Human-readable description of what this agent does
+- `context_summary`: Summary of data collected so far by all agents
+
+**Error Responses:**
+- `401 Unauthorized`: Missing or invalid JWT token
+- `404 Not Found`: Onboarding state not found for user
+- `500 Internal Server Error`: Server error retrieving agent info
+
+**Example Usage:**
+
+```bash
+curl -X GET https://api.shuren.app/api/v1/onboarding/current-agent \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## Chat Endpoints
 
 ### 1. Chat (Post-Onboarding)
@@ -1033,6 +1143,35 @@ All endpoints are rate-limited to prevent abuse:
 ---
 
 ## Changelog
+
+### Version 1.1.0 (2026-02-18)
+
+**New Endpoints:**
+- `POST /api/v1/onboarding/chat` - Chat with onboarding agents
+- `GET /api/v1/onboarding/current-agent` - Get current agent information
+
+**New Features:**
+- Conversational onboarding with specialized AI agents
+- Agent routing based on onboarding step (0-9)
+- Context persistence across agent transitions
+- Conversation history tracking
+
+**Database Changes:**
+- Added `current_agent` column to `onboarding_states` table
+- Added `agent_context` JSONB column for agent data
+- Added `conversation_history` JSONB column for chat history
+
+**Agent Types:**
+- `FITNESS_ASSESSMENT` (Steps 0-2)
+- `GOAL_SETTING` (Step 3)
+- `WORKOUT_PLANNING` (Steps 4-5)
+- `DIET_PLANNING` (Steps 6-7)
+- `SCHEDULING` (Steps 8-9)
+
+**Breaking Changes:**
+- None - all changes are backward compatible
+
+---
 
 ### Version 1.0.0 (2026-02-13)
 

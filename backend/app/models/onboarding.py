@@ -1,6 +1,6 @@
 """Onboarding state model for tracking user onboarding progress."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, UniqueConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -15,6 +15,11 @@ class OnboardingState(BaseModel):
     
     The agent_history field tracks which agents handled each state transition
     for debugging and analytics purposes.
+    
+    New agent foundation fields:
+    - current_agent: Identifies which agent is currently handling the user
+    - agent_context: JSONB data structure containing information collected by previous agents
+    - conversation_history: JSONB array storing chat messages between user and agents
     """
     
     __tablename__ = "onboarding_states"
@@ -35,6 +40,11 @@ class OnboardingState(BaseModel):
     
     # Agent routing history - tracks which agents handled each state
     agent_history = Column(JSONB, default=list, nullable=False)
+    
+    # Agent foundation fields
+    current_agent = Column(String(50), nullable=True)
+    agent_context = Column(JSONB, default=dict, nullable=False)
+    conversation_history = Column(JSONB, default=list, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="onboarding_state")

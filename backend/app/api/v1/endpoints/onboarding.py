@@ -16,10 +16,14 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.onboarding import (
+    OnboardingChatRequest,
+    OnboardingChatResponse,
+    OnboardingCompleteResponse,
     OnboardingProgressResponse,
     OnboardingStateResponse,
     OnboardingStepRequest,
-    OnboardingStepResponse
+    OnboardingStepResponse,
+    CurrentAgentResponse
 )
 from app.schemas.profile import UserProfileResponse
 from app.services.onboarding_service import OnboardingService, OnboardingValidationError
@@ -197,100 +201,326 @@ async def save_onboarding_step(
     )
 
 
-@router.post("/complete", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/complete", response_model=OnboardingCompleteResponse, status_code=status.HTTP_201_CREATED)
 async def complete_onboarding(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> UserProfileResponse:
+) -> OnboardingCompleteResponse:
     """
-    Complete onboarding and create locked user profile.
+    Complete onboarding and create locked user profile from agent_context.
     
-    Verifies all 11 onboarding steps are complete, creates a UserProfile
-    with all related entities (goals, constraints, preferences, schedules),
-    creates initial profile version, and marks onboarding as complete.
+    This endpoint:
+    1. Loads the user's OnboardingState
+    2. Checks if onboarding is already complete (returns 409 if true)
+    3. Verifies all required agent data is present in agent_context
+    4. Creates UserProfile with all related entities using ProfileCreationService
+    5. Marks onboarding as complete (is_complete=True)
+    6. Sets current_agent to "general_assistant"
+    7. Returns profile information
     
     Args:
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
     Returns:
-        UserProfileResponse with complete profile data including all relationships
+        OnboardingCompleteResponse with profile_id, user_id, fitness_level,
+        is_locked, onboarding_complete, and success message
         
     Raises:
-        HTTPException(400): If onboarding is incomplete
+        HTTPException(400): If agent data is missing or incomplete
         HTTPException(401): If authentication fails (handled by dependency)
+        HTTPException(409): If onboarding is already complete
+        HTTPException(422): If data validation fails
+        HTTPException(500): If database error occurs
     """
-    # Initialize onboarding service
-    onboarding_service = OnboardingService(db)
+    import logging
+    from sqlalchemy import select, update
+    from sqlalchemy.exc import SQLAlchemyError
+    from pydantic import ValidationError
     
-    # Complete onboarding and create profile
+    from app.models.onboarding import OnboardingState
+    from app.services.profile_creation_service import ProfileCreationService
+    from app.services.onboarding_completion import OnboardingIncompleteError
+    
+    logger = logging.getLogger(__name__)
+    
     try:
-        profile = await onboarding_service.complete_onboarding(current_user.id)
-    except OnboardingValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message
+        # Load onboarding state
+        stmt = select(OnboardingState).where(
+            OnboardingState.user_id == current_user.id
         )
+        result = await db.execute(stmt)
+        onboarding_state = result.scalars().first()
+        
+        if not onboarding_state:
+            logger.error(f"Onboarding state not found for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Onboarding state not found"
+            )
+        
+        # Check if onboarding already complete
+        if onboarding_state.is_complete:
+            logger.warning(f"Onboarding already complete for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Onboarding has already been completed for this user"
+            )
+        
+        # Create profile from agent_context
+        profile_service = ProfileCreationService(db)
+        
+        try:
+            profile = await profile_service.create_profile_from_agent_context(
+                user_id=current_user.id,
+                agent_context=onboarding_state.agent_context or {}
+            )
+        except OnboardingIncompleteError as e:
+            # Agent data is missing or incomplete
+            logger.error(f"Onboarding incomplete for user {current_user.id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Onboarding data incomplete: {str(e)}"
+            )
+        except ValueError as e:
+            # Data validation failed
+            logger.error(f"Validation error for user {current_user.id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Data validation failed: {str(e)}"
+            )
+        except SQLAlchemyError as e:
+            # Database error
+            logger.error(f"Database error for user {current_user.id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An error occurred while creating your profile. Please try again."
+            )
+        
+        # Mark onboarding as complete
+        stmt = (
+            update(OnboardingState)
+            .where(OnboardingState.user_id == current_user.id)
+            .values(
+                is_complete=True,
+                current_agent="general_assistant"
+            )
+        )
+        await db.execute(stmt)
+        await db.commit()
+        
+        logger.info(f"Onboarding completed successfully for user {current_user.id}")
+        
+        # Return success response
+        return OnboardingCompleteResponse(
+            profile_id=str(profile.id),
+            user_id=str(current_user.id),
+            fitness_level=profile.fitness_level,
+            is_locked=profile.is_locked,
+            onboarding_complete=True,
+            message="Onboarding completed successfully! Your personalized fitness profile is ready."
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logger.error(f"Unexpected error completing onboarding for user {current_user.id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+
+
+@router.post("/chat", response_model=OnboardingChatResponse, status_code=status.HTTP_200_OK)
+async def chat_onboarding(
+    request: OnboardingChatRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> OnboardingChatResponse:
+    """
+    Chat with the current onboarding agent.
     
-    # Build response with all relationships
-    return UserProfileResponse(
-        id=str(profile.id),
-        user_id=str(profile.user_id),
-        is_locked=profile.is_locked,
-        fitness_level=profile.fitness_level,
-        fitness_goals=[
-            {
-                "goal_type": goal.goal_type,
-                "target_weight_kg": float(goal.target_weight_kg) if goal.target_weight_kg else None,
-                "target_body_fat_percentage": float(goal.target_body_fat_percentage) if goal.target_body_fat_percentage else None,
-                "priority": goal.priority
-            }
-            for goal in profile.fitness_goals
-        ],
-        physical_constraints=[
-            {
-                "constraint_type": constraint.constraint_type,
-                "description": constraint.description,
-                "severity": constraint.severity
-            }
-            for constraint in profile.physical_constraints
-        ],
-        dietary_preferences={
-            "diet_type": profile.dietary_preferences.diet_type,
-            "allergies": profile.dietary_preferences.allergies or [],
-            "intolerances": profile.dietary_preferences.intolerances or [],
-            "dislikes": profile.dietary_preferences.dislikes or []
-        } if profile.dietary_preferences else None,
-        meal_plan={
-            "daily_calorie_target": profile.meal_plan.daily_calorie_target,
-            "protein_percentage": float(profile.meal_plan.protein_percentage),
-            "carbs_percentage": float(profile.meal_plan.carbs_percentage),
-            "fats_percentage": float(profile.meal_plan.fats_percentage)
-        } if profile.meal_plan else None,
-        meal_schedules=[
-            {
-                "meal_name": schedule.meal_name,
-                "scheduled_time": schedule.scheduled_time,
-                "enable_notifications": schedule.enable_notifications
-            }
-            for schedule in profile.meal_schedules
-        ],
-        workout_schedules=[
-            {
-                "day_of_week": schedule.day_of_week,
-                "scheduled_time": schedule.scheduled_time,
-                "enable_notifications": schedule.enable_notifications
-            }
-            for schedule in profile.workout_schedules
-        ],
-        hydration_preferences={
-            "daily_water_target_ml": profile.hydration_preferences.daily_water_target_ml,
-            "reminder_frequency_minutes": profile.hydration_preferences.reminder_frequency_minutes,
-            "enable_notifications": profile.hydration_preferences.enable_notifications
-        } if profile.hydration_preferences else None,
-        lifestyle_baseline={
-            "energy_level": profile.lifestyle_baseline.energy_level,
-            "stress_level": profile.lifestyle_baseline.stress_level,
-            "sleep_quality": profile.lifestyle_baseline.sleep_quality
-        } if profile.lifestyle_baseline else None
-    )
+    The agent is determined by the user's current onboarding step.
+    The agent has access to all previous context from earlier steps.
+    
+    Args:
+        request: Chat request with user message
+        current_user: Authenticated user from JWT
+        db: Database session
+        
+    Returns:
+        OnboardingChatResponse with agent's reply
+        
+    Raises:
+        HTTPException(401): If authentication fails (handled by dependency)
+        HTTPException(404): If user not found or onboarding state not found
+        HTTPException(422): If request validation fails (handled by FastAPI)
+        HTTPException(500): On internal errors
+    """
+    import logging
+    from datetime import datetime, timezone
+    from sqlalchemy import select, update
+    from app.models.onboarding import OnboardingState
+    from app.services.onboarding_orchestrator import OnboardingAgentOrchestrator
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Create orchestrator
+        orchestrator = OnboardingAgentOrchestrator(db)
+        
+        # Get current agent
+        try:
+            agent = await orchestrator.get_current_agent(current_user.id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        
+        # Process message
+        response = await agent.process_message(
+            message=request.message,
+            user_id=current_user.id
+        )
+        
+        # Load onboarding state to append to conversation history
+        stmt = select(OnboardingState).where(
+            OnboardingState.user_id == current_user.id
+        )
+        result = await db.execute(stmt)
+        state = result.scalars().first()
+        
+        if not state:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Onboarding state not found"
+            )
+        
+        # Append to conversation history
+        conversation_history = state.conversation_history or []
+        
+        # Add user message
+        conversation_history.append({
+            "role": "user",
+            "content": request.message,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Add agent response
+        conversation_history.append({
+            "role": "assistant",
+            "content": response.message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "agent_type": response.agent_type
+        })
+        
+        # Update conversation history in database
+        stmt = (
+            update(OnboardingState)
+            .where(OnboardingState.user_id == current_user.id)
+            .values(conversation_history=conversation_history)
+        )
+        await db.execute(stmt)
+        await db.commit()
+        
+        # Return response
+        return OnboardingChatResponse(
+            message=response.message,
+            agent_type=response.agent_type,
+            current_step=state.current_step,
+            step_complete=response.step_complete,
+            next_action=response.next_action
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error in chat_onboarding: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred processing your message"
+        )
+
+
+
+@router.get("/current-agent", response_model=CurrentAgentResponse, status_code=status.HTTP_200_OK)
+async def get_current_agent(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> CurrentAgentResponse:
+    """
+    Get information about the current onboarding agent.
+    
+    Returns agent type, step number, and context summary to help
+    the client display appropriate UI.
+    
+    Args:
+        current_user: Authenticated user from JWT
+        db: Database session
+        
+    Returns:
+        CurrentAgentResponse with agent info
+        
+    Raises:
+        HTTPException(401): If authentication fails (handled by dependency)
+        HTTPException(404): If user not found or onboarding state not found
+        HTTPException(500): On internal errors
+    """
+    import logging
+    from app.services.onboarding_orchestrator import OnboardingAgentOrchestrator
+    from app.schemas.onboarding import OnboardingAgentType
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Create orchestrator
+        orchestrator = OnboardingAgentOrchestrator(db)
+        
+        # Load state
+        state = await orchestrator._load_onboarding_state(current_user.id)
+        
+        if not state:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Onboarding state not found"
+            )
+        
+        # Determine agent type
+        try:
+            agent_type = orchestrator._step_to_agent(state.current_step)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        
+        # Get agent description
+        agent_descriptions = {
+            OnboardingAgentType.FITNESS_ASSESSMENT: "I'll help assess your current fitness level",
+            OnboardingAgentType.GOAL_SETTING: "Let's define your fitness goals",
+            OnboardingAgentType.WORKOUT_PLANNING: "I'll create your personalized workout plan",
+            OnboardingAgentType.DIET_PLANNING: "Let's build your meal plan",
+            OnboardingAgentType.SCHEDULING: "We'll set up your daily schedule"
+        }
+        
+        return CurrentAgentResponse(
+            agent_type=agent_type.value,
+            current_step=state.current_step,
+            agent_description=agent_descriptions[agent_type],
+            context_summary=state.agent_context or {}
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_current_agent: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred retrieving agent information"
+        )

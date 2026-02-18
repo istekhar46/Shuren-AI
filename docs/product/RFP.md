@@ -49,22 +49,32 @@ The system should feel like a disciplined but understanding personal coach, not 
 ---
 
 ## 5. Onboarding & Profile Configuration (Foundational Requirement)
-Onboarding is a mandatory, structured, multi-step process that defines the user’s entire fitness profile.
+Onboarding is a mandatory, structured, multi-step process that defines the user's entire fitness profile.
 
-**During onboarding, the user provides:**
-* Fitness level (beginner / intermediate / advanced)
-* Primary fitness goal(s)
-* Workout preferences and constraints
-* Diet preferences and restrictions
-* Fixed meal plan selection
-* Meal timing schedule
-* Workout schedule
-* Hydration schedule
+**Onboarding Architecture:**
+* Each onboarding step is handled by a specialized AI agent with domain expertise
+* Agents guide users through their specific step with personalized questions
+* Agents propose plans (workout/meal) for user approval before saving
+* Each agent updates the user profile and hands over context to the next agent
+* Progressive context building ensures each agent has relevant information from previous steps
+
+**During onboarding, the user interacts with specialized agents:**
+* **Fitness Assessment Agent** - Captures fitness level (beginner/intermediate/advanced)
+* **Goal Setting Agent** - Defines primary and secondary fitness goals
+* **Workout Planning Agent** - Gathers workout preferences, proposes workout plan for approval
+* **Diet Planning Agent** - Collects diet preferences, proposes meal plan for approval
+* **Scheduling Agent** - Sets meal timing, workout schedule, hydration reminders
 
 **All onboarding data is:**
-* Saved to the user profile
-* Used by all agents
+* Saved to the user profile by the responsible agent
+* Passed as context to subsequent agents
+* Used by all agents post-onboarding
 * Persisted unless the user explicitly requests a change
+
+**Post-Onboarding:**
+* After completion, only the General Assistant Agent is available
+* General Assistant has access to complete user profile
+* Can answer queries like "What's my workout today?" or "What are my meals today?"
 
 ---
 
@@ -100,7 +110,7 @@ The Workout Planning Agent is responsible for:
 * The user can ask how a specific exercise is performed.
 * The agent responds by playing a GIF-based workout clip.
 > **Example:**
-> **User:** “Can you show me how overhead dumbbell press is done?”
+> **User:** "Can you show me how overhead dumbbell press is done?"
 > **Agent:** [Displays a relevant visual clip]
 
 ### 7.2 Diet Planning
@@ -113,8 +123,8 @@ The Diet Planning Agent is responsible for:
 
 **Contextual Meal Assistance:**
 * Users can ask situational questions:
-    * “I’m at the market—what ingredients should I buy?”
-    * “I’m about to cook my next meal—what can I prepare?”
+    * "I'm at the market—what ingredients should I buy?"
+    * "I'm about to cook my next meal—what can I prepare?"
 * The agent responds strictly within the existing meal plan, using known calorie and protein targets.
 
 ### 7.3 Supplement Guidance
@@ -181,9 +191,9 @@ The General Assistant Agent enables:
     * User goals
 
 > **Examples of User Queries:**
-> * “I feel tired today, what should I do?”
-> * “What’s my next set?”
-> * “Can you suggest how to cook this meal?”
+> * "I feel tired today, what should I do?"
+> * "What's my next set?"
+> * "Can you suggest how to cook this meal?"
 
 ---
 

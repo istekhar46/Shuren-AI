@@ -1,7 +1,7 @@
 """Workout models for workout plans, days, exercises, and exercise library."""
 
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, Numeric, String, Text, TIMESTAMP, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.db.base import BaseModel
@@ -32,6 +32,11 @@ class WorkoutPlan(BaseModel):
     
     # Plan rationale
     plan_rationale = Column(Text, nullable=True)
+    
+    # Complete plan data from agent (JSONB for flexibility during onboarding)
+    # This stores the full workout plan structure from WorkoutPlanGenerator
+    # including exercises, sets, reps, rest periods, progression strategy, etc.
+    plan_data = Column(JSONB, nullable=True)
     
     # Lock status
     is_locked = Column(Boolean, default=True, nullable=False)
