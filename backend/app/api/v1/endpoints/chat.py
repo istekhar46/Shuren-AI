@@ -33,7 +33,8 @@ from app.schemas.chat import (
 from app.services.agent_orchestrator import AgentOrchestrator, AgentType
 from app.services.chat_service import ChatService
 from app.services.context_loader import load_agent_context
-from app.services.onboarding_service import OnboardingService, STATE_TO_AGENT_MAP
+from app.services.onboarding_service import OnboardingService
+from app.services.onboarding_orchestrator import OnboardingAgentOrchestrator
 from app.core.metrics import get_metrics_tracker
 
 
@@ -271,37 +272,26 @@ async def chat_onboarding(
                 detail=f"State mismatch. Current: {state.current_step}, Requested: {request.current_state}"
             )
         
-        # 4. Route to appropriate agent based on current_state
-        agent_type = STATE_TO_AGENT_MAP.get(request.current_state)
-        if not agent_type:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid state number: {request.current_state}"
-            )
+        # 4. Get specialized onboarding agent
+        orchestrator = OnboardingAgentOrchestrator(db)
         
-        # 5. Initialize AgentOrchestrator in text mode
-        orchestrator = AgentOrchestrator(db_session=db, mode="text")
-        
-        # 6. Process query with agent in onboarding mode
         try:
-            agent_response = await orchestrator.route_query(
-                user_id=user_id,
-                query=request.message,
-                agent_type=agent_type,
-                voice_mode=False,
-                onboarding_mode=True
-            )
+            agent = await orchestrator.get_current_agent(current_user.id)
         except ValueError as e:
-            # Handle access control errors from orchestrator
-            logger.error(f"Orchestrator error for user {user_id}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e)
+            )
+        
+        # 5. Process message with specialized agent
+        try:
+            agent_response = await agent.process_message(
+                message=request.message,
+                user_id=current_user.id
             )
         except Exception as e:
             logger.error(
-                f"Agent processing failed for user {user_id}, "
-                f"query: {request.message[:50]}, error: {e}",
+                f"Agent processing failed for user {user_id}: {e}",
                 exc_info=True
             )
             raise HTTPException(
@@ -309,14 +299,14 @@ async def chat_onboarding(
                 detail="Failed to process message"
             )
         
-        # 7. Check if state was updated (agent called save function)
+        # 6. Check if state was updated (agent called save function)
         updated_state = await onboarding_service.get_onboarding_state(current_user.id)
         state_updated = updated_state.current_step > initial_step
         
-        # 8. Get progress
+        # 7. Get progress
         progress = await onboarding_service.get_progress(current_user.id)
         
-        # 9. Save conversation messages
+        # 8. Save conversation messages
         user_message = ConversationMessage(
             user_id=current_user.id,
             role="user",
@@ -328,7 +318,7 @@ async def chat_onboarding(
         assistant_message = ConversationMessage(
             user_id=current_user.id,
             role="assistant",
-            content=agent_response.content,
+            content=agent_response.message,
             agent_type=agent_response.agent_type
         )
         db.add(assistant_message)
@@ -346,7 +336,7 @@ async def chat_onboarding(
         )
         
         return OnboardingChatResponse(
-            response=agent_response.content,
+            response=agent_response.message,
             agent_type=agent_response.agent_type,
             state_updated=state_updated,
             new_state=updated_state.current_step if state_updated else None,
@@ -436,9 +426,13 @@ async def chat_onboarding_stream(
     
     async def generate():
         """Async generator function for SSE streaming with managed database session"""
+        import asyncio
+        
         # Create a new database session that will live for the entire streaming operation
         # This is the official pattern for StreamingResponse with database dependencies
-        async with AsyncSessionLocal() as db:
+        db = AsyncSessionLocal()
+        
+        try:
             start_time = time.time()
             full_response = ""
             agent_type_value = None
@@ -493,19 +487,21 @@ async def chat_onboarding_stream(
                 
                 initial_step = state.current_step
                 
-                # Route to appropriate agent based on current_state
-                agent_type = STATE_TO_AGENT_MAP.get(state.current_step)
-                if not agent_type:
-                    error_msg = f'Invalid state number: {state.current_step}'
-                    error_type = "invalid_state"
+                # Get specialized onboarding agent
+                orchestrator = OnboardingAgentOrchestrator(db)
+                
+                try:
+                    agent = await orchestrator.get_current_agent(current_user.id)
+                except ValueError as e:
+                    error_msg = str(e)
+                    error_type = "agent_not_found"
                     logger.error(
-                        "Invalid onboarding state",
+                        f"Failed to get onboarding agent: {error_msg}",
                         extra={
                             "event": "stream_error",
                             "user_id": user_id,
                             "message_id": message_id,
-                            "error_type": error_type,
-                            "state": state.current_step
+                            "error_type": error_type
                         }
                     )
                     error_occurred = True
@@ -522,46 +518,53 @@ async def chat_onboarding_stream(
                     yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
                 
-                agent_type_value = agent_type.value
+                # Get agent type for response
+                agent_type_value = agent.agent_type
                 
-                # Load user context (onboarding mode)
-                try:
-                    context = await load_agent_context(
-                        db=db,
-                        user_id=user_id,
-                        include_history=True,
-                        onboarding_mode=True
-                    )
-                except ValueError as e:
-                    error_msg = 'Failed to load user context'
-                    logger.error(
-                        "Context loading failed",
-                        extra={
-                            "event": "stream_error",
-                            "user_id": user_id,
-                            "message_id": message_id,
-                            "error_type": "context_load_failed",
-                            "error_message": str(e)
-                        }
-                    )
-                    error_occurred = True
-                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                    return
+                # Load recent conversation history (last 20 messages)
+                from app.models.conversation import ConversationMessage
+                from sqlalchemy import select as sql_select
                 
-                # Initialize AgentOrchestrator in text mode
-                orchestrator = AgentOrchestrator(db_session=db, mode="text")
+                history_stmt = (
+                    sql_select(ConversationMessage)
+                    .where(ConversationMessage.user_id == current_user.id)
+                    .order_by(ConversationMessage.created_at.desc())
+                    .limit(20)
+                )
+                history_result = await db.execute(history_stmt)
+                history_messages = history_result.scalars().all()
                 
-                # Get or create agent instance
-                agent = orchestrator._get_or_create_agent(agent_type, context)
+                # Convert to list of dicts in chronological order (oldest first)
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in reversed(history_messages)
+                ]
                 
                 # Stream response chunks via agent.stream_response()
                 # Note: Agent tools may be called during streaming and need db_session
                 try:
-                    async for chunk in agent.stream_response(message):
+                    async for chunk in agent.stream_response(message, conversation_history):
                         full_response += chunk
                         chunk_count += 1
                         # Send each chunk as SSE data event with JSON payload
                         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                    
+                    # Check if agent's work is complete (data was saved)
+                    step_complete = await agent._check_if_complete(current_user.id)
+                    
+                    # If complete, advance to next step
+                    if step_complete:
+                        await orchestrator.advance_step(current_user.id)
+                        logger.info(
+                            f"Advanced onboarding step for user {user_id}",
+                            extra={
+                                "event": "step_advanced",
+                                "user_id": user_id,
+                                "message_id": message_id,
+                                "from_step": initial_step,
+                                "agent_type": agent_type_value
+                            }
+                        )
                     
                     # Check if state was updated (agent called save function)
                     updated_state = await onboarding_service.get_onboarding_state(current_user.id)
@@ -697,6 +700,31 @@ async def chat_onboarding_stream(
                     )
                 
                 yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+            
+            except asyncio.CancelledError:
+                # Handle client disconnect gracefully
+                logger.info(
+                    "Onboarding stream cancelled by client",
+                    extra={
+                        "event": "stream_cancelled",
+                        "user_id": user_id,
+                        "message_id": message_id,
+                        "duration_ms": int((time.time() - start_time) * 1000),
+                        "chunks_sent": chunk_count
+                    }
+                )
+                # Complete metrics tracking with cancellation
+                if agent_type_value:
+                    metrics_tracker.complete_session(
+                        message_id=message_id,
+                        agent_type=agent_type_value or "unknown",
+                        chunk_count=chunk_count,
+                        response_length=len(full_response),
+                        error_type="client_cancelled"
+                    )
+                # Don't re-raise - let the finally block handle cleanup
+                return
+            
             finally:
                 # Log cleanup event
                 if error_occurred:
@@ -711,6 +739,28 @@ async def chat_onboarding_stream(
                             "error": True
                         }
                     )
+        
+        finally:
+            # Always close the database session gracefully
+            # Use asyncio.shield to protect cleanup from cancellation
+            import asyncio
+            try:
+                # Shield the close operation from cancellation
+                await asyncio.shield(db.close())
+            except asyncio.CancelledError:
+                # If shield itself is cancelled (rare), suppress the error
+                # The connection will be cleaned up by the pool
+                pass
+            except Exception as e:
+                # Log other errors but don't raise - cleanup is best-effort
+                logger.warning(
+                    f"Error closing database session: {e}",
+                    extra={
+                        "event": "db_close_error",
+                        "user_id": user_id,
+                        "message_id": message_id
+                    }
+                )
     
     # Return StreamingResponse with SSE headers
     return StreamingResponse(
@@ -762,6 +812,8 @@ async def chat_stream(
     
     async def generate():
         """Async generator function for SSE streaming"""
+        import asyncio
+        
         start_time = time.time()
         full_response = ""
         agent_type_value = None
@@ -997,6 +1049,31 @@ async def chat_stream(
             
             # Send error event before closing stream
             yield f"data: {json.dumps({'error': 'An unexpected error occurred'})}\n\n"
+        
+        except asyncio.CancelledError:
+            # Handle client disconnect gracefully
+            logger.info(
+                "Chat stream cancelled by client",
+                extra={
+                    "event": "stream_cancelled",
+                    "user_id": user_id,
+                    "message_id": message_id,
+                    "duration_ms": int((time.time() - start_time) * 1000),
+                    "chunks_sent": chunk_count
+                }
+            )
+            # Complete metrics tracking with cancellation
+            if agent_type_value:
+                metrics_tracker.complete_session(
+                    message_id=message_id,
+                    agent_type=agent_type_value or "unknown",
+                    chunk_count=chunk_count,
+                    response_length=len(full_response),
+                    error_type="client_cancelled"
+                )
+            # Don't re-raise - let cleanup happen gracefully
+            return
+        
         finally:
             # Log cleanup event
             if error_occurred:
@@ -1150,4 +1227,101 @@ async def delete_chat_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete conversation history"
+        )
+
+
+
+@router.get("/onboarding/history", response_model=ChatHistoryResponse, status_code=status.HTTP_200_OK)
+async def get_onboarding_chat_history(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(default=100, ge=1, le=500, description="Maximum number of messages to return")
+) -> ChatHistoryResponse:
+    """
+    Retrieve onboarding conversation history for the authenticated user.
+    
+    Returns all conversation messages from the onboarding process in chronological
+    order (oldest to newest). This endpoint is specifically for retrieving chat
+    history during the onboarding flow.
+    
+    Args:
+        current_user: Authenticated user from JWT token
+        db: Database session from dependency injection
+        limit: Maximum number of messages to return (default 100, max 500)
+        
+    Returns:
+        ChatHistoryResponse with messages list and total count
+        
+    Raises:
+        HTTPException(401): If user is not authenticated (handled by dependency)
+        HTTPException(403): If user has already completed onboarding
+    """
+    user_id = current_user.id
+    
+    # Optional: Restrict to users who haven't completed onboarding
+    # Uncomment if you want to prevent access after onboarding is complete
+    # if current_user.onboarding_completed:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Onboarding already completed"
+    #     )
+    
+    try:
+        # Get total count of user's messages
+        count_stmt = select(func.count()).select_from(ConversationMessage).where(
+            ConversationMessage.user_id == user_id
+        )
+        count_result = await db.execute(count_stmt)
+        total_count = count_result.scalar() or 0
+        
+        # Query ConversationMessage table filtered by user_id
+        # Order by created_at DESC, apply limit
+        stmt = (
+            select(ConversationMessage)
+            .where(ConversationMessage.user_id == user_id)
+            .order_by(ConversationMessage.created_at.desc())
+            .limit(limit)
+        )
+        
+        result = await db.execute(stmt)
+        messages = result.scalars().all()
+        
+        # Reverse messages to chronological order (oldest to newest)
+        messages = list(reversed(messages))
+        
+        # Format messages with role, content, agent_type, created_at
+        formatted_messages = [
+            MessageDict(
+                role=msg.role,
+                content=msg.content,
+                agent_type=msg.agent_type,
+                created_at=msg.created_at
+            )
+            for msg in messages
+        ]
+        
+        logger.info(
+            f"Retrieved {len(formatted_messages)} onboarding messages for user {user_id}",
+            extra={
+                "event": "onboarding_history_retrieved",
+                "user_id": str(user_id),
+                "message_count": len(formatted_messages),
+                "total_count": total_count
+            }
+        )
+        
+        # Return ChatHistoryResponse with messages and total
+        return ChatHistoryResponse(
+            messages=formatted_messages,
+            total=total_count
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"Failed to retrieve onboarding chat history for user {user_id}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve onboarding conversation history"
         )

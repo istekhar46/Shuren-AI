@@ -39,21 +39,21 @@ STATE_METADATA = {
     1: StateInfo(
         state_number=1,
         name="Fitness Level Assessment",
-        agent="workout_planning",
+        agent="fitness_assessment",
         description="Tell us about your current fitness level",
         required_fields=["fitness_level"]
     ),
     2: StateInfo(
         state_number=2,
         name="Primary Fitness Goals",
-        agent="workout_planning",
+        agent="fitness_assessment",
         description="What are your fitness goals?",
         required_fields=["goals"]
     ),
     3: StateInfo(
         state_number=3,
         name="Workout Preferences & Constraints",
-        agent="workout_planning",
+        agent="goal_setting",
         description="Tell us about your equipment, injuries, and limitations",
         required_fields=["equipment", "injuries", "limitations"]
     ),
@@ -74,47 +74,31 @@ STATE_METADATA = {
     6: StateInfo(
         state_number=6,
         name="Meal Timing Schedule",
-        agent="scheduler",
+        agent="workout_planning",
         description="When do you want to eat your meals?",
         required_fields=["meals"]
     ),
     7: StateInfo(
         state_number=7,
         name="Workout Schedule",
-        agent="scheduler",
+        agent="workout_planning",
         description="When do you want to work out?",
         required_fields=["workouts"]
     ),
     8: StateInfo(
         state_number=8,
         name="Hydration Schedule",
-        agent="scheduler",
+        agent="scheduling",
         description="Set your daily water intake goals",
         required_fields=["daily_water_target_ml"]
     ),
     9: StateInfo(
         state_number=9,
         name="Supplement Preferences",
-        agent="supplement",
+        agent="scheduling",
         description="Tell us about your supplement preferences (optional)",
         required_fields=["interested_in_supplements"]
     ),
-}
-
-
-# State to Agent mapping for onboarding chat routing
-# Maps each onboarding state (1-9) to the specialized agent that handles it.
-# Used by POST /api/v1/chat/onboarding endpoint to route messages to the correct agent.
-STATE_TO_AGENT_MAP = {
-    1: AgentType.WORKOUT,      # State 1: Fitness Level Assessment
-    2: AgentType.WORKOUT,      # State 2: Primary Fitness Goals
-    3: AgentType.WORKOUT,      # State 3: Workout Preferences & Constraints (merged from old steps 4 & 5)
-    4: AgentType.DIET,         # State 4: Diet Preferences & Restrictions
-    5: AgentType.DIET,         # State 5: Fixed Meal Plan Selection
-    6: AgentType.SCHEDULER,    # State 6: Meal Timing Schedule
-    7: AgentType.SCHEDULER,    # State 7: Workout Schedule
-    8: AgentType.SCHEDULER,    # State 8: Hydration Schedule
-    9: AgentType.SUPPLEMENT,   # State 9: Supplement Preferences (optional)
 }
 
 
@@ -178,9 +162,9 @@ class OnboardingService:
     async def get_progress(self, user_id: UUID) -> "OnboardingProgress":
         """Get rich progress metadata for UI.
         
-        Calculates completed states from step_data JSONB, retrieves state
-        metadata, calculates completion percentage, and determines if
-        onboarding can be completed.
+        Calculates completed states from agent_context and step_data JSONB,
+        retrieves state metadata, calculates completion percentage, and
+        determines if onboarding can be completed.
         
         Args:
             user_id: User's unique identifier
@@ -199,15 +183,40 @@ class OnboardingService:
         if not state:
             raise OnboardingValidationError("Onboarding state not found")
         
-        # Extract completed states from step_data (states 1-9)
+        # Extract completed states from both step_data and agent_context
+        # This supports both old (step_data) and new (agent_context) approaches
         completed = []
+        
+        # Check step_data (old approach - for backward compatibility)
         if state.step_data:
             for i in range(1, 10):
                 if f"step_{i}" in state.step_data:
-                    completed.append(i)
+                    if i not in completed:
+                        completed.append(i)
+        
+        # Check agent_context (new approach - agents save here)
+        # Map agent types to their corresponding states
+        agent_to_states = {
+            "fitness_assessment": [1, 2],  # States 1-2
+            "goal_setting": [3],            # State 3
+            "diet_planning": [4, 5],        # States 4-5
+            "workout_planning": [6, 7],     # States 6-7
+            "scheduling": [8, 9]            # States 8-9
+        }
+        
+        if state.agent_context:
+            for agent_type, states in agent_to_states.items():
+                if agent_type in state.agent_context:
+                    # Agent has saved data, mark its states as complete
+                    for state_num in states:
+                        if state_num not in completed and state_num <= state.current_step:
+                            completed.append(state_num)
+        
+        # Sort completed states
+        completed.sort()
         
         # Get current and next state metadata
-        current_info = STATE_METADATA[state.current_step]
+        current_info = STATE_METADATA[state.current_step] if state.current_step >= 1 else STATE_METADATA[1]
         next_state = state.current_step + 1 if state.current_step < 9 else None
         next_info = STATE_METADATA.get(next_state) if next_state else None
         

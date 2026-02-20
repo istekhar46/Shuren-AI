@@ -157,3 +157,70 @@ class AgentResponse(BaseModel):
                 }
             }
         }
+
+
+class OnboardingAgentContext(BaseModel):
+    """
+    Immutable context for onboarding agents.
+    
+    This context is loaded once per onboarding interaction and provides agents
+    with conversation history and onboarding state data collected from previous steps.
+    
+    Attributes:
+        user_id: Unique identifier for the user
+        conversation_history: Recent conversation messages for context
+        agent_context: Data collected by previous onboarding agents
+        loaded_at: Timestamp when this context was loaded
+    """
+    
+    # User Identity
+    user_id: str = Field(
+        ...,
+        description="Unique identifier for the user"
+    )
+    
+    # Conversation History
+    conversation_history: List[Dict] = Field(
+        default_factory=list,
+        description="Recent conversation messages in format [{'role': 'user'|'assistant', 'content': '...'}]"
+    )
+    
+    # Onboarding State
+    agent_context: Dict = Field(
+        default_factory=dict,
+        description="Data collected by previous onboarding agents (e.g., fitness_assessment, goal_setting)"
+    )
+    
+    # Metadata
+    loaded_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Timestamp when this context was loaded"
+    )
+    
+    class Config:
+        """Pydantic configuration."""
+        frozen = True  # Make the model immutable
+        json_schema_extra = {
+            "example": {
+                "user_id": "550e8400-e29b-41d4-a716-446655440000",
+                "conversation_history": [
+                    {"role": "user", "content": "I'm a beginner"},
+                    {"role": "assistant", "content": "Great! Let's assess your fitness level..."},
+                    {"role": "user", "content": "I can do 10 pushups"},
+                    {"role": "assistant", "content": "That's a good starting point..."}
+                ],
+                "agent_context": {
+                    "fitness_assessment": {
+                        "fitness_level": "beginner",
+                        "limitations": ["lower_back_pain"],
+                        "completed_at": "2026-02-04T12:00:00Z"
+                    },
+                    "goal_setting": {
+                        "primary_goal": "fat_loss",
+                        "target_weight_kg": 75.0,
+                        "completed_at": "2026-02-04T12:15:00Z"
+                    }
+                },
+                "loaded_at": "2026-02-04T12:30:00Z"
+            }
+        }

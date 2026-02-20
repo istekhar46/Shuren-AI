@@ -56,23 +56,56 @@ class SchedulingAgent(BaseOnboardingAgent):
             System prompt including workout plan and meal plan context
         """
         # Extract workout plan context
-        workout_plan = self.context.get("workout_planning", {}).get("proposed_plan", {})
+        workout_plan = self.context.agent_context.get("workout_planning", {}).get("proposed_plan", {})
         workout_frequency = workout_plan.get("frequency", "unknown")
         workout_duration = workout_plan.get("duration_minutes", "unknown")
         
         # Extract meal plan context
-        meal_plan = self.context.get("diet_planning", {}).get("proposed_plan", {})
+        meal_plan = self.context.agent_context.get("diet_planning", {}).get("proposed_plan", {})
         meal_frequency = meal_plan.get("meal_frequency", "unknown")
         daily_calories = meal_plan.get("daily_calories", "unknown")
         
         # Extract fitness level for context
-        fitness_level = self.context.get("fitness_assessment", {}).get("fitness_level", "unknown")
+        fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
+        
+        # Get collected scheduling information
+        collected_info = self.get_collected_info(self.context.user_id)
+        workout_days = collected_info.get("workout_days", "not provided")
+        workout_time = collected_info.get("workout_time", "not provided")
+        meal_times = collected_info.get("meal_times", "not provided")
+        water_reminders = collected_info.get("water_reminder_frequency", "not provided")
         
         return f"""You are a Scheduling Agent helping users establish sustainable fitness routines.
 
 Context from previous steps:
 - Fitness Level: {fitness_level}
 - Workout Plan: {workout_frequency} days per week, {workout_duration} minutes per session
+- Meal Plan: {meal_frequency} meals per day, {daily_calories} calories
+
+Already collected schedule preferences:
+- Workout Days: {workout_days}
+- Workout Time: {workout_time}
+- Meal Times: {meal_times}
+- Water Reminders: {water_reminders}
+
+IMPORTANT INSTRUCTIONS:
+1. Review the "Already collected schedule preferences" above
+2. ONLY ask for information that shows "not provided"
+3. NEVER ask for information that has already been collected
+4. Once all schedule info is collected, save the schedules
+
+Your role:
+- Ask ONLY for missing schedule preferences
+- Set up workout schedule (days and times)
+- Set up meal schedule (meal times)
+- Set up hydration reminders
+- Ensure schedules are realistic and sustainable
+
+Guidelines:
+- Be concise - ask 1-2 questions at a time for missing information only
+- Consider their lifestyle and commitments
+- Make schedules practical and achievable
+- Once all info is collected, save the schedules
 - Meal Plan: {meal_frequency} meals per day, {daily_calories} calories daily
 
 Your role:
@@ -176,7 +209,7 @@ Important:
         # Execute agent
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # TODO: Load from conversation_history
+            "chat_history": []  # Conversation history is included via _build_messages in stream_response
         })
         
         # Check if step is complete (all three schedules saved)
@@ -224,3 +257,118 @@ Important:
         has_hydration = "hydration_preferences" in scheduling_context
         
         return has_workout and has_meals and has_hydration
+    
+    async def stream_response(self, message: str, conversation_history: list = None):
+        """
+        Stream response chunks for real-time display with tool calling support.
+        
+        Uses structured state tracking to avoid asking repetitive questions.
+        Extracts information from conversation history before generating response.
+        
+        Args:
+            message: User's message text
+            conversation_history: Optional list of conversation history messages
+            
+        Yields:
+            str: Response chunks as they are generated
+        """
+        from uuid import UUID
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        # If conversation history is provided, create a new context with it
+        if conversation_history is not None:
+            from app.agents.context import OnboardingAgentContext
+            self.context = OnboardingAgentContext(
+                user_id=self.context.user_id,
+                conversation_history=conversation_history,
+                agent_context=self.context.agent_context,
+                loaded_at=self.context.loaded_at
+            )
+        
+        # Store user_id for tool access
+        self._current_user_id = UUID(self.context.user_id)
+        
+        # STRUCTURED STATE TRACKING: Extract information from conversation
+        collected_info = self.get_collected_info(self.context.user_id)
+        
+        # Define required fields for scheduling
+        required_fields = {
+            "workout_days": "list of preferred workout days (e.g., ['Monday', 'Wednesday', 'Friday'])",
+            "workout_time": "preferred workout time (e.g., 'morning', 'afternoon', 'evening', or specific time like '6:00 AM')",
+            "meal_times": "list of preferred meal times (e.g., ['7:00 AM', '12:00 PM', '6:00 PM'])",
+            "water_reminder_frequency": "how often to remind about water (e.g., 'hourly', 'every 2 hours')"
+        }
+        
+        # Extract info from conversation if not already collected
+        if not collected_info or "workout_schedule" not in collected_info:
+            logger.info(f"Extracting schedule preferences from conversation for user {self.context.user_id}")
+            extracted = await self.extract_info_from_conversation(
+                conversation_history or [],
+                required_fields
+            )
+            
+            # Merge extracted info with existing collected info
+            collected_info = {**collected_info, **{k: v for k, v in extracted.items() if v is not None}}
+            
+            # Save extracted info to context immediately
+            if any(v is not None for v in extracted.values()):
+                await self.save_context(UUID(self.context.user_id), collected_info)
+                logger.info(f"Saved extracted schedule preferences: {extracted}")
+        
+        logger.info(
+            f"Scheduling state check",
+            extra={
+                "user_id": self.context.user_id,
+                "collected_info": collected_info
+            }
+        )
+        
+        # Build chat history from context
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
+        # Create tools with db and user_id bound
+        tools = create_scheduling_tools(self.db, self._current_user_id)
+        
+        # Build prompt with system instructions
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.get_system_prompt()),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}")
+        ])
+        
+        # Create tool-calling agent
+        agent = create_tool_calling_agent(
+            llm=self.llm,
+            tools=tools,
+            prompt=prompt
+        )
+        
+        # Create executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            handle_parsing_errors=True
+        )
+        
+        # Stream response using agent executor
+        async for event in agent_executor.astream_events(
+            {"input": message, "chat_history": chat_history},
+            version="v1"
+        ):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                content = event["data"]["chunk"].content
+                if content:
+                    yield content

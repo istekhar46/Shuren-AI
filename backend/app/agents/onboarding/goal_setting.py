@@ -181,7 +181,7 @@ class GoalSettingAgent(BaseOnboardingAgent):
         # Execute agent
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # TODO: Load from conversation_history
+            "chat_history": []  # Conversation history is included via _build_messages in stream_response
         })
         
         # Check if step is complete
@@ -215,6 +215,122 @@ class GoalSettingAgent(BaseOnboardingAgent):
         
         return False
     
+    async def stream_response(self, message: str, conversation_history: list = None):
+        """
+        Stream response chunks for real-time display with tool calling support.
+        
+        Uses structured state tracking to avoid asking repetitive questions.
+        Extracts information from conversation history before generating response.
+        
+        Args:
+            message: User's message text
+            conversation_history: Optional list of conversation history messages
+            
+        Yields:
+            str: Response chunks as they are generated
+        """
+        from uuid import UUID
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        # If conversation history is provided, create a new context with it
+        if conversation_history is not None:
+            from app.agents.context import OnboardingAgentContext
+            self.context = OnboardingAgentContext(
+                user_id=self.context.user_id,
+                conversation_history=conversation_history,
+                agent_context=self.context.agent_context,
+                loaded_at=self.context.loaded_at
+            )
+        
+        # Store user_id for tool access
+        self._current_user_id = UUID(self.context.user_id)
+        
+        # STRUCTURED STATE TRACKING: Extract information from conversation
+        collected_info = self.get_collected_info(self.context.user_id)
+        
+        # Define required fields for goal setting
+        required_fields = {
+            "primary_goal": "primary fitness goal - must be one of: fat_loss, muscle_gain, or general_fitness",
+            "secondary_goal": "optional secondary fitness goal",
+            "target_weight_kg": "optional target weight in kilograms (number)",
+            "target_body_fat_percentage": "optional target body fat percentage (number)"
+        }
+        
+        # Extract info from conversation if not already collected
+        if not collected_info or "primary_goal" not in collected_info:
+            logger.info(f"Extracting fitness goals from conversation for user {self.context.user_id}")
+            extracted = await self.extract_info_from_conversation(
+                conversation_history or [],
+                required_fields
+            )
+            
+            # Merge extracted info with existing collected info
+            collected_info = {**collected_info, **{k: v for k, v in extracted.items() if v is not None}}
+            
+            # Save extracted info to context immediately
+            if any(v is not None for v in extracted.values()):
+                await self.save_context(UUID(self.context.user_id), collected_info)
+                logger.info(f"Saved extracted fitness goals: {extracted}")
+        
+        # Check what information is still missing
+        has_primary_goal = "primary_goal" in collected_info and collected_info["primary_goal"] is not None
+        
+        logger.info(
+            f"Goal setting state check",
+            extra={
+                "user_id": self.context.user_id,
+                "collected_info": collected_info,
+                "has_primary_goal": has_primary_goal
+            }
+        )
+        
+        # Build chat history from context
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
+        # Build prompt with system instructions
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.get_system_prompt()),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}")
+        ])
+        
+        # Create tool-calling agent
+        agent = create_tool_calling_agent(
+            llm=self.llm,
+            tools=self.get_tools(),
+            prompt=prompt
+        )
+        
+        # Create executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=self.get_tools(),
+            verbose=True,
+            handle_parsing_errors=True
+        )
+        
+        # Stream response using agent executor
+        async for event in agent_executor.astream_events(
+            {"input": message, "chat_history": chat_history},
+            version="v1"
+        ):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                content = event["data"]["chunk"].content
+                if content:
+                    yield content
+    
     def get_system_prompt(self) -> str:
         """
         Get system prompt for goal setting with context from fitness assessment.
@@ -223,10 +339,17 @@ class GoalSettingAgent(BaseOnboardingAgent):
             System prompt including fitness level and limitations from previous agent
         """
         # Get fitness assessment context
-        fitness_level = self.context.get("fitness_assessment", {}).get("fitness_level", "unknown")
-        limitations = self.context.get("fitness_assessment", {}).get("limitations", [])
+        fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
+        limitations = self.context.agent_context.get("fitness_assessment", {}).get("limitations", [])
         
         limitations_str = ", ".join(limitations) if limitations else "none mentioned"
+        
+        # Get collected goal information
+        collected_info = self.get_collected_info(self.context.user_id)
+        primary_goal = collected_info.get("primary_goal", "not provided")
+        secondary_goal = collected_info.get("secondary_goal", "not provided")
+        target_weight = collected_info.get("target_weight_kg", "not provided")
+        target_bf = collected_info.get("target_body_fat_percentage", "not provided")
         
         return f"""You are a Goal Setting Agent helping users define their fitness objectives.
 
@@ -234,9 +357,23 @@ Context from previous steps:
 - Fitness Level: {fitness_level}
 - Limitations: {limitations_str}
 
+Already collected goal information:
+- Primary Goal: {primary_goal}
+- Secondary Goal: {secondary_goal}
+- Target Weight: {target_weight} kg
+- Target Body Fat: {target_bf}%
+
+IMPORTANT INSTRUCTIONS:
+1. Review the "Already collected goal information" above
+2. ONLY ask for information that shows "not provided"
+3. NEVER ask for information that has already been collected
+4. Primary goal is REQUIRED - if not provided, ask for it
+5. Secondary goal and targets are OPTIONAL - don't require them
+6. Once primary goal is confirmed, call save_fitness_goals tool
+
 Your role:
-- Understand their primary fitness goal (fat loss, muscle gain, or general fitness)
-- Identify any secondary goals
+- Ask ONLY for missing required information (primary goal)
+- Understand their fitness objectives
 - Set realistic expectations based on their {fitness_level} fitness level
 - Explain how the system will help achieve these goals
 
@@ -246,7 +383,7 @@ Guidelines:
 - Help prioritize if they have multiple goals
 - Reference their fitness level when setting expectations
 - Ask about optional target metrics (weight, body fat %) but don't require them
-- When you have collected primary goal and user confirms, call save_fitness_goals tool
+- When you have primary goal and user confirms, call save_fitness_goals tool
 - After saving successfully, let the user know we'll create their workout plan next
 
 Goal Definitions:

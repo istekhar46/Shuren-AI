@@ -81,197 +81,6 @@ class AgentOrchestrator:
         # Track last agent type used for context continuity
         self.last_agent_type: Optional[AgentType] = None
     
-    def _enforce_access_control(
-        self,
-        user: "User",
-        onboarding_state: Optional["OnboardingState"],
-        agent_type: Optional[AgentType],
-        onboarding_mode: bool
-    ) -> None:
-        """
-        Enforce strict agent access control based on onboarding status.
-        
-        This method implements the core access control logic that ensures:
-        - Specialized agents are ONLY accessible during onboarding
-        - General agent is ONLY accessible post-onboarding
-        - Proper error messages guide users to correct endpoints
-        
-        Args:
-            user: User model instance
-            onboarding_state: OnboardingState model instance (can be None)
-            agent_type: Requested agent type (can be None if classification needed)
-            onboarding_mode: Whether this is an onboarding interaction
-        
-        Raises:
-            ValueError: If access control rules are violated
-        
-        Access Control Matrix:
-            During Onboarding (onboarding_mode=True):
-                - Specialized agents (WORKOUT, DIET, SCHEDULER, SUPPLEMENT): ✅ Allowed
-                - General agent: ❌ Blocked
-                - Tracker agent: ❌ Blocked
-                - Test agent: ✅ Allowed (testing only)
-            
-            Post-Onboarding (onboarding_mode=False):
-                - Specialized agents: ❌ Blocked
-                - General agent: ✅ Allowed (forced)
-                - Tracker agent: ✅ Allowed (via general agent)
-                - Test agent: ✅ Allowed (testing only)
-        """
-        user_id = str(user.id)
-        
-        # Check if onboarding state exists
-        if not onboarding_state:
-            logger.error(f"Onboarding state not found for user: {user_id}")
-            raise ValueError(
-                f"Onboarding state not found for user: {user_id}. "
-                "User must complete registration and initialize onboarding first."
-            )
-        
-        # Define specialized agents (onboarding-only)
-        specialized_agents = {
-            AgentType.WORKOUT,
-            AgentType.DIET,
-            AgentType.SCHEDULER,
-            AgentType.SUPPLEMENT
-        }
-        
-        # CASE 1: During Onboarding (onboarding_mode=True)
-        if onboarding_mode:
-            # Reject if onboarding already completed
-            if onboarding_state.is_complete:
-                logger.warning(
-                    f"Access control violation: user={user_id}, "
-                    f"reason=onboarding_already_completed, "
-                    f"completed_at={onboarding_state.updated_at}"
-                )
-                raise ValueError(
-                    "Onboarding already completed. "
-                    "Use the regular chat endpoint (POST /api/v1/chat) instead of the onboarding endpoint. "
-                    f"User: {user_id}, Onboarding completed at: {onboarding_state.updated_at}"
-                )
-            
-            # Reject if general agent requested during onboarding
-            if agent_type == AgentType.GENERAL:
-                logger.warning(
-                    f"Access control violation: user={user_id}, "
-                    f"reason=general_agent_during_onboarding, "
-                    f"current_step={onboarding_state.current_step}/9"
-                )
-                raise ValueError(
-                    "General agent is not available during onboarding. "
-                    "Specialized agents (workout, diet, scheduler, supplement) handle onboarding states. "
-                    f"Current state: {onboarding_state.current_step}/9. "
-                    f"User: {user_id}"
-                )
-            
-            # Reject if tracker agent requested during onboarding
-            if agent_type == AgentType.TRACKER:
-                logger.warning(
-                    f"Access control violation: user={user_id}, "
-                    f"reason=tracker_agent_during_onboarding"
-                )
-                raise ValueError(
-                    "Tracker agent is not available during onboarding. "
-                    "Progress tracking begins after onboarding completion. "
-                    f"User: {user_id}"
-                )
-            
-            # Allow specialized agents and test agent
-            # (agent_type will be validated later in _create_agent)
-            logger.debug(
-                f"Access control passed: user={user_id}, "
-                f"agent_type={agent_type.value if agent_type else 'to_be_classified'}, "
-                f"onboarding_mode=True, "
-                f"onboarding_step={onboarding_state.current_step}/9"
-            )
-        
-        # CASE 2: Post-Onboarding (onboarding_mode=False)
-        else:
-            # Reject if onboarding not completed
-            if not onboarding_state.is_complete:
-                logger.warning(
-                    f"Access control violation: user={user_id}, "
-                    f"reason=onboarding_not_completed, "
-                    f"current_step={onboarding_state.current_step}/9"
-                )
-                raise ValueError(
-                    "Complete onboarding first before accessing regular chat. "
-                    f"Current progress: {onboarding_state.current_step}/9 states completed. "
-                    f"Use the onboarding chat endpoint (POST /api/v1/chat/onboarding) to continue. "
-                    f"User: {user_id}"
-                )
-            
-            # Reject if specialized agent explicitly requested
-            if agent_type and agent_type in specialized_agents:
-                logger.warning(
-                    f"Access control violation: user={user_id}, "
-                    f"reason=specialized_agent_post_onboarding, "
-                    f"requested_agent={agent_type.value}"
-                )
-                raise ValueError(
-                    f"Specialized agent '{agent_type.value}' is not available after onboarding completion. "
-                    "Only the general agent is accessible for post-onboarding interactions. "
-                    "The general agent can answer questions about workouts, meals, and schedules. "
-                    f"User: {user_id}"
-                )
-            
-            # Allow general agent and tracker agent (tracker via general agent delegation)
-            # Test agent also allowed for testing
-            logger.debug(
-                f"Access control passed: user={user_id}, "
-                f"agent_type={agent_type.value if agent_type else 'general'}, "
-                f"onboarding_mode=False, "
-                f"onboarding_complete=True"
-            )
-    def _log_routing_decision(
-        self,
-        user_id: str,
-        agent_type: AgentType,
-        onboarding_mode: bool,
-        onboarding_state: Optional["OnboardingState"],
-        classification_used: bool,
-        routing_time_ms: int
-    ) -> None:
-        """
-        Log agent routing decision with comprehensive context.
-
-        This method logs all routing decisions with detailed context for debugging,
-        analytics, and monitoring. It includes user information, agent selection,
-        onboarding status, and performance metrics.
-
-        The log entry provides a complete audit trail of how queries are routed
-        through the system, enabling:
-        - Debugging routing issues
-        - Analyzing agent usage patterns
-        - Monitoring performance metrics
-        - Tracking onboarding progress
-
-        Args:
-            user_id: User's unique identifier
-            agent_type: Selected agent type
-            onboarding_mode: Whether this is onboarding mode
-            onboarding_state: OnboardingState instance (can be None)
-            classification_used: Whether classification was used to determine agent
-            routing_time_ms: Time taken for routing decision in milliseconds
-
-        Example Log Output:
-            INFO: Agent routing: user=user-123, agent_type=workout,
-                  onboarding_mode=True, onboarding_complete=False,
-                  onboarding_step=2/9, mode=voice, classification_used=True,
-                  routing_time_ms=45
-        """
-        logger.info(
-            f"Agent routing: user={user_id}, "
-            f"agent_type={agent_type.value}, "
-            f"onboarding_mode={onboarding_mode}, "
-            f"onboarding_complete={onboarding_state.is_complete if onboarding_state else 'N/A'}, "
-            f"onboarding_step={onboarding_state.current_step if onboarding_state else 'N/A'}/9, "
-            f"mode={self.mode}, "
-            f"classification_used={classification_used}, "
-            f"routing_time_ms={routing_time_ms}"
-        )
-
     
     def _init_classifier_llm(self):
         """
@@ -309,229 +118,39 @@ class AgentOrchestrator:
                 temperature=settings.CLASSIFIER_TEMPERATURE,
                 max_tokens=10
             )
-    def _enforce_access_control(
-            self,
-            user: "User",
-            onboarding_state: Optional["OnboardingState"],
-            agent_type: Optional[AgentType],
-            onboarding_mode: bool
-        ) -> None:
-            """
-            Enforce strict agent access control based on onboarding status.
-
-            This method implements the core access control logic that ensures:
-            - Specialized agents are ONLY accessible during onboarding
-            - General agent is ONLY accessible post-onboarding
-            - Proper error messages guide users to correct endpoints
-
-            Args:
-                user: User model instance
-                onboarding_state: OnboardingState model instance (can be None)
-                agent_type: Requested agent type (can be None if classification needed)
-                onboarding_mode: Whether this is an onboarding interaction
-
-            Raises:
-                ValueError: If access control rules are violated
-
-            Access Control Matrix:
-                During Onboarding (onboarding_mode=True):
-                    - Specialized agents (WORKOUT, DIET, SCHEDULER, SUPPLEMENT): ✅ Allowed
-                    - General agent: ❌ Blocked
-                    - Tracker agent: ❌ Blocked
-                    - Test agent: ✅ Allowed (testing only)
-
-                Post-Onboarding (onboarding_mode=False):
-                    - Specialized agents: ❌ Blocked
-                    - General agent: ✅ Allowed (forced)
-                    - Tracker agent: ✅ Allowed (via general agent)
-                    - Test agent: ✅ Allowed (testing only)
-            """
-            user_id = str(user.id)
-
-            # Check if onboarding state exists
-            if not onboarding_state:
-                logger.error(f"Onboarding state not found for user: {user_id}")
-                raise ValueError(
-                    f"Onboarding state not found for user: {user_id}. "
-                    "User must complete registration and initialize onboarding first."
-                )
-
-            # Define specialized agents (onboarding-only)
-            specialized_agents = {
-                AgentType.WORKOUT,
-                AgentType.DIET,
-                AgentType.SCHEDULER,
-                AgentType.SUPPLEMENT
-            }
-
-            # CASE 1: During Onboarding (onboarding_mode=True)
-            if onboarding_mode:
-                # Reject if onboarding already completed
-                if onboarding_state.is_complete:
-                    logger.warning(
-                        f"Access control violation: user={user_id}, "
-                        f"reason=onboarding_already_completed, "
-                        f"completed_at={onboarding_state.updated_at}"
-                    )
-                    raise ValueError(
-                        "Onboarding already completed. "
-                        "Use the regular chat endpoint (POST /api/v1/chat) instead of the onboarding endpoint. "
-                        f"User: {user_id}, Onboarding completed at: {onboarding_state.updated_at}"
-                    )
-
-                # Reject if general agent requested during onboarding
-                if agent_type == AgentType.GENERAL:
-                    logger.warning(
-                        f"Access control violation: user={user_id}, "
-                        f"reason=general_agent_during_onboarding, "
-                        f"current_step={onboarding_state.current_step}/9"
-                    )
-                    raise ValueError(
-                        "General agent is not available during onboarding. "
-                        "Specialized agents (workout, diet, scheduler, supplement) handle onboarding states. "
-                        f"Current state: {onboarding_state.current_step}/9. "
-                        f"User: {user_id}"
-                    )
-
-                # Reject if tracker agent requested during onboarding
-                if agent_type == AgentType.TRACKER:
-                    logger.warning(
-                        f"Access control violation: user={user_id}, "
-                        f"reason=tracker_agent_during_onboarding"
-                    )
-                    raise ValueError(
-                        "Tracker agent is not available during onboarding. "
-                        "Progress tracking begins after onboarding completion. "
-                        f"User: {user_id}"
-                    )
-
-                # Allow specialized agents and test agent
-                # (agent_type will be validated later in _create_agent)
-                logger.debug(
-                    f"Access control passed: user={user_id}, "
-                    f"agent_type={agent_type.value if agent_type else 'to_be_classified'}, "
-                    f"onboarding_mode=True, "
-                    f"onboarding_step={onboarding_state.current_step}/9"
-                )
-
-            # CASE 2: Post-Onboarding (onboarding_mode=False)
-            else:
-                # Reject if onboarding not completed
-                if not onboarding_state.is_complete:
-                    logger.warning(
-                        f"Access control violation: user={user_id}, "
-                        f"reason=onboarding_not_completed, "
-                        f"current_step={onboarding_state.current_step}/9"
-                    )
-                    raise ValueError(
-                        "Complete onboarding first before accessing regular chat. "
-                        f"Current progress: {onboarding_state.current_step}/9 states completed. "
-                        f"Use the onboarding chat endpoint (POST /api/v1/chat/onboarding) to continue. "
-                        f"User: {user_id}"
-                    )
-
-                # Reject if specialized agent explicitly requested
-                if agent_type and agent_type in specialized_agents:
-                    logger.warning(
-                        f"Access control violation: user={user_id}, "
-                        f"reason=specialized_agent_post_onboarding, "
-                        f"requested_agent={agent_type.value}"
-                    )
-                    raise ValueError(
-                        f"Specialized agent '{agent_type.value}' is not available after onboarding completion. "
-                        "Only the general agent is accessible for post-onboarding interactions. "
-                        "The general agent can answer questions about workouts, meals, and schedules. "
-                        f"User: {user_id}"
-                    )
-
-                # Allow general agent and tracker agent (tracker via general agent delegation)
-                # Test agent also allowed for testing
-                logger.debug(
-                    f"Access control passed: user={user_id}, "
-                    f"agent_type={agent_type.value if agent_type else 'general'}, "
-                    f"onboarding_mode=False, "
-                    f"onboarding_complete=True"
-                )
-    
-    def _log_routing_decision(
-        self,
-        user_id: str,
-        agent_type: AgentType,
-        onboarding_mode: bool,
-        onboarding_state: Optional["OnboardingState"],
-        classification_used: bool,
-        routing_time_ms: int
-    ) -> None:
-        """
-        Log agent routing decision with comprehensive context.
-        
-        This method logs all routing decisions with detailed context for debugging,
-        analytics, and monitoring. It includes user information, agent selection,
-        onboarding status, and performance metrics.
-        
-        The log entry provides a complete audit trail of how queries are routed
-        through the system, enabling:
-        - Debugging routing issues
-        - Analyzing agent usage patterns
-        - Monitoring performance metrics
-        - Tracking onboarding progress
-        
-        Args:
-            user_id: User's unique identifier
-            agent_type: Selected agent type
-            onboarding_mode: Whether this is onboarding mode
-            onboarding_state: OnboardingState instance (can be None)
-            classification_used: Whether classification was used to determine agent
-            routing_time_ms: Time taken for routing decision in milliseconds
-        
-        Example Log Output:
-            INFO: Agent routing: user=user-123, agent_type=workout, 
-                  onboarding_mode=True, onboarding_complete=False, 
-                  onboarding_step=2/9, mode=voice, classification_used=True, 
-                  routing_time_ms=45
-        """
-        logger.info(
-            f"Agent routing: user={user_id}, "
-            f"agent_type={agent_type.value}, "
-            f"onboarding_mode={onboarding_mode}, "
-            f"onboarding_complete={onboarding_state.is_complete if onboarding_state else 'N/A'}, "
-            f"onboarding_step={onboarding_state.current_step if onboarding_state else 'N/A'}/9, "
-            f"mode={self.mode}, "
-            f"classification_used={classification_used}, "
-            f"routing_time_ms={routing_time_ms}"
-        )
-
     
     async def route_query(
         self,
         user_id: str,
         query: str,
         agent_type: Optional[AgentType] = None,
-        voice_mode: bool = False,
-        onboarding_mode: bool = False
+        voice_mode: bool = False
     ) -> "AgentResponse":
         """
         Route a user query to the appropriate agent and return the response.
+        
+        This method is for POST-ONBOARDING interactions only.
+        For onboarding, use OnboardingAgentOrchestrator instead.
 
         This is the main entry point for processing user queries. It handles:
         1. Loading user context from the database
-        2. Classifying the query to determine the appropriate agent (if not specified)
-        3. Getting or creating the agent instance
-        4. Processing the query based on the mode (text vs voice)
-        5. Returning the agent's response
+        2. Verifying onboarding is complete
+        3. Forcing GENERAL agent for all post-onboarding queries
+        4. Getting or creating the agent instance
+        5. Processing the query based on the mode (text vs voice)
+        6. Returning the agent's response
 
         Args:
             user_id: User's unique identifier
             query: User's query text
-            agent_type: Optional explicit agent type (if None, will classify)
+            agent_type: Optional explicit agent type (if None, will use GENERAL)
             voice_mode: Whether this is a voice interaction (default: False)
-            onboarding_mode: Whether this is during onboarding (default: False)
 
         Returns:
             AgentResponse: Structured response from the agent
 
         Raises:
-            ValueError: If user not found or invalid agent type
+            ValueError: If user not found or onboarding not complete
 
         Example:
             >>> orchestrator = AgentOrchestrator(db_session, mode="text")
@@ -545,70 +164,31 @@ class AgentOrchestrator:
         # Import here to avoid circular dependency
         from app.services.context_loader import load_agent_context
         from app.agents.context import AgentResponse
-        from app.models.user import User
-        from app.models.onboarding import OnboardingState
-        from sqlalchemy import select
         import time
         
         # Start performance timing
         start_time = time.time()
-        classification_time_ms = 0
-        agent_creation_time_ms = 0
 
         # Step 1: Load user context from database
         context = await load_agent_context(
             db=self.db_session,
             user_id=user_id,
-            include_history=True,
-            onboarding_mode=onboarding_mode
+            include_history=True
         )
         
-        # Step 1.5: Load user and onboarding state for access control
-        result = await self.db_session.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
+        # Step 2: Verify onboarding is complete
+        if not context.onboarding_complete:
+            raise ValueError(
+                "User has not completed onboarding. "
+                "Use OnboardingAgentOrchestrator for onboarding interactions."
+            )
         
-        if not user:
-            raise ValueError(f"User not found: {user_id}")
-        
-        # Load onboarding state
-        onboarding_result = await self.db_session.execute(
-            select(OnboardingState).where(OnboardingState.user_id == user_id)
-        )
-        onboarding_state = onboarding_result.scalar_one_or_none()
-        
-        # Step 2: Enforce access control (NEW)
-        self._enforce_access_control(
-            user=user,
-            onboarding_state=onboarding_state,
-            agent_type=agent_type,
-            onboarding_mode=onboarding_mode
-        )
-        
-        # Step 3: Classify query if agent_type not provided
-        classification_used = False
-        if agent_type is None:
-            classification_start = time.time()
-            agent_type = await self._classify_query(query, onboarding_mode)
-            classification_time_ms = int((time.time() - classification_start) * 1000)
-            classification_used = True
-            logger.debug(f"Classification time: {classification_time_ms}ms")
-        
-        # Step 3.5: Force GENERAL agent post-onboarding (NEW)
-        if not onboarding_mode:
-            if agent_type != AgentType.GENERAL and agent_type != AgentType.TEST:
-                logger.info(
-                    f"Query classified as {agent_type.value}, "
-                    f"forcing to general agent (post-onboarding)"
-                )
-                agent_type = AgentType.GENERAL
+        # Step 3: Force GENERAL agent for all post-onboarding queries
+        if agent_type is None or agent_type != AgentType.TEST:
+            agent_type = AgentType.GENERAL
 
         # Step 4: Get or create agent instance
-        agent_creation_start = time.time()
         agent = self._get_or_create_agent(agent_type, context)
-        agent_creation_time_ms = int((time.time() - agent_creation_start) * 1000)
-        logger.debug(f"Agent creation time: {agent_creation_time_ms}ms")
 
         # Step 5: Process based on mode
         if voice_mode:
@@ -621,160 +201,28 @@ class AgentOrchestrator:
                 metadata={
                     "mode": "voice",
                     "user_id": user_id,
-                    "fitness_level": context.fitness_level,
-                    "onboarding_mode": onboarding_mode
+                    "fitness_level": context.fitness_level
                 }
             )
         else:
             # Text mode: return full AgentResponse
             response = await agent.process_text(query)
-            # Add onboarding_mode to metadata
-            if not response.metadata:
-                response.metadata = {}
-            response.metadata["onboarding_mode"] = onboarding_mode
 
         # Step 6: Track last agent type used
         self.last_agent_type = agent_type
         
-        # Step 7: Log routing decision with performance metrics
+        # Step 7: Log routing decision
         total_routing_time_ms = int((time.time() - start_time) * 1000)
-        logger.debug(
-            f"Performance metrics: classification={classification_time_ms}ms, "
-            f"agent_creation={agent_creation_time_ms}ms, "
-            f"total_routing={total_routing_time_ms}ms"
-        )
-        
-        self._log_routing_decision(
-            user_id=user_id,
-            agent_type=agent_type,
-            onboarding_mode=onboarding_mode,
-            onboarding_state=onboarding_state,
-            classification_used=classification_used,
-            routing_time_ms=total_routing_time_ms
+        logger.info(
+            f"Agent routing: user={user_id}, "
+            f"agent_type={agent_type.value}, "
+            f"mode={self.mode}, "
+            f"routing_time_ms={total_routing_time_ms}"
         )
 
         return response
 
     
-    async def _classify_query(
-        self,
-        query: str,
-        onboarding_mode: bool = False
-    ) -> AgentType:
-        """
-        Classify a user query to determine the appropriate agent type.
-
-        Uses a fast classifier LLM (Claude Haiku) to analyze the query and route
-        it to the most appropriate specialized agent. The classifier uses a low
-        temperature (0.1) for consistent routing decisions.
-
-        Uses different classification prompts based on onboarding mode:
-        - During onboarding: Only returns specialized agents
-        - Post-onboarding: Returns any agent type (but will be overridden to GENERAL)
-
-        In voice mode, classifications are cached by the first 50 characters of the
-        query to avoid repeated LLM calls and improve latency.
-
-        Args:
-            query: User's query text
-            onboarding_mode: Whether this is during onboarding (default: False)
-
-        Returns:
-            AgentType: The classified agent type, defaults based on mode on failure
-
-        Example:
-            >>> agent_type = await orchestrator._classify_query("What workout should I do?")
-            >>> assert agent_type == AgentType.WORKOUT
-            >>> agent_type = await orchestrator._classify_query("What workout should I do?", onboarding_mode=True)
-            >>> assert agent_type in [AgentType.WORKOUT, AgentType.DIET, AgentType.SCHEDULER, AgentType.SUPPLEMENT]
-        """
-        # Create cache key from first 50 characters of query
-        # Include onboarding_mode in cache key for proper separation
-        cache_key = f"{onboarding_mode}:{query[:50].lower().strip()}"
-
-        # Check classification cache
-        if cache_key in self._classification_cache:
-            logger.debug(f"Using cached classification for query: {cache_key}")
-            return self._classification_cache[cache_key]
-
-        # Initialize classifier LLM
-        classifier = self._init_classifier_llm()
-
-        # Build classification messages based on mode
-        from langchain_core.messages import SystemMessage, HumanMessage
-
-        if onboarding_mode:
-            # Onboarding classification: Only specialized agents
-            classification_prompt = """Classify this onboarding query into ONE category:
-    - workout: Fitness level, exercise plans, workout preferences, equipment, injuries, limitations
-    - diet: Dietary preferences, meal plans, nutrition, food restrictions, allergies, intolerances
-    - scheduler: Meal timing, workout schedule, hydration reminders, timing preferences
-    - supplement: Supplement preferences, guidance, current usage
-
-    Respond with ONLY the category name."""
-        else:
-            # Post-onboarding classification: All agents (but will be overridden to general)
-            classification_prompt = """Classify this fitness query into ONE category:
-    - workout: Exercise plans, form, demonstrations, logging sets, workout routines, training
-    - diet: Meal plans, nutrition, recipes, food substitutions, calories, macros, eating
-    - supplement: Supplement guidance and information, vitamins, protein powder
-    - tracker: Progress tracking, adherence, metrics, weight tracking, measurements
-    - scheduler: Schedule changes, reminders, timing, rescheduling workouts or meals
-    - general: Motivation, casual conversation, general questions, greetings
-
-    Respond with ONLY the category name."""
-
-        messages = [
-            SystemMessage(content=classification_prompt),
-            HumanMessage(content=query)
-        ]
-
-        try:
-            # Call classifier LLM
-            result = await classifier.ainvoke(messages)
-            agent_type_str = result.content.strip().lower()
-
-            logger.debug(
-                f"Classifier returned: {agent_type_str} for query: {query[:50]}, "
-                f"onboarding_mode={onboarding_mode}"
-            )
-
-            # Parse response to AgentType enum
-            try:
-                classified_type = AgentType(agent_type_str)
-            except ValueError:
-                # Default based on mode
-                if onboarding_mode:
-                    # Default to WORKOUT during onboarding (first agent)
-                    logger.warning(
-                        f"Unknown agent type from classifier: {agent_type_str}, "
-                        f"defaulting to WORKOUT for onboarding query: {query[:50]}"
-                    )
-                    classified_type = AgentType.WORKOUT
-                else:
-                    # Default to GENERAL post-onboarding
-                    logger.warning(
-                        f"Unknown agent type from classifier: {agent_type_str}, "
-                        f"defaulting to GENERAL for query: {query[:50]}"
-                    )
-                    classified_type = AgentType.GENERAL
-
-            # Cache result in voice mode for performance
-            if self.mode == "voice":
-                self._classification_cache[cache_key] = classified_type
-                logger.debug(f"Cached classification: {classified_type.value} for key: {cache_key}")
-
-            return classified_type
-
-        except Exception as e:
-            # Log error and default based on mode
-            logger.error(
-                f"Classification failed for query '{query[:50]}': {e}. "
-                f"Defaulting based on onboarding_mode={onboarding_mode}"
-            )
-            return AgentType.WORKOUT if onboarding_mode else AgentType.GENERAL
-
-
     def _get_or_create_agent(self, agent_type: AgentType, context: "AgentContext"):
         """
         Get an existing agent from cache or create a new one.
@@ -867,102 +315,6 @@ class AgentOrchestrator:
         # Create and return agent instance
         return agent_class(context=context, db_session=self.db_session)
     
-    async def stream_onboarding_response(self, user_id: str, message: str) -> AsyncIterator[str]:
-        """
-        Stream onboarding-specific responses with state management.
-        
-        This method handles streaming responses during the onboarding flow by:
-        1. Loading the current onboarding state from the database
-        2. Determining the appropriate agent based on the current state
-        3. Building an onboarding-specific prompt with context
-        4. Streaming the response using the conversational agent
-        5. Updating onboarding progress after completion (if applicable)
-        
-        The method uses the agent's stream_response() method to yield chunks
-        as they are generated by the LLM, providing real-time feedback to the user.
-        
-        Args:
-            user_id: User's unique identifier
-            message: User's message during onboarding
-            
-        Yields:
-            str: Response chunks as they are generated
-            
-        Raises:
-            ValueError: If user not found or onboarding state invalid
-            
-        Example:
-            >>> orchestrator = AgentOrchestrator(db_session, mode="text")
-            >>> async for chunk in orchestrator.stream_onboarding_response(user_id, "I want to lose weight"):
-            ...     print(chunk, end='', flush=True)
-        """
-        # Import dependencies
-        from app.services.context_loader import load_agent_context
-        from app.services.onboarding_service import OnboardingService, STATE_TO_AGENT_MAP
-        from app.models.user import User
-        from sqlalchemy import select
-        from typing import AsyncIterator
-        
-        # Load user from database
-        result = await self.db_session.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            raise ValueError(f"User not found: {user_id}")
-        
-        # Load onboarding state
-        onboarding_service = OnboardingService(self.db_session)
-        onboarding_state = await onboarding_service.get_onboarding_state(user.id)
-        
-        if not onboarding_state:
-            raise ValueError(f"Onboarding state not found for user: {user_id}")
-        
-        # Check if onboarding already completed
-        if onboarding_state.is_complete:
-            raise ValueError(
-                f"Onboarding already completed for user: {user_id}. "
-                "Use regular chat endpoint instead."
-            )
-        
-        # Determine agent type based on current onboarding state
-        agent_type = STATE_TO_AGENT_MAP.get(onboarding_state.current_step)
-        if not agent_type:
-            raise ValueError(
-                f"Invalid onboarding state: {onboarding_state.current_step}. "
-                f"Expected state between 1 and 9."
-            )
-        
-        logger.info(
-            f"Streaming onboarding response: user={user_id}, "
-            f"state={onboarding_state.current_step}/9, "
-            f"agent={agent_type.value}"
-        )
-        
-        # Load user context with onboarding mode
-        context = await load_agent_context(
-            db=self.db_session,
-            user_id=user_id,
-            include_history=True,
-            onboarding_mode=True
-        )
-        
-        # Get or create agent instance
-        agent = self._get_or_create_agent(agent_type, context)
-        
-        # Stream response chunks from agent
-        async for chunk in agent.stream_response(message):
-            yield chunk
-        
-        # Note: Onboarding progress update happens via agent tools during streaming
-        # The agent can call save functions that advance the onboarding state
-        # No explicit update needed here - it's handled by the agent's tool calls
-        
-        logger.debug(
-            f"Onboarding streaming completed: user={user_id}, "
-            f"agent={agent_type.value}"
-        )
     
     async def warm_up(self) -> None:
         """
@@ -1023,100 +375,4 @@ class AgentOrchestrator:
             # Log warning but don't raise - warm-up failure is not critical
             # The system will still work, just with slightly higher latency on first query
             logger.warning(f"LLM warm-up failed: {e}. First query may have higher latency.")
-    async def stream_onboarding_response(self, user_id: str, message: str) -> AsyncIterator[str]:
-        """
-        Stream onboarding-specific responses with state management.
-
-        This method handles streaming responses during the onboarding flow by:
-        1. Loading the current onboarding state from the database
-        2. Determining the appropriate agent based on the current state
-        3. Building an onboarding-specific prompt with context
-        4. Streaming the response using the conversational agent
-        5. Updating onboarding progress after completion (if applicable)
-
-        The method uses the agent's stream_response() method to yield chunks
-        as they are generated by the LLM, providing real-time feedback to the user.
-
-        Args:
-            user_id: User's unique identifier
-            message: User's message during onboarding
-
-        Yields:
-            str: Response chunks as they are generated
-
-        Raises:
-            ValueError: If user not found or onboarding state invalid
-
-        Example:
-            >>> orchestrator = AgentOrchestrator(db_session, mode="text")
-            >>> async for chunk in orchestrator.stream_onboarding_response(user_id, "I want to lose weight"):
-            ...     print(chunk, end='', flush=True)
-        """
-        # Import dependencies
-        from app.services.context_loader import load_agent_context
-        from app.services.onboarding_service import OnboardingService, STATE_TO_AGENT_MAP
-        from app.models.user import User
-        from sqlalchemy import select
-
-        # Load user from database
-        result = await self.db_session.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
-
-        if not user:
-            raise ValueError(f"User not found: {user_id}")
-
-        # Load onboarding state
-        onboarding_service = OnboardingService(self.db_session)
-        onboarding_state = await onboarding_service.get_onboarding_state(user.id)
-
-        if not onboarding_state:
-            raise ValueError(f"Onboarding state not found for user: {user_id}")
-
-        # Check if onboarding already completed
-        if onboarding_state.is_complete:
-            raise ValueError(
-                f"Onboarding already completed for user: {user_id}. "
-                "Use regular chat endpoint instead."
-            )
-
-        # Determine agent type based on current onboarding state
-        agent_type = STATE_TO_AGENT_MAP.get(onboarding_state.current_step)
-        if not agent_type:
-            raise ValueError(
-                f"Invalid onboarding state: {onboarding_state.current_step}. "
-                f"Expected state between 1 and 9."
-            )
-
-        logger.info(
-            f"Streaming onboarding response: user={user_id}, "
-            f"state={onboarding_state.current_step}/9, "
-            f"agent={agent_type.value}"
-        )
-
-        # Load user context with onboarding mode
-        context = await load_agent_context(
-            db=self.db_session,
-            user_id=user_id,
-            include_history=True,
-            onboarding_mode=True
-        )
-
-        # Get or create agent instance
-        agent = self._get_or_create_agent(agent_type, context)
-
-        # Stream response chunks from agent
-        async for chunk in agent.stream_response(message):
-            yield chunk
-
-        # Note: Onboarding progress update happens via agent tools during streaming
-        # The agent can call save functions that advance the onboarding state
-        # No explicit update needed here - it's handled by the agent's tool calls
-
-        logger.debug(
-            f"Onboarding streaming completed: user={user_id}, "
-            f"agent={agent_type.value}"
-        )
-
 

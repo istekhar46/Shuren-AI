@@ -10,7 +10,7 @@ Tests verify:
 
 import pytest
 from uuid import uuid4
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,19 @@ from app.agents.onboarding.goal_setting import GoalSettingAgent
 from app.agents.onboarding.workout_planning import WorkoutPlanningAgent
 from app.agents.onboarding.diet_planning import DietPlanningAgent
 from app.agents.onboarding.scheduling import SchedulingAgent
+
+
+def mock_llm_settings():
+    """Helper function to create properly configured mock settings for LLM."""
+    from app.core.config import LLMProvider
+    mock_settings = MagicMock()
+    mock_settings.LLM_PROVIDER = LLMProvider.ANTHROPIC
+    mock_settings.LLM_MODEL = "claude-sonnet-4-5-20250929"
+    mock_settings.LLM_TEMPERATURE = 0.7
+    mock_settings.LLM_MAX_TOKENS = 2048
+    mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+    mock_settings.get_required_llm_api_key.return_value = "test-api-key"
+    return mock_settings
 
 
 # ============================================================================
@@ -117,72 +130,72 @@ async def test_load_onboarding_state_with_context(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_returns_fitness_assessment_agent(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent returns FitnessAssessmentAgent for FITNESS_ASSESSMENT type.
     
     Validates Requirement 5.8: Agent factory creates correct type.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         context = {}
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.FITNESS_ASSESSMENT,
-            context
+            context,
+            test_user.id
         )
         
         assert isinstance(agent, FitnessAssessmentAgent)
-        assert agent.context == context
+        assert agent.context.agent_context == context
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_returns_goal_setting_agent(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent returns GoalSettingAgent for GOAL_SETTING type.
     
     Validates Requirement 5.8: Agent factory creates correct type.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         context = {"fitness_assessment": {"fitness_level": "intermediate"}}
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.GOAL_SETTING,
-            context
+            context,
+            test_user.id
         )
         
         assert isinstance(agent, GoalSettingAgent)
-        assert agent.context == context
+        assert agent.context.agent_context == context
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_returns_workout_planning_agent(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent returns WorkoutPlanningAgent for WORKOUT_PLANNING type.
     
     Validates Requirement 5.8: Agent factory creates correct type.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         context = {}
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.WORKOUT_PLANNING,
-            context
+            context,
+            test_user.id
         )
         
         assert isinstance(agent, WorkoutPlanningAgent)
@@ -191,22 +204,23 @@ async def test_create_agent_returns_workout_planning_agent(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_returns_diet_planning_agent(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent returns DietPlanningAgent for DIET_PLANNING type.
     
     Validates Requirement 5.8: Agent factory creates correct type.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         context = {}
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.DIET_PLANNING,
-            context
+            context,
+            test_user.id
         )
         
         assert isinstance(agent, DietPlanningAgent)
@@ -215,22 +229,22 @@ async def test_create_agent_returns_diet_planning_agent(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_returns_scheduling_agent(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent returns SchedulingAgent for SCHEDULING type.
     
     Validates Requirement 5.8: Agent factory creates correct type.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         context = {}
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.SCHEDULING,
-            context
+            context,
+            test_user.id
         )
         
         assert isinstance(agent, SchedulingAgent)
@@ -239,16 +253,15 @@ async def test_create_agent_returns_scheduling_agent(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_agent_passes_context_to_constructor(
-    db_session: AsyncSession
+    db_session: AsyncSession,
+    test_user: User
 ):
     """
     Test that _create_agent passes context to agent constructor.
     
     Validates Requirement 5.8: Context passed to agent constructor.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         
         test_context = {
@@ -263,12 +276,13 @@ async def test_create_agent_passes_context_to_constructor(
         
         agent = await orchestrator._create_agent(
             OnboardingAgentType.WORKOUT_PLANNING,
-            test_context
+            test_context,
+            test_user.id
         )
         
         # Verify context was passed
-        assert agent.context == test_context
-        assert agent.context["fitness_assessment"]["fitness_level"] == "advanced"
+        assert agent.context.agent_context == test_context
+        assert agent.context.agent_context["fitness_assessment"]["fitness_level"] == "advanced"
 
 
 # ============================================================================
@@ -484,9 +498,7 @@ async def test_get_current_agent_returns_correct_agent_for_step_0(
     
     Validates Requirements 5.1, 5.2, 5.8, 5.9: Complete orchestration flow.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         
         agent = await orchestrator.get_current_agent(test_user.id)
@@ -506,9 +518,7 @@ async def test_get_current_agent_returns_correct_agent_for_step_3(
     
     Validates Requirements 5.1, 5.3, 5.8, 5.9: Complete orchestration flow.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Update user's step to 3
         from sqlalchemy import update
         
@@ -537,9 +547,7 @@ async def test_get_current_agent_passes_context_from_database(
     
     Validates Requirement 5.9: Context passed to agent constructor.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Set up context in database
         from sqlalchemy import update
         
@@ -566,8 +574,8 @@ async def test_get_current_agent_passes_context_from_database(
         agent = await orchestrator.get_current_agent(test_user.id)
         
         # Verify context was passed
-        assert agent.context == test_context
-        assert agent.context["fitness_assessment"]["fitness_level"] == "beginner"
+        assert agent.context.agent_context == test_context
+        assert agent.context.agent_context["fitness_assessment"]["fitness_level"] == "beginner"
 
 
 @pytest.mark.unit
@@ -581,15 +589,13 @@ async def test_get_current_agent_handles_empty_context(
     
     Validates Requirement 5.9: Handle missing context.
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         agent = await orchestrator.get_current_agent(test_user.id)
         
         # Verify agent is created with empty context
         assert isinstance(agent, FitnessAssessmentAgent)
-        assert agent.context == {} or agent.context is None
+        assert agent.context.agent_context == {} or agent.context.agent_context is None
 
 
 # ============================================================================
@@ -609,9 +615,7 @@ async def test_routing_to_scheduling_agent_for_step_8(
     
     **Feature: scheduling-agent-completion**
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Update user's step to 8
         from sqlalchemy import update
         
@@ -643,9 +647,7 @@ async def test_routing_to_scheduling_agent_for_step_9(
     
     **Feature: scheduling-agent-completion**
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Update user's step to 9
         from sqlalchemy import update
         
@@ -754,9 +756,7 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
     
     **Feature: scheduling-agent-completion**
     """
-    with patch('app.agents.onboarding.base.settings') as mock_settings:
-        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
-        
+    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Set up complete context from previous agents
         from sqlalchemy import update
         
@@ -817,8 +817,10 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
         
         # Verify agent received complete context
         assert isinstance(agent, SchedulingAgent)
-        assert agent.context == complete_context
-        assert "fitness_assessment" in agent.context
-        assert "goal_setting" in agent.context
-        assert "workout_planning" in agent.context
-        assert "diet_planning" in agent.context
+        assert agent.context.agent_context == complete_context
+        assert "fitness_assessment" in agent.context.agent_context
+        assert "goal_setting" in agent.context.agent_context
+        assert "workout_planning" in agent.context.agent_context
+        assert "diet_planning" in agent.context.agent_context
+
+

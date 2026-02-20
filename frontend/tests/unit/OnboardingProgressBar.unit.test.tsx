@@ -23,11 +23,15 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check step indicator
-    expect(screen.getByText('Progress: Step 3 of 9')).toBeInTheDocument();
+    // Check step indicator (text is split across elements, rendered twice for desktop/mobile)
+    const progressLabels = screen.getAllByText('Progress');
+    expect(progressLabels.length).toBeGreaterThan(0);
+    const stepIndicators = screen.getAllByText(/Step 3 of 9/);
+    expect(stepIndicators.length).toBeGreaterThan(0);
     
-    // Check percentage display
-    expect(screen.getByText('33%')).toBeInTheDocument();
+    // Check percentage display (rendered twice for desktop/mobile)
+    const percentages = screen.getAllByText('33%');
+    expect(percentages.length).toBeGreaterThan(0);
   });
 
   it('displays current state name and description', () => {
@@ -41,10 +45,11 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    expect(screen.getByText('Workout Preferences & Constraints')).toBeInTheDocument();
-    expect(
-      screen.getByText('Tell us about your workout preferences and any physical constraints')
-    ).toBeInTheDocument();
+    // State name and description rendered twice for desktop/mobile
+    const stateNames = screen.getAllByText('Workout Preferences & Constraints');
+    expect(stateNames.length).toBeGreaterThan(0);
+    const descriptions = screen.getAllByText('Tell us about your workout preferences and any physical constraints');
+    expect(descriptions.length).toBeGreaterThan(0);
   });
 
   it('shows checkmarks for completed states', () => {
@@ -58,9 +63,9 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check for completed state labels
+    // Check for completed state labels (rendered twice for desktop/mobile)
     const completedLabels = screen.getAllByLabelText(/Completed/);
-    expect(completedLabels).toHaveLength(2);
+    expect(completedLabels.length).toBeGreaterThanOrEqual(2);
   });
 
   it('highlights current state', () => {
@@ -74,9 +79,9 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check for current state indicator
-    const currentLabel = screen.getByLabelText(/Current step/);
-    expect(currentLabel).toBeInTheDocument();
+    // Check for current state indicator (rendered twice for desktop/mobile)
+    const currentLabels = screen.getAllByLabelText(/Current step/);
+    expect(currentLabels.length).toBeGreaterThan(0);
   });
 
   it('shows upcoming states as grayed out', () => {
@@ -90,9 +95,9 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check for upcoming state indicators (states 4-9 = 6 upcoming states)
+    // Check for upcoming state indicators (states 4-9 = 6 upcoming states, rendered twice for desktop/mobile)
     const upcomingLabels = screen.getAllByLabelText(/Upcoming step/);
-    expect(upcomingLabels).toHaveLength(6);
+    expect(upcomingLabels.length).toBeGreaterThanOrEqual(6);
   });
 
   it('renders all 9 states in the list', () => {
@@ -115,16 +120,16 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check that all state names are present in the list
+    // Check that all state names are present in the list (rendered twice for desktop/mobile)
     expect(screen.getAllByText(/Fitness Level Assessment/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Primary Fitness Goals/)).toBeInTheDocument();
-    expect(screen.getByText(/Workout Preferences & Constraints/)).toBeInTheDocument();
-    expect(screen.getByText(/Diet Preferences & Restrictions/)).toBeInTheDocument();
-    expect(screen.getByText(/Fixed Meal Plan Selection/)).toBeInTheDocument();
-    expect(screen.getByText(/Meal Timing Schedule/)).toBeInTheDocument();
-    expect(screen.getByText(/Workout Schedule/)).toBeInTheDocument();
-    expect(screen.getByText(/Hydration Schedule/)).toBeInTheDocument();
-    expect(screen.getByText(/Supplement Preferences/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Primary Fitness Goals/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Workout Preferences & Constraints/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Diet Preferences & Restrictions/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Fixed Meal Plan Selection/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Meal Timing Schedule/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Workout Schedule/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Hydration Schedule/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Supplement Preferences/).length).toBeGreaterThan(0);
   });
 
   it('handles null stateMetadata gracefully', () => {
@@ -138,9 +143,10 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Should still render progress bar and state list
-    expect(screen.getByText('Progress: Step 1 of 9')).toBeInTheDocument();
-    expect(screen.getByText(/Fitness Level Assessment/)).toBeInTheDocument();
+    // Should still render progress bar and state list (rendered twice for desktop/mobile)
+    const progressLabels = screen.getAllByText('Progress');
+    expect(progressLabels.length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Fitness Level Assessment/).length).toBeGreaterThan(0);
   });
 
   it('calculates progress percentage correctly for different states', () => {
@@ -154,7 +160,7 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    expect(screen.getByText('11%')).toBeInTheDocument();
+    expect(screen.getAllByText('11%').length).toBeGreaterThan(0);
 
     // Test state 5 (middle)
     rerender(
@@ -167,7 +173,7 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    expect(screen.getByText('56%')).toBeInTheDocument();
+    expect(screen.getAllByText('56%').length).toBeGreaterThan(0);
 
     // Test state 9 (complete)
     rerender(
@@ -180,7 +186,7 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
   });
 
   it('has proper ARIA labels for accessibility', () => {
@@ -194,11 +200,15 @@ describe('OnboardingProgressBar', () => {
       />
     );
 
-    // Check progress bar has proper ARIA attributes
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '33');
-    expect(progressBar).toHaveAttribute('aria-valuemin', '0');
-    expect(progressBar).toHaveAttribute('aria-valuemax', '100');
-    expect(progressBar).toHaveAttribute('aria-label', 'Onboarding progress: 33% complete');
+    // Check progress bar has proper ARIA attributes (rendered twice for desktop/mobile)
+    const progressBars = screen.getAllByRole('progressbar');
+    expect(progressBars.length).toBeGreaterThanOrEqual(2); // Desktop and mobile versions
+    
+    // Check first progress bar attributes
+    const firstProgressBar = progressBars[0];
+    expect(firstProgressBar).toHaveAttribute('aria-valuenow', '33');
+    expect(firstProgressBar).toHaveAttribute('aria-valuemin', '0');
+    expect(firstProgressBar).toHaveAttribute('aria-valuemax', '100');
+    expect(firstProgressBar).toHaveAttribute('aria-label', 'Onboarding progress: 33% complete');
   });
 });

@@ -1,168 +1,182 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useChat } from '../hooks/useChat';
-import { onboardingService } from '../services/onboardingService';
+import React from 'react';
+import { useOnboardingChat } from '../hooks/useOnboardingChat';
+import { AgentHeader } from '../components/onboarding/AgentHeader';
 import { OnboardingProgressBar } from '../components/onboarding/OnboardingProgressBar';
+import { PlanPreviewCard } from '../components/onboarding/PlanPreviewCard';
 import { MessageList } from '../components/chat/MessageList';
 import { MessageInput } from '../components/chat/MessageInput';
-import type { OnboardingProgress, StateMetadata } from '../types/onboarding.types';
-import type { ChatMessage } from '../types';
+import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { ErrorMessage } from '../components/common/ErrorMessage';
 
 /**
  * OnboardingChatPage Component
  * 
- * Replaces form-based onboarding with a chat-based interface with streaming support.
+ * Agent-based onboarding interface with streaming chat support.
  * Users interact with specialized AI agents through conversation to complete onboarding.
  * 
  * Features:
- * - Fetches onboarding progress on mount
- * - Displays progress bar with current state
- * - Streaming chat interface for user-agent interaction
+ * - Agent context display showing current agent
+ * - Progress tracking with 9-state system
+ * - Streaming chat interface
+ * - Plan preview and approval workflow
  * - Automatic state progression
- * - Redirects to dashboard on completion
+ * - Completion button when ready
  * 
- * Requirements: US-2.1, US-2.2, US-2.3, US-2.4, US-2.6, US-2.7, 5.1, 5.2, 5.5
+ * Requirements: US-1, US-2, US-3, US-4, US-5, US-6
  */
-export const OnboardingChatPage = () => {
-  const navigate = useNavigate();
-
-  // Requirements 5.1, 5.2: Use streaming with isOnboarding: true
-  const { messages, isStreaming, sendMessage: sendChatMessage, retryLastMessage } = useChat(true);
-
-  // State management for onboarding progress
-  const [currentState, setCurrentState] = useState<number>(1);
-  const [totalStates] = useState<number>(9);
-  const [completionPercentage, setCompletionPercentage] = useState<number>(0);
-  const [stateMetadata, setStateMetadata] = useState<StateMetadata | null>(null);
-  const [completedStates, setCompletedStates] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
-
-  /**
-   * Fetch onboarding progress on component mount
-   * Loads current state, completion percentage, and state metadata
-   */
-  useEffect(() => {
-    const fetchProgress = async () => {
-      try {
-        setError(null);
-
-        const progress: OnboardingProgress = await onboardingService.getOnboardingProgress();
-
-        // Update state with progress data
-        setCurrentState(progress.current_state);
-        setCompletionPercentage(progress.completion_percentage);
-        setStateMetadata(progress.current_state_info);
-        setCompletedStates(progress.completed_states);
-
-        // Check if onboarding is already complete
-        if (progress.is_complete) {
-          navigate('/dashboard', { replace: true });
-          return;
-        }
-
-        setInitialLoadComplete(true);
-      } catch (err: any) {
-        console.error('Failed to fetch onboarding progress:', err);
-        setError(err.response?.data?.detail?.message || 'Failed to load onboarding progress. Please try again.');
-        setInitialLoadComplete(true);
-      }
-    };
-
-    fetchProgress();
-  }, [navigate]);
-
-  /**
-   * Send message using streaming chat
-   * The useChat hook handles streaming, we just need to call it
-   * 
-   * Requirements 5.1, 5.2: Use streaming for onboarding chat
-   */
-  const handleSendMessage = async (message: string) => {
-    if (!message.trim() || isStreaming) return;
-
-    try {
-      setError(null);
-      
-      // Send message via streaming (useChat hook handles the streaming)
-      await sendChatMessage(message);
-
-      // Note: State updates and completion handling would need to be done
-      // via backend response or separate polling mechanism
-      // For now, we rely on the streaming response to include state information
-    } catch (err: any) {
-      console.error('Failed to send message:', err);
-      const errorMessage = err.response?.data?.detail?.message || 'Failed to send message. Please try again.';
-      setError(errorMessage);
-    }
-  };
+export const OnboardingChatPage: React.FC = () => {
+  const {
+    // Progress state
+    currentState,
+    totalStates,
+    completedStates,
+    completionPercentage,
+    isComplete,
+    canComplete,
+    
+    // Agent state
+    currentAgent,
+    agentDescription,
+    stateMetadata,
+    
+    // Chat state
+    messages,
+    isStreaming,
+    error,
+    
+    // Plan state
+    pendingPlan,
+    planType,
+    showPlanPreview,
+    
+    // Actions
+    sendMessage,
+    approvePlan,
+    modifyPlan,
+    closePlanPreview,
+    completeOnboarding,
+    
+    // Loading state
+    initialLoadComplete,
+  } = useOnboardingChat();
 
   // Show loading state during initial fetch
   if (!initialLoadComplete) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your onboarding progress...</p>
+          <LoadingSpinner size="lg" />
+          <p className="text-gray-600 mt-4">Loading your onboarding progress...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex bg-gray-50">
-      {/* Left Sidebar - Progress Bar */}
-      <div className="w-80 bg-white border-r border-gray-300 overflow-y-auto">
-        <div className="p-4">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Onboarding</h1>
-          <OnboardingProgressBar
-            currentState={currentState}
-            totalStates={totalStates}
-            completionPercentage={completionPercentage}
-            stateMetadata={stateMetadata}
-            completedStates={completedStates}
-          />
-        </div>
-      </div>
+    <div className="h-screen flex flex-col bg-gray-50" role="main" aria-label="Onboarding chat interface">
+      {/* Agent Header - Sticky at top */}
+      {currentAgent && stateMetadata && (
+        <AgentHeader
+          agentType={currentAgent}
+          agentDescription={agentDescription}
+          currentState={currentState}
+          totalStates={totalStates}
+          stateName={stateMetadata.name}
+        />
+      )}
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Chat Header */}
-        <div className="bg-white border-b border-gray-300 p-4 shadow-sm">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {stateMetadata?.name || 'Onboarding Chat'}
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Step {currentState} of {totalStates}
-            </p>
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden" role="region" aria-label="Chat and progress area">
+        {/* Progress Sidebar (Desktop) / Collapsible (Mobile) */}
+        <OnboardingProgressBar
+          currentState={currentState}
+          totalStates={totalStates}
+          completionPercentage={completionPercentage}
+          stateMetadata={stateMetadata}
+          completedStates={completedStates}
+        />
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col overflow-hidden" role="region" aria-label="Chat messages">
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto" role="log" aria-live="polite" aria-atomic="false">
+            <div className="max-w-4xl mx-auto px-4 py-6">
+              <MessageList 
+                messages={messages} 
+                onRetry={() => {
+                  // Retry last message if needed
+                  const lastUserMessage = [...messages]
+                    .reverse()
+                    .find(msg => msg.role === 'user');
+                  if (lastUserMessage) {
+                    sendMessage(lastUserMessage.content);
+                  }
+                }}
+              />
+
+              {/* Error Display */}
+              {error && (
+                <div className="mt-4" role="alert" aria-live="assertive">
+                  <ErrorMessage message={error} />
+                </div>
+              )}
+
+              {/* Complete Onboarding Button */}
+              {canComplete && !isComplete && (
+                <div 
+                  className="mt-6 p-6 bg-green-50 border-2 border-green-300 rounded-lg"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-green-900 mb-2">
+                      <span role="img" aria-label="celebration">🎉</span> Onboarding Complete!
+                    </h3>
+                    <p className="text-green-800 mb-4">
+                      You've completed all onboarding steps. Click below to finalize your profile and start your fitness journey!
+                    </p>
+                    <button
+                      onClick={completeOnboarding}
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                      aria-label="Complete onboarding and go to dashboard"
+                    >
+                      Complete Onboarding & Go to Dashboard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="border-t border-gray-200 bg-white" role="region" aria-label="Message input">
+            <div className="max-w-4xl mx-auto px-4 py-4">
+              <MessageInput 
+                onSend={sendMessage} 
+                disabled={isStreaming}
+                placeholder={
+                  isStreaming 
+                    ? 'Agent is typing...' 
+                    : stateMetadata 
+                    ? `Tell me about ${stateMetadata.name.toLowerCase()}...`
+                    : 'Type your message...'
+                }
+              />
+            </div>
           </div>
         </div>
-
-        {/* Messages Area */}
-        <div className="flex-1 max-w-4xl w-full mx-auto flex flex-col overflow-hidden">
-          {/* Requirement 5.5: Use same MessageList component as regular chat */}
-          <MessageList messages={messages} onRetry={retryLastMessage} />
-
-          {/* Error Display */}
-          {error && (
-            <div className="mx-4 mb-2 px-4 py-3 bg-red-100 border-l-4 border-red-500 text-red-700 rounded">
-              <p className="font-semibold">Error</p>
-              <p>{error}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Input Area */}
-        <div className="max-w-4xl w-full mx-auto">
-          {/* Requirement 5.2: Update placeholder based on streaming state */}
-          <MessageInput 
-            onSend={handleSendMessage} 
-            disabled={isStreaming}
-            placeholder={isStreaming ? 'Waiting for response...' : 'Tell me about yourself...'}
-          />
-        </div>
       </div>
+
+      {/* Plan Preview Modal */}
+      {showPlanPreview && pendingPlan && planType && (
+        <PlanPreviewCard
+          plan={pendingPlan}
+          planType={planType}
+          onApprove={approvePlan}
+          onModify={modifyPlan}
+          onClose={closePlanPreview}
+        />
+      )}
     </div>
   );
 };

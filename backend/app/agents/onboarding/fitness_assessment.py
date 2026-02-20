@@ -45,14 +45,29 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
         Returns:
             List containing save_fitness_assessment tool
         """
+        from pydantic import BaseModel, Field
+        
         # Capture self reference for use in tool
         agent_instance = self
         
-        @tool
+        # Define Pydantic schema for tool arguments
+        class FitnessAssessmentInput(BaseModel):
+            """Input schema for fitness assessment data."""
+            fitness_level: str = Field(
+                description="User's fitness level: beginner, intermediate, or advanced"
+            )
+            experience_details: dict = Field(
+                description="Dict with keys: frequency, duration, types of exercise"
+            )
+            limitations: List[str] = Field(
+                description="List of physical limitations (equipment, injuries - non-medical)"
+            )
+        
+        @tool(args_schema=FitnessAssessmentInput)
         async def save_fitness_assessment(
             fitness_level: str,
             experience_details: dict,
-            limitations: list
+            limitations: List[str]
         ) -> dict:
             """
             Save fitness assessment data to agent context.
@@ -160,7 +175,7 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
         # Execute agent
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # TODO: Load from conversation_history
+            "chat_history": []  # Conversation history is included via _build_messages in stream_response
         })
         
         # Check if step is complete
@@ -193,6 +208,84 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             return "fitness_assessment" in state.agent_context
         
         return False
+    
+    async def stream_response(self, message: str, conversation_history: list = None):
+        """
+        Stream response chunks for real-time display with tool calling support.
+        
+        Uses LangChain's agent executor with streaming to yield response chunks
+        as they are generated while also executing tools when needed.
+        
+        Args:
+            message: User's message text
+            conversation_history: Optional list of conversation history messages
+            
+        Yields:
+            str: Response chunks as they are generated
+        """
+        from uuid import UUID
+        
+        # If conversation history is provided, create a new context with it
+        if conversation_history is not None:
+            from app.agents.context import OnboardingAgentContext
+            self.context = OnboardingAgentContext(
+                user_id=self.context.user_id,
+                conversation_history=conversation_history,
+                agent_context=self.context.agent_context,
+                loaded_at=self.context.loaded_at
+            )
+        
+        # Store user_id for tool access
+        self._current_user_id = UUID(self.context.user_id)
+        
+        # Build chat history from context
+        from langchain_core.messages import HumanMessage, AIMessage
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
+        # Build prompt with system instructions
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.get_system_prompt()),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}")
+        ])
+        
+        # Create tool-calling agent
+        agent = create_tool_calling_agent(
+            llm=self.llm,
+            tools=self.get_tools(),
+            prompt=prompt
+        )
+        
+        # Create executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=self.get_tools(),
+            verbose=True,
+            handle_parsing_errors=True
+        )
+        
+        # Stream response using agent executor
+        # This allows tools to be called during streaming
+        async for event in agent_executor.astream_events(
+            {"input": message, "chat_history": chat_history},
+            version="v1"
+        ):
+            kind = event["event"]
+            
+            # Stream LLM tokens as they're generated
+            if kind == "on_chat_model_stream":
+                content = event["data"]["chunk"].content
+                if content:
+                    yield content
     
     def get_system_prompt(self) -> str:
         """

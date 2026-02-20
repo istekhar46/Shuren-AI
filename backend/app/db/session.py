@@ -4,8 +4,10 @@ This module provides:
 - Async SQLAlchemy engine with asyncpg driver
 - Async session factory
 - FastAPI dependency for database session injection
+- Logging configuration to suppress harmless cancellation warnings
 """
 
+import logging
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -15,6 +17,14 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import settings
+
+
+# Suppress SQLAlchemy pool termination warnings during cancellation
+# This is a known issue: https://github.com/sqlalchemy/sqlalchemy/issues/8145
+# The error is harmless - it occurs when a client cancels an SSE stream
+# and SQLAlchemy tries to terminate the connection gracefully
+# The connection is properly cleaned up by the pool despite the warning
+logging.getLogger('sqlalchemy.pool.impl.AsyncAdaptedQueuePool').setLevel(logging.CRITICAL)
 
 
 # Convert postgres:// to postgresql+asyncpg:// if needed
@@ -48,6 +58,9 @@ def get_async_database_url(url: str) -> str:
 # - pool_recycle=3600: Recycle connections after 1 hour (prevents timeout)
 # - pool_timeout=30: Wait up to 30 seconds for a connection from the pool
 # - pool_reset_on_return="rollback": Reset connection state on return to pool
+# - connect_args: asyncpg-specific connection arguments
+#   - server_settings: PostgreSQL server settings
+#     - jit=off: Disable JIT compilation for better connection stability
 engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,
@@ -56,7 +69,13 @@ engine = create_async_engine(
     max_overflow=10,
     pool_recycle=3600,  # Recycle connections after 1 hour
     pool_timeout=30,
-    pool_reset_on_return="rollback"  # Ensure clean connection state
+    pool_reset_on_return="rollback",  # Ensure clean connection state
+    connect_args={
+        "server_settings": {
+            "jit": "off"  # Disable JIT for better stability
+        },
+        "timeout": 60  # Connection timeout in seconds
+    }
 )
 
 # Create async session factory

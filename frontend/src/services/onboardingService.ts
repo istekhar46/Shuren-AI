@@ -1,13 +1,10 @@
 import api from './api';
-import type {
-  OnboardingStateResponse,
-  OnboardingStepRequest,
-  OnboardingStepResponse,
-  UserProfileResponse,
-} from '../types/api';
+import { retryRequest, RetryPresets } from '../utils/retry';
 import type {
   OnboardingProgress,
   OnboardingChatResponse,
+  OnboardingStreamChunk,
+  OnboardingCompleteResponse,
 } from '../types/onboarding.types';
 
 /**
@@ -15,61 +12,37 @@ import type {
  */
 export const onboardingService = {
   /**
-   * Get current onboarding state
-   * @returns Current onboarding progress with step data
-   */
-  async getOnboardingState(): Promise<OnboardingStateResponse> {
-    const response = await api.get<OnboardingStateResponse>('/onboarding/state');
-    return response.data;
-  },
-
-  /**
-   * Save onboarding step data
-   * @param step - Step number (1-based)
-   * @param data - Step-specific data to save
-   * @returns Updated onboarding state
-   */
-  async saveStep(step: number, data: Record<string, any>): Promise<OnboardingStepResponse> {
-    const payload: OnboardingStepRequest = { step, data };
-    const response = await api.post<OnboardingStepResponse>('/onboarding/step', payload);
-    return response.data;
-  },
-
-  /**
-   * Complete onboarding and create user profile
-   * @returns Created user profile
-   */
-  async completeOnboarding(): Promise<UserProfileResponse> {
-    const response = await api.post<UserProfileResponse>('/onboarding/complete');
-    return response.data;
-  },
-
-  /**
-   * Legacy method for backward compatibility
-   * @deprecated Use getOnboardingState() instead
-   * @returns Current step and completion status
-   */
-  async getProgress(): Promise<{ currentStep: number; completed: boolean }> {
-    console.warn('getProgress() is deprecated. Use getOnboardingState() instead.');
-    const state = await this.getOnboardingState();
-    return {
-      currentStep: state.current_step,
-      completed: state.is_complete,
-    };
-  },
-
-  /**
    * Get onboarding progress with state metadata
    * Calls GET /api/v1/onboarding/progress
    * @returns Onboarding progress with current state info and metadata
    */
   async getOnboardingProgress(): Promise<OnboardingProgress> {
-    const response = await api.get<OnboardingProgress>('/onboarding/progress');
-    return response.data;
+    return retryRequest(
+      async () => {
+        const response = await api.get<OnboardingProgress>('/onboarding/progress');
+        return response.data;
+      },
+      RetryPresets.standard
+    );
   },
 
   /**
-   * Send message during onboarding
+   * Complete onboarding and create user profile
+   * Calls POST /api/v1/onboarding/complete
+   * @returns Created user profile with onboarding completion status
+   */
+  async completeOnboarding(): Promise<OnboardingCompleteResponse> {
+    return retryRequest(
+      async () => {
+        const response = await api.post<OnboardingCompleteResponse>('/onboarding/complete');
+        return response.data;
+      },
+      RetryPresets.standard
+    );
+  },
+
+  /**
+   * Send message during onboarding (non-streaming)
    * Calls POST /api/v1/chat/onboarding
    * @param message - User's message
    * @param currentState - Current onboarding state number
@@ -79,10 +52,113 @@ export const onboardingService = {
     message: string,
     currentState: number
   ): Promise<OnboardingChatResponse> {
-    const response = await api.post<OnboardingChatResponse>('/chat/onboarding', {
-      message,
-      current_state: currentState,
-    });
-    return response.data;
+    return retryRequest(
+      async () => {
+        const response = await api.post<OnboardingChatResponse>('/chat/onboarding', {
+          message,
+          current_state: currentState,
+        });
+        return response.data;
+      },
+      RetryPresets.standard
+    );
+  },
+
+  /**
+   * Get onboarding conversation history
+   * Calls GET /api/v1/chat/onboarding/history
+   * @returns Array of conversation messages in chronological order
+   */
+  async getOnboardingHistory(): Promise<Array<{ role: string; content: string; agent_type?: string; created_at?: string }>> {
+    return retryRequest(
+      async () => {
+        const response = await api.get<{ messages: Array<{ role: string; content: string; agent_type?: string; created_at?: string }>; total: number }>('/chat/onboarding/history');
+        return response.data.messages;
+      },
+      RetryPresets.standard
+    );
+  },
+
+  /**
+   * Stream onboarding message with SSE
+   * Calls GET /api/v1/chat/onboarding-stream
+   * @param message - User's message to the onboarding agent
+   * @param currentState - Current onboarding state number
+   * @param callbacks - Callbacks for handling streaming events
+   * @returns Cancel function to abort the stream
+   */
+  streamOnboardingMessage(
+    message: string,
+    currentState: number,
+    callbacks: {
+      onChunk: (chunk: string) => void;
+      onComplete: (data: OnboardingStreamChunk) => void;
+      onError: (error: string) => void;
+    }
+  ): () => void {
+    const token = localStorage.getItem('auth_token');
+    const baseURL = api.defaults.baseURL || 'http://localhost:8000/api/v1';
+    
+    // Build SSE URL with query parameters
+    const url = new URL(`${baseURL}/chat/onboarding-stream`);
+    if (token) {
+      url.searchParams.append('token', token);
+    }
+    url.searchParams.append('message', message);
+    url.searchParams.append('current_state', currentState.toString());
+    
+    // Create EventSource for SSE
+    const eventSource = new EventSource(url.toString());
+    let hasReceivedData = false;
+    
+    // Handle incoming messages
+    eventSource.onmessage = (event) => {
+      try {
+        hasReceivedData = true;
+        const data: OnboardingStreamChunk = JSON.parse(event.data);
+        
+        // Handle error in stream
+        if (data.error) {
+          callbacks.onError(data.error);
+          eventSource.close();
+          return;
+        }
+        
+        // Handle completion
+        if (data.done) {
+          callbacks.onComplete(data);
+          eventSource.close();
+          return;
+        }
+        
+        // Handle chunk
+        if (data.chunk) {
+          callbacks.onChunk(data.chunk);
+        }
+      } catch (error) {
+        console.error('Failed to parse streaming response:', error);
+        callbacks.onError('Failed to parse streaming response');
+        eventSource.close();
+      }
+    };
+    
+    // Handle connection errors
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      
+      // Provide more specific error messages
+      if (!hasReceivedData) {
+        callbacks.onError('Failed to connect to server. Please check your connection and try again.');
+      } else {
+        callbacks.onError('Connection lost. Please try sending your message again.');
+      }
+      
+      eventSource.close();
+    };
+    
+    // Return cancel function
+    return () => {
+      eventSource.close();
+    };
   },
 };
