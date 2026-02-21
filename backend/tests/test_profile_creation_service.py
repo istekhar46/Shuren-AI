@@ -85,11 +85,13 @@ class TestDataExtractionMethods:
     
     @pytest.mark.asyncio
     async def test_extract_goal_data_complete(self, db_session: AsyncSession):
-        """Test extracting complete goal data with all optional fields."""
+        """Test extracting complete goal data with all optional fields from fitness_assessment."""
         service = ProfileCreationService(db_session)
         
+        # Goals are now in fitness_assessment (Step 1) in the 4-step flow
         agent_context = {
-            "goal_setting": {
+            "fitness_assessment": {
+                "fitness_level": "intermediate",
                 "primary_goal": "muscle_gain",
                 "secondary_goal": "fat_loss",
                 "target_weight_kg": 75.0,
@@ -107,11 +109,13 @@ class TestDataExtractionMethods:
     
     @pytest.mark.asyncio
     async def test_extract_goal_data_minimal(self, db_session: AsyncSession):
-        """Test extracting goal data with only required fields."""
+        """Test extracting goal data with only required fields from fitness_assessment."""
         service = ProfileCreationService(db_session)
         
+        # Goals are now in fitness_assessment (Step 1) in the 4-step flow
         agent_context = {
-            "goal_setting": {
+            "fitness_assessment": {
+                "fitness_level": "beginner",
                 "primary_goal": "general_fitness",
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             }
@@ -126,12 +130,13 @@ class TestDataExtractionMethods:
     
     @pytest.mark.asyncio
     async def test_extract_workout_data_complete(self, db_session: AsyncSession):
-        """Test extracting complete workout data."""
+        """Test extracting complete workout data from new structure (plan + schedule in workout_planning)."""
         service = ProfileCreationService(db_session)
         
+        # New 4-step structure: plan and schedule both in workout_planning
         agent_context = {
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 4,
                     "duration_minutes": 60,
                     "duration_weeks": 12,
@@ -143,6 +148,10 @@ class TestDataExtractionMethods:
                         }
                     ],
                     "rationale": "4-day split for muscle gain"
+                },
+                "schedule": {
+                    "days": ["Monday", "Wednesday", "Friday", "Saturday"],
+                    "times": ["07:00", "07:00", "18:00", "09:00"]
                 },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
@@ -159,23 +168,28 @@ class TestDataExtractionMethods:
     
     @pytest.mark.asyncio
     async def test_extract_diet_data_complete(self, db_session: AsyncSession):
-        """Test extracting complete diet data."""
+        """Test extracting complete diet data from new structure (preferences + plan + schedule in diet_planning)."""
         service = ProfileCreationService(db_session)
         
+        # New 4-step structure: preferences, plan, and schedule all in diet_planning
         agent_context = {
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "vegetarian",
-                    "allergies": ["dairy", "eggs"],
-                    "intolerances": ["lactose"],
-                    "dislikes": ["mushrooms"]
-                },
-                "proposed_plan": {
+                "diet_type": "vegetarian",
+                "allergies": ["dairy", "eggs"],
+                "intolerances": ["lactose"],
+                "dislikes": ["mushrooms"],
+                "plan": {
                     "daily_calories": 2500,
                     "protein_g": 150.0,
                     "carbs_g": 300.0,
                     "fats_g": 70.0,
                     "meal_frequency": 4
+                },
+                "schedule": {
+                    "breakfast": "08:00",
+                    "lunch": "13:00",
+                    "snack": "16:00",
+                    "dinner": "19:00"
                 },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
@@ -193,24 +207,30 @@ class TestDataExtractionMethods:
     
     @pytest.mark.asyncio
     async def test_extract_schedule_data_complete(self, db_session: AsyncSession):
-        """Test extracting complete schedule data."""
+        """Test extracting complete schedule data from new 4-step structure."""
         service = ProfileCreationService(db_session)
         
+        # New 4-step structure:
+        # - Workout schedule in workout_planning
+        # - Meal schedule in diet_planning
+        # - Hydration in scheduling
         agent_context = {
-            "scheduling": {
-                "workout_schedule": {
+            "workout_planning": {
+                "schedule": {
                     "days": ["Monday", "Wednesday", "Friday"],
                     "times": ["07:00", "07:00", "18:00"]
-                },
-                "meal_schedule": {
+                }
+            },
+            "diet_planning": {
+                "schedule": {
                     "breakfast": "08:00",
                     "lunch": "13:00",
                     "dinner": "19:00"
-                },
-                "hydration_preferences": {
-                    "frequency_hours": 2,
-                    "target_ml": 3000
-                },
+                }
+            },
+            "scheduling": {
+                "daily_water_target_ml": 3000,
+                "reminder_frequency_minutes": 120,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             }
         }
@@ -219,6 +239,7 @@ class TestDataExtractionMethods:
         
         assert result["workout_schedule"]["days"] == ["Monday", "Wednesday", "Friday"]
         assert result["meal_schedule"]["breakfast"] == "08:00"
+        assert result["hydration_preferences"]["target_ml"] == 3000
         assert result["hydration_preferences"]["frequency_hours"] == 2
 
 
@@ -416,21 +437,18 @@ class TestCompleteProfileCreation:
         db_session.add(user)
         await db_session.commit()
         
-        # Complete agent_context
+        # Complete agent_context for 4-step flow
         agent_context = {
             "fitness_assessment": {
                 "fitness_level": "intermediate",
                 "limitations": ["no_equipment"],
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "goal_setting": {
                 "primary_goal": "muscle_gain",
                 "secondary_goal": "fat_loss",
                 "target_weight_kg": 75.0,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 4,
                     "duration_minutes": 60,
                     "duration_weeks": 12,
@@ -443,41 +461,37 @@ class TestCompleteProfileCreation:
                     ],
                     "rationale": "4-day split"
                 },
+                "schedule": {
+                    "days": ["Monday", "Wednesday", "Friday", "Saturday"],
+                    "times": ["07:00", "07:00", "18:00", "09:00"]
+                },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "omnivore",
-                    "allergies": [],
-                    "intolerances": [],
-                    "dislikes": []
-                },
-                "proposed_plan": {
+                "diet_type": "omnivore",
+                "allergies": [],
+                "intolerances": [],
+                "dislikes": [],
+                "plan": {
                     "daily_calories": 2800,
                     "protein_g": 175.0,
                     "carbs_g": 350.0,
                     "fats_g": 78.0,
                     "meal_frequency": 4
                 },
-                "user_approved": True,
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "scheduling": {
-                "workout_schedule": {
-                    "days": ["Monday", "Wednesday", "Friday", "Saturday"],
-                    "times": ["07:00", "07:00", "18:00", "09:00"]
-                },
-                "meal_schedule": {
+                "schedule": {
                     "breakfast": "08:00",
                     "lunch": "13:00",
                     "snack": "16:00",
                     "dinner": "19:00"
                 },
-                "hydration_preferences": {
-                    "frequency_hours": 2,
-                    "target_ml": 3000
-                },
+                "user_approved": True,
+                "completed_at": datetime.utcnow().isoformat() + "Z"
+            },
+            "scheduling": {
+                "daily_water_target_ml": 3000,
+                "reminder_frequency_minutes": 120,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             }
         }
@@ -509,19 +523,16 @@ class TestCompleteProfileCreation:
         db_session.add(user)
         await db_session.commit()
         
-        # Minimal agent_context (no secondary goal, no limitations, etc.)
+        # Minimal agent_context for 4-step flow (no secondary goal, no limitations, etc.)
         agent_context = {
             "fitness_assessment": {
                 "fitness_level": "beginner",
                 "limitations": [],
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "goal_setting": {
                 "primary_goal": "general_fitness",
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 3,
                     "duration_minutes": 45,
                     "training_split": [
@@ -532,40 +543,36 @@ class TestCompleteProfileCreation:
                         }
                     ]
                 },
+                "schedule": {
+                    "days": ["Monday", "Wednesday", "Friday"],
+                    "times": ["18:00", "18:00", "18:00"]
+                },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "omnivore",
-                    "allergies": [],
-                    "intolerances": [],
-                    "dislikes": []
-                },
-                "proposed_plan": {
+                "diet_type": "omnivore",
+                "allergies": [],
+                "intolerances": [],
+                "dislikes": [],
+                "plan": {
                     "daily_calories": 2000,
                     "protein_g": 120.0,
                     "carbs_g": 250.0,
                     "fats_g": 60.0,
                     "meal_frequency": 3
                 },
-                "user_approved": True,
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "scheduling": {
-                "workout_schedule": {
-                    "days": ["Monday", "Wednesday", "Friday"],
-                    "times": ["18:00", "18:00", "18:00"]
-                },
-                "meal_schedule": {
+                "schedule": {
                     "breakfast": "07:00",
                     "lunch": "12:00",
                     "dinner": "18:00"
                 },
-                "hydration_preferences": {
-                    "frequency_hours": 3,
-                    "target_ml": 2500
-                },
+                "user_approved": True,
+                "completed_at": datetime.utcnow().isoformat() + "Z"
+            },
+            "scheduling": {
+                "daily_water_target_ml": 2500,
+                "reminder_frequency_minutes": 180,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             }
         }
@@ -597,54 +604,47 @@ class TestErrorHandling:
         user_id = uuid4()
         service = ProfileCreationService(db_session)
         
-        # Missing fitness_level
+        # Missing fitness_level in 4-step structure
         invalid_context = {
             "fitness_assessment": {
                 "limitations": [],
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "goal_setting": {
                 "primary_goal": "muscle_gain",
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 4,
                     "duration_minutes": 60,
                     "training_split": [{"name": "Day 1", "muscle_groups": ["chest"], "type": "strength"}]
+                },
+                "schedule": {
+                    "days": ["Monday"],
+                    "times": ["07:00"]
                 },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "omnivore",
-                    "allergies": [],
-                    "intolerances": [],
-                    "dislikes": []
-                },
-                "proposed_plan": {
+                "diet_type": "omnivore",
+                "allergies": [],
+                "intolerances": [],
+                "dislikes": [],
+                "plan": {
                     "daily_calories": 2500,
                     "protein_g": 150.0,
                     "carbs_g": 300.0,
                     "fats_g": 70.0,
                     "meal_frequency": 4
                 },
+                "schedule": {
+                    "breakfast": "08:00"
+                },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "scheduling": {
-                "workout_schedule": {
-                    "days": ["Monday"],
-                    "times": ["07:00"]
-                },
-                "meal_schedule": {
-                    "breakfast": "08:00"
-                },
-                "hydration_preferences": {
-                    "frequency_hours": 2,
-                    "target_ml": 3000
-                },
+                "daily_water_target_ml": 3000,
+                "reminder_frequency_minutes": 120,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             }
         }
@@ -660,39 +660,41 @@ class TestErrorHandling:
         user_id = uuid4()
         service = ProfileCreationService(db_session)
         
-        # Missing scheduling section
+        # Missing scheduling section in 4-step structure
         incomplete_context = {
             "fitness_assessment": {
                 "fitness_level": "intermediate",
                 "limitations": [],
-                "completed_at": datetime.utcnow().isoformat() + "Z"
-            },
-            "goal_setting": {
                 "primary_goal": "muscle_gain",
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 4,
                     "duration_minutes": 60,
                     "training_split": [{"name": "Day 1", "muscle_groups": ["chest"], "type": "strength"}]
+                },
+                "schedule": {
+                    "days": ["Monday"],
+                    "times": ["07:00"]
                 },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"
             },
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "omnivore",
-                    "allergies": [],
-                    "intolerances": [],
-                    "dislikes": []
-                },
-                "proposed_plan": {
+                "diet_type": "omnivore",
+                "allergies": [],
+                "intolerances": [],
+                "dislikes": [],
+                "plan": {
                     "daily_calories": 2500,
                     "protein_g": 150.0,
                     "carbs_g": 300.0,
                     "fats_g": 70.0,
                     "meal_frequency": 4
+                },
+                "schedule": {
+                    "breakfast": "08:00"
                 },
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat() + "Z"

@@ -116,8 +116,8 @@ class DietPlanningAgent(BaseOnboardingAgent):
             try:
                 # Get context from previous agents
                 fitness_level = agent_instance.context.get("fitness_assessment", {}).get("fitness_level", "beginner")
-                primary_goal = agent_instance.context.get("goal_setting", {}).get("primary_goal", "general_fitness")
-                workout_plan = agent_instance.context.get("workout_planning", {}).get("proposed_plan", {})
+                primary_goal = agent_instance.context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
+                workout_plan = agent_instance.context.get("workout_planning", {}).get("plan", {})
                 
                 logger.info(
                     f"Generating meal plan for user {agent_instance._current_user_id}: "
@@ -157,19 +157,24 @@ class DietPlanningAgent(BaseOnboardingAgent):
         @tool
         async def save_meal_plan(
             plan_data: dict,
+            meal_times: dict,
             user_approved: bool
         ) -> dict:
             """
-            Save approved meal plan to agent context.
+            Save approved meal plan and schedule to agent context.
             
-            ONLY call this tool when user explicitly approves the plan by saying:
+            ONLY call this tool when user explicitly approves the plan AND provides meal times by saying:
             - "Yes", "Looks good", "Perfect", "I approve", "Let's do it"
             - "Sounds great", "That works", "I'm happy with this"
             
-            Do NOT call this tool unless user has clearly approved.
+            You must also collect:
+            - Meal times for each meal (e.g., {"breakfast": "07:00", "lunch": "12:00", "dinner": "19:00"})
+            
+            Do NOT call this tool unless user has clearly approved AND provided meal times.
             
             Args:
                 plan_data: The meal plan dictionary to save
+                meal_times: Dict of meal names to times in HH:MM format (e.g., {"breakfast": "07:00"})
                 user_approved: Must be True to save (safety check)
                 
             Returns:
@@ -182,30 +187,47 @@ class DietPlanningAgent(BaseOnboardingAgent):
                     "message": "Cannot save plan without user approval"
                 }
             
-            # Prepare data with metadata
+            # Validate meal times count matches frequency
+            meal_frequency = plan_data.get("meal_frequency", 0)
+            if len(meal_times) != meal_frequency:
+                return {
+                    "status": "error",
+                    "message": f"Meal times count ({len(meal_times)}) must match meal frequency ({meal_frequency})"
+                }
+            
+            # Prepare data with metadata and schedule
             diet_data = {
-                "preferences": {
-                    "diet_type": plan_data.get("diet_type"),
-                    "allergies": plan_data.get("allergies", []),
-                    "dislikes": plan_data.get("dislikes", []),
-                    "meal_frequency": plan_data.get("meal_frequency"),
-                    "meal_prep_level": plan_data.get("meal_prep_level")
-                },
-                "proposed_plan": plan_data,
+                "plan": plan_data,
+                "schedule": meal_times,
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat()
             }
             
-            # Save to context
+            # Save to context and mark step 3 complete, advance to step 4
             try:
-                await agent_instance.save_context(
-                    agent_instance._current_user_id,
-                    diet_data
+                from sqlalchemy import update
+                from app.models.onboarding import OnboardingState
+                
+                # Update onboarding state with new data
+                stmt = (
+                    update(OnboardingState)
+                    .where(OnboardingState.user_id == agent_instance._current_user_id)
+                    .values(
+                        agent_context=OnboardingState.agent_context.op('||')(
+                            {"diet_planning": diet_data}
+                        ),
+                        step_3_complete=True,
+                        current_step=4,
+                        current_agent="scheduling"
+                    )
                 )
-                logger.info(f"Meal plan saved successfully for user {agent_instance._current_user_id}")
+                await agent_instance.db.execute(stmt)
+                await agent_instance.db.commit()
+                
+                logger.info(f"Meal plan and schedule saved successfully for user {agent_instance._current_user_id}")
                 return {
                     "status": "success",
-                    "message": "Meal plan saved successfully"
+                    "message": "Meal plan and schedule saved successfully. Moving to lifestyle setup."
                 }
             except Exception as e:
                 logger.error(
@@ -483,8 +505,8 @@ class DietPlanningAgent(BaseOnboardingAgent):
         """
         # Get context from previous agents
         fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
-        primary_goal = self.context.agent_context.get("goal_setting", {}).get("primary_goal", "unknown")
-        workout_plan = self.context.agent_context.get("workout_planning", {}).get("proposed_plan", {})
+        primary_goal = self.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "unknown")
+        workout_plan = self.context.agent_context.get("workout_planning", {}).get("plan", {})
         workout_frequency = workout_plan.get("frequency", "unknown")
         
         # Get collected diet information
@@ -508,45 +530,49 @@ Already collected diet preferences:
 - Dislikes: {dislikes}
 
 IMPORTANT INSTRUCTIONS:
-1. Review the "Already collected diet preferences" above
-2. ONLY ask for information that shows "not provided"
-3. NEVER ask for information that has already been collected
-4. Diet type and meal frequency are REQUIRED
-5. Once all required info is collected, generate the meal plan
+1. FIRST: Review the conversation history carefully before asking any questions
+2. DO NOT ask questions that the user has already answered in previous messages
+3. Review the "Already collected diet preferences" above
+4. ONLY ask for information that shows "not provided" AND hasn't been mentioned in conversation
+5. Build on information already provided rather than repeating questions
+6. Diet type and meal frequency are REQUIRED
+7. Once all required info is collected, generate the meal plan
 
 Your role:
 - Ask ONLY for missing diet preferences
 - Generate a meal plan aligned with their goals and workout plan
 - Present the plan with calorie/macro breakdown and sample meals
+- Collect meal times for each meal
 - Detect approval intent from user responses
 - Handle modification requests
-- Save plan ONLY after user explicitly approves
+- Save plan ONLY after user explicitly approves AND provides meal times
 
-Guidelines:
-- Be concise - ask 1-2 questions at a time for missing information only
-- Once you have diet type and meal frequency, generate the plan
-- After generating, present it clearly and wait for approval
-- Detect approval intent from user responses
-- Handle modification requests
-- Save plan ONLY after user explicitly approves
-
-Guidelines:
-- Ask 1-2 questions at a time about diet preferences
-- Once you have diet type, allergies, dislikes, meal frequency, and meal prep level, call generate_meal_plan
-- Present the plan clearly with:
-  * Daily calorie target and explanation
-  * Protein/carbs/fats breakdown in grams
-  * 3-5 sample meal ideas
-  * Meal timing suggestions
-- Explain WHY these calories and macros support their {primary_goal} goal
-- Explain HOW the plan complements their {workout_frequency} days/week training
-- After presenting, explicitly ask: "Does this meal plan work for you?"
+Workflow Steps:
+1. Collect missing diet preferences (diet type, meal frequency, allergies, dislikes, meal prep level)
+2. Once you have all preferences, call generate_meal_plan
+3. Present the plan clearly with:
+   * Daily calorie target and explanation
+   * Protein/carbs/fats breakdown in grams
+   * 3-5 sample meal ideas
+   * Meal timing suggestions
+4. Explain WHY these calories and macros support their {primary_goal} goal
+5. Explain HOW the plan complements their {workout_frequency} days/week training
+6. After presenting, ask: "Does this meal plan work for you?"
+7. If user approves, collect meal times (e.g., "What time do you usually eat breakfast?")
+8. Once you have approval AND meal times, call save_meal_plan
 
 Approval Detection:
-- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Call save_meal_plan with user_approved=True
-- User says "sounds great", "that works", "I'm happy with this" → Call save_meal_plan with user_approved=True
+- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Ask for meal times if not provided
+- User says "sounds great", "that works", "I'm happy with this" → Ask for meal times if not provided
 - User asks questions → Answer questions, don't save yet
 - User requests changes → Call modify_meal_plan with requested changes
+
+Meal Time Collection:
+- Ask for time for each meal in the plan (e.g., breakfast, lunch, dinner)
+- Accept times in various formats (7am, 07:00, 7:00 AM)
+- Convert to HH:MM format (24-hour)
+- Example: "What time do you usually eat breakfast? And lunch? And dinner?"
+- Only call save_meal_plan when you have ALL meal times
 
 Modification Handling:
 - Extract what user wants to change (calories, protein, meal frequency, etc.)
@@ -561,14 +587,13 @@ Dietary Restrictions:
 - Never suggest foods that violate their restrictions
 
 Calorie and Macro Guidance:
-- Muscle Gain ({primary_goal == 'muscle_gain'}): Calorie surplus, high protein (2.0g/kg)
-- Fat Loss ({primary_goal == 'fat_loss'}): Calorie deficit, moderate-high protein (1.8g/kg)
-- General Fitness ({primary_goal == 'general_fitness'}): Maintenance calories, balanced macros (1.6g/kg)
+- Muscle Gain: Calorie surplus, high protein (2.0g/kg)
+- Fat Loss: Calorie deficit, moderate-high protein (1.8g/kg)
+- General Fitness: Maintenance calories, balanced macros (1.6g/kg)
 - Adjust calories based on workout frequency (more training = more calories)
 
 After Saving:
-- Confirm the plan is saved
-- Congratulate them on completing onboarding
-- Let them know they're ready to start their fitness journey
-- Briefly mention what comes next: "You can now start following your personalized workout and meal plans!"
+- Confirm the plan and schedule are saved
+- Let them know they're moving to the final step (lifestyle setup)
+- Briefly mention what comes next: "Next, we'll set up your hydration reminders and discuss supplements!"
 """

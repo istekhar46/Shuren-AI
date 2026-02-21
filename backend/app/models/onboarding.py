@@ -31,12 +31,15 @@ class OnboardingState(BaseModel):
         nullable=False
     )
     
-    # Onboarding progress
-    current_step = Column(Integer, default=0, nullable=False)
+    # Onboarding progress (4-step flow)
+    current_step = Column(Integer, default=1, nullable=False)
     is_complete = Column(Boolean, default=False, nullable=False)
     
-    # Step data stored as JSONB for flexibility
-    step_data = Column(JSONB, default=dict, nullable=False)
+    # Step completion tracking for 4-step flow
+    step_1_complete = Column(Boolean, default=False, nullable=False)
+    step_2_complete = Column(Boolean, default=False, nullable=False)
+    step_3_complete = Column(Boolean, default=False, nullable=False)
+    step_4_complete = Column(Boolean, default=False, nullable=False)
     
     # Agent routing history - tracks which agents handled each state
     agent_history = Column(JSONB, default=list, nullable=False)

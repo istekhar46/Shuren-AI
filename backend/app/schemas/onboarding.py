@@ -14,31 +14,38 @@ class OnboardingAgentType(str, Enum):
     and has specialized knowledge for that domain.
     """
     
-    FITNESS_ASSESSMENT = "fitness_assessment"  # Steps 0-2
-    GOAL_SETTING = "goal_setting"              # Step 3
-    WORKOUT_PLANNING = "workout_planning"      # Steps 4-5
-    DIET_PLANNING = "diet_planning"            # Steps 6-7
-    SCHEDULING = "scheduling"                  # Steps 8-9
+    FITNESS_ASSESSMENT = "fitness_assessment"  # Step 1
+    WORKOUT_PLANNING = "workout_planning"      # Step 2
+    DIET_PLANNING = "diet_planning"            # Step 3
+    SCHEDULING = "scheduling"                  # Step 4
 
 
 class OnboardingStateResponse(BaseModel):
     """Schema for onboarding state response.
     
     Represents the current state of a user's onboarding progress,
-    including all saved step data in JSONB format.
+    including step completion flags for the 4-step flow.
     
     Attributes:
         id: Unique identifier for the onboarding state
         user_id: User's unique identifier
-        current_step: Current step number (0-9)
+        current_step: Current step number (1-4)
         is_complete: Whether onboarding is complete
-        step_data: JSONB dictionary containing all saved step data
+        step_1_complete: Whether step 1 (fitness assessment) is complete
+        step_2_complete: Whether step 2 (workout planning) is complete
+        step_3_complete: Whether step 3 (diet planning) is complete
+        step_4_complete: Whether step 4 (scheduling) is complete
+        agent_context: JSONB dictionary containing data collected by agents
     """
     id: str
     user_id: str
     current_step: int
     is_complete: bool
-    step_data: dict[str, Any]
+    step_1_complete: bool
+    step_2_complete: bool
+    step_3_complete: bool
+    step_4_complete: bool
+    agent_context: dict[str, Any] = Field(default_factory=dict)
     
     class Config:
         from_attributes = True
@@ -133,8 +140,8 @@ class OnboardingProgressResponse(BaseModel):
     current state, completed states, and completion percentage.
     
     Attributes:
-        current_state: Current state number (1-9)
-        total_states: Total number of states (always 9)
+        current_state: Current state number (1-4)
+        total_states: Total number of states (always 4)
         completed_states: List of completed state numbers
         current_state_info: Metadata for current state
         next_state_info: Metadata for next state (None if on last state)
@@ -143,7 +150,7 @@ class OnboardingProgressResponse(BaseModel):
         can_complete: Whether user can complete onboarding (all states done)
     """
     current_state: int
-    total_states: int = 9
+    total_states: int = 4
     completed_states: list[int]
     current_state_info: StateInfo
     next_state_info: StateInfo | None
@@ -154,28 +161,27 @@ class OnboardingProgressResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "current_state": 3,
-                "total_states": 9,
-                "completed_states": [1, 2],
+                "current_state": 2,
+                "total_states": 4,
+                "completed_states": [1],
                 "current_state_info": {
-                    "state_number": 3,
-                    "name": "Workout Preferences & Constraints",
+                    "state_number": 2,
+                    "name": "Workout Planning",
                     "agent": "workout_planning",
-                    "description": "Tell us about your equipment and limitations",
-                    "required_fields": ["equipment", "injuries", "limitations"]
+                    "description": "Create your personalized workout plan",
+                    "required_fields": ["equipment", "injuries", "limitations", "days_per_week"]
                 },
                 "next_state_info": {
-                    "state_number": 4,
-                    "name": "Diet Preferences & Restrictions",
+                    "state_number": 3,
+                    "name": "Diet Planning",
                     "agent": "diet_planning",
-                    "description": "Share your dietary preferences"
+                    "description": "Build your personalized meal plan"
                 },
                 "is_complete": False,
-                "completion_percentage": 33,
+                "completion_percentage": 25,
                 "can_complete": False
             }
         }
-
 
 
 class AgentResponse(BaseModel):

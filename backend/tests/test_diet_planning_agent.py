@@ -44,11 +44,17 @@ async def test_agent_instantiation(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
-            "fitness_assessment": {"fitness_level": "intermediate"},
-            "goal_setting": {"primary_goal": "muscle_gain"},
-            "workout_planning": {"proposed_plan": {"frequency": 4}}
+            "fitness_assessment": {
+                "fitness_level": "intermediate",
+                "primary_goal": "muscle_gain"
+            },
+            "workout_planning": {
+                "plan": {"frequency": 4}
+            }
         }
         
         agent = DietPlanningAgent(db=db_session, context=context)
@@ -85,17 +91,17 @@ async def test_system_prompt_contains_context_from_all_previous_agents(db_sessio
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "fitness_assessment": {
                 "fitness_level": "advanced",
-                "limitations": []
-            },
-            "goal_setting": {
+                "limitations": [],
                 "primary_goal": "fat_loss"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 5,
                     "training_split": "Push/Pull/Legs"
                 }
@@ -121,6 +127,8 @@ async def test_system_prompt_contains_required_instructions(db_session: AsyncSes
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         prompt = agent.get_system_prompt()
@@ -164,6 +172,8 @@ async def test_get_tools_returns_three_tools(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         tools = agent.get_tools()
@@ -200,17 +210,17 @@ async def test_generate_meal_plan_tool_success(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "fitness_assessment": {
                 "fitness_level": "intermediate",
-                "limitations": []
-            },
-            "goal_setting": {
+                "limitations": [],
                 "primary_goal": "muscle_gain"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 4,
                     "training_split": "Upper/Lower"
                 }
@@ -257,17 +267,17 @@ async def test_generate_meal_plan_tool_uses_workout_plan_context(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "fitness_assessment": {
                 "fitness_level": "beginner",
-                "limitations": []
-            },
-            "goal_setting": {
+                "limitations": [],
                 "primary_goal": "fat_loss"
             },
             "workout_planning": {
-                "proposed_plan": {
+                "plan": {
                     "frequency": 5,  # High frequency should affect calories
                     "training_split": "Push/Pull/Legs"
                 }
@@ -309,6 +319,8 @@ async def test_generate_meal_plan_tool_handles_invalid_parameters(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -347,6 +359,8 @@ async def test_save_meal_plan_tool_with_approval(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -369,9 +383,15 @@ async def test_save_meal_plan_tool_with_approval(
             "meal_timing_suggestions": "Breakfast, Lunch, Snack, Dinner"
         }
         
-        # Call save tool with approval
+        # Call save tool with approval and meal times
         result = await save_tool.ainvoke({
             "plan_data": plan_data,
+            "meal_times": {
+                "breakfast": "07:00",
+                "lunch": "12:00",
+                "snack": "15:00",
+                "dinner": "19:00"
+            },
             "user_approved": True
         })
         
@@ -385,8 +405,14 @@ async def test_save_meal_plan_tool_with_approval(
         
         assert "diet_planning" in state.agent_context
         assert state.agent_context["diet_planning"]["user_approved"] is True
-        assert "proposed_plan" in state.agent_context["diet_planning"]
+        assert "plan" in state.agent_context["diet_planning"]
+        assert "schedule" in state.agent_context["diet_planning"]
         assert "completed_at" in state.agent_context["diet_planning"]
+        
+        # Verify step advancement
+        assert state.step_3_complete is True
+        assert state.current_step == 4
+        assert state.current_agent == "scheduling"
 
 
 @pytest.mark.unit
@@ -402,6 +428,8 @@ async def test_save_meal_plan_includes_metadata(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -425,6 +453,11 @@ async def test_save_meal_plan_includes_metadata(
         
         result = await save_tool.ainvoke({
             "plan_data": plan_data,
+            "meal_times": {
+                "breakfast": "07:00",
+                "lunch": "12:00",
+                "dinner": "19:00"
+            },
             "user_approved": True
         })
         
@@ -437,13 +470,19 @@ async def test_save_meal_plan_includes_metadata(
         
         diet_data = state.agent_context["diet_planning"]
         
-        # Verify preferences are saved separately
-        assert "preferences" in diet_data
-        assert diet_data["preferences"]["diet_type"] == "vegan"
-        assert diet_data["preferences"]["allergies"] == ["nuts"]
-        assert diet_data["preferences"]["dislikes"] == ["mushrooms"]
-        assert diet_data["preferences"]["meal_frequency"] == 3
-        assert diet_data["preferences"]["meal_prep_level"] == "high"
+        # Verify plan and schedule are saved
+        assert "plan" in diet_data
+        assert diet_data["plan"]["diet_type"] == "vegan"
+        assert diet_data["plan"]["allergies"] == ["nuts"]
+        assert diet_data["plan"]["dislikes"] == ["mushrooms"]
+        assert diet_data["plan"]["meal_frequency"] == 3
+        assert diet_data["plan"]["meal_prep_level"] == "high"
+        
+        # Verify schedule
+        assert "schedule" in diet_data
+        assert diet_data["schedule"]["breakfast"] == "07:00"
+        assert diet_data["schedule"]["lunch"] == "12:00"
+        assert diet_data["schedule"]["dinner"] == "19:00"
         
         # Verify timestamp
         assert "completed_at" in diet_data
@@ -467,6 +506,8 @@ async def test_save_meal_plan_tool_rejects_without_approval(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -491,6 +532,12 @@ async def test_save_meal_plan_tool_rejects_without_approval(
         # Call save tool without approval
         result = await save_tool.ainvoke({
             "plan_data": plan_data,
+            "meal_times": {
+                "breakfast": "07:00",
+                "lunch": "12:00",
+                "snack": "15:00",
+                "dinner": "19:00"
+            },
             "user_approved": False
         })
         
@@ -524,6 +571,8 @@ async def test_modify_meal_plan_tool_success(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -575,6 +624,8 @@ async def test_modify_meal_plan_tool_handles_invalid_modifications(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -624,6 +675,8 @@ async def test_check_if_complete_returns_false_without_approval(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         
@@ -668,6 +721,8 @@ async def test_check_if_complete_returns_true_with_approval(
     
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         
@@ -710,6 +765,8 @@ async def test_check_if_complete_returns_false_with_unapproved_data(
     
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         
@@ -736,6 +793,8 @@ async def test_generate_meal_plan_handles_service_errors(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -776,6 +835,8 @@ async def test_save_meal_plan_handles_database_errors(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -801,6 +862,12 @@ async def test_save_meal_plan_handles_database_errors(
         with patch.object(agent, 'save_context', side_effect=Exception("Database error")):
             result = await save_tool.ainvoke({
                 "plan_data": plan_data,
+                "meal_times": {
+                    "breakfast": "07:00",
+                    "lunch": "12:00",
+                    "snack": "15:00",
+                    "dinner": "19:00"
+                },
                 "user_approved": True
             })
             
@@ -822,6 +889,8 @@ async def test_modify_meal_plan_handles_service_errors(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = DietPlanningAgent(db=db_session, context={})
         agent._current_user_id = test_user.id
@@ -858,3 +927,5 @@ async def test_modify_meal_plan_handles_service_errors(
             assert "error" in result
             assert result["error"] == "modification_failed"
             assert "Failed to modify" in result["message"]
+
+

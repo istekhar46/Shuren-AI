@@ -1,8 +1,8 @@
 """
 Scheduling Agent for onboarding.
 
-This agent handles steps 8-9 of the onboarding process, setting up workout
-schedules, meal timing, and hydration reminder preferences.
+This agent handles step 4 of the onboarding process, setting up hydration
+reminders and collecting supplement preferences (informational only).
 """
 
 import logging
@@ -23,15 +23,17 @@ logger = logging.getLogger(__name__)
 
 class SchedulingAgent(BaseOnboardingAgent):
     """
-    Agent for setting schedules and reminders (Steps 8-9).
+    Agent for setting hydration and supplement preferences (Step 4).
     
-    This agent helps users establish sustainable routines by:
-    - Setting workout days and preferred times based on workout plan
-    - Scheduling meal times based on meal plan frequency
+    This agent helps users establish healthy habits by:
     - Configuring hydration reminder preferences
+    - Collecting supplement interest and current usage (informational only)
     
-    The agent ensures schedules are realistic and fit the user's lifestyle,
-    promoting long-term adherence rather than unsustainable perfection.
+    Note: Workout and meal schedules are now collected in Steps 2 and 3
+    by WorkoutPlanningAgent and DietPlanningAgent respectively.
+    
+    The agent provides education about supplements but does NOT prescribe
+    or recommend specific supplements - that's outside our scope.
     """
     
     agent_type = "scheduling"
@@ -41,8 +43,8 @@ class SchedulingAgent(BaseOnboardingAgent):
         Get scheduling-specific tools.
         
         Returns:
-            List containing save_workout_schedule, save_meal_schedule, 
-            and save_hydration_preferences tools
+            List containing save_hydration_preferences and 
+            save_supplement_preferences tools
         """
         # Tools are created with db and user_id bound
         # They will be bound in process_message when user_id is available
@@ -53,15 +55,14 @@ class SchedulingAgent(BaseOnboardingAgent):
         Get system prompt for scheduling with context from previous agents.
         
         Returns:
-            System prompt including workout plan and meal plan context
+            System prompt for hydration and supplement preferences
         """
         # Extract workout plan context
-        workout_plan = self.context.agent_context.get("workout_planning", {}).get("proposed_plan", {})
+        workout_plan = self.context.agent_context.get("workout_planning", {}).get("plan", {})
         workout_frequency = workout_plan.get("frequency", "unknown")
-        workout_duration = workout_plan.get("duration_minutes", "unknown")
         
         # Extract meal plan context
-        meal_plan = self.context.agent_context.get("diet_planning", {}).get("proposed_plan", {})
+        meal_plan = self.context.agent_context.get("diet_planning", {}).get("plan", {})
         meal_frequency = meal_plan.get("meal_frequency", "unknown")
         daily_calories = meal_plan.get("daily_calories", "unknown")
         
@@ -70,90 +71,67 @@ class SchedulingAgent(BaseOnboardingAgent):
         
         # Get collected scheduling information
         collected_info = self.get_collected_info(self.context.user_id)
-        workout_days = collected_info.get("workout_days", "not provided")
-        workout_time = collected_info.get("workout_time", "not provided")
-        meal_times = collected_info.get("meal_times", "not provided")
         water_reminders = collected_info.get("water_reminder_frequency", "not provided")
+        water_target = collected_info.get("water_target_ml", "not provided")
+        supplement_interest = collected_info.get("supplement_interest", "not provided")
         
-        return f"""You are a Scheduling Agent helping users establish sustainable fitness routines.
+        return f"""You are a Scheduling Agent helping users establish healthy hydration habits and understand supplement basics.
 
 Context from previous steps:
 - Fitness Level: {fitness_level}
-- Workout Plan: {workout_frequency} days per week, {workout_duration} minutes per session
+- Workout Plan: {workout_frequency} days per week
 - Meal Plan: {meal_frequency} meals per day, {daily_calories} calories
+- Note: Workout and meal schedules were already collected in previous steps
 
-Already collected schedule preferences:
-- Workout Days: {workout_days}
-- Workout Time: {workout_time}
-- Meal Times: {meal_times}
+Already collected preferences:
 - Water Reminders: {water_reminders}
+- Water Target: {water_target}
+- Supplement Interest: {supplement_interest}
 
 IMPORTANT INSTRUCTIONS:
-1. Review the "Already collected schedule preferences" above
-2. ONLY ask for information that shows "not provided"
-3. NEVER ask for information that has already been collected
-4. Once all schedule info is collected, save the schedules
+1. FIRST: Review the conversation history carefully before asking any questions
+2. DO NOT ask questions that the user has already answered in previous messages
+3. Review the "Already collected preferences" above
+4. ONLY ask for information that shows "not provided" AND hasn't been mentioned in conversation
+5. Build on information already provided rather than repeating questions
+6. Once all info is collected, save the preferences
 
-Your role:
-- Ask ONLY for missing schedule preferences
-- Set up workout schedule (days and times)
-- Set up meal schedule (meal times)
-- Set up hydration reminders
-- Ensure schedules are realistic and sustainable
-
-Guidelines:
-- Be concise - ask 1-2 questions at a time for missing information only
-- Consider their lifestyle and commitments
-- Make schedules practical and achievable
-- Once all info is collected, save the schedules
-- Meal Plan: {meal_frequency} meals per day, {daily_calories} calories daily
-
-Your role:
-1. Set up workout schedule - Ask about preferred workout days and times
-2. Plan meal timing - Ask about preferred times for each of the {meal_frequency} meals
-3. Configure hydration reminders - Ask about water intake goals and reminder frequency
-
-Guidelines for Workout Schedule:
-- Ask which {workout_frequency} days of the week they prefer to workout
-- Ask what time of day works best for each workout day
-- Consider their work schedule, family commitments, and energy levels
-- Suggest morning workouts for consistency, but be flexible
-- Ensure rest days are distributed throughout the week
-- When you have all {workout_frequency} days and times, call save_workout_schedule tool
-
-Guidelines for Meal Timing:
-- Ask about preferred times for their {meal_frequency} meals
-- Ensure meals are spaced at least 2 hours apart for proper digestion
-- Consider their work schedule and workout times
-- Suggest pre-workout and post-workout meal timing for optimal nutrition
-- Meals should be in chronological order throughout the day
-- When you have all {meal_frequency} meal times, call save_meal_schedule tool
+Your role (Step 4 - Final Step):
+1. Configure hydration reminders - Ask about water intake goals and reminder frequency
+2. Collect supplement information - Ask if interested in learning about supplements and what they currently take (informational only)
 
 Guidelines for Hydration:
-- Ask about their daily water intake goal (suggest 2-3 liters based on activity)
+- Ask about their daily water intake goal (suggest 2-3 liters based on activity level)
 - Ask how often they want reminders (every 1-4 hours)
 - Explain importance of hydration for fitness and recovery
 - Suggest more frequent reminders on workout days
 - When you have frequency and target, call save_hydration_preferences tool
 
+Guidelines for Supplements:
+- Ask if they're interested in learning about supplements for their fitness goals
+- Ask what supplements they currently take (if any)
+- Emphasize this is INFORMATIONAL ONLY - we don't prescribe or recommend specific supplements
+- Explain common supplements (protein, creatine, etc.) but don't make recommendations
+- When you have their interest level and current supplements, call save_supplement_preferences tool
+- This tool will mark step_4_complete=True and complete onboarding
+
 Conversation Flow:
-1. Start by explaining you'll help set up their daily schedule
-2. Begin with workout schedule (days and times)
-3. Move to meal timing once workout schedule is saved
-4. Finish with hydration preferences once meal schedule is saved
-5. After all three are saved, confirm completion and let them know they're ready to complete onboarding
+1. Start by explaining this is the final step - setting up hydration and supplement preferences
+2. Begin with hydration preferences (target and reminder frequency)
+3. Move to supplement information once hydration is saved
+4. After both are saved, confirm onboarding is complete and they're ready to start their fitness journey
 
 Tone:
-- Practical and understanding
-- Flexible and adaptable to their lifestyle
-- Supportive of their constraints
-- Encouraging about building sustainable habits
-- Emphasize that schedules can be adjusted later as life happens
+- Practical and educational
+- Supportive and encouraging
+- Clear that supplement info is educational, not prescriptive
+- Celebratory when completing onboarding
 
 Important:
-- Call the save tools when you have complete information
-- Don't proceed to next topic until current schedule is saved
-- After all three schedules are saved, the system will automatically advance to completion"""
+- Call save_hydration_preferences when you have complete hydration info
+- Call save_supplement_preferences when you have supplement info (this completes onboarding)
+- After save_supplement_preferences is called, congratulate them on completing onboarding
+- Do NOT ask about workout or meal schedules - those were collected in previous steps"""
     
     async def process_message(
         self,
@@ -229,16 +207,17 @@ Important:
         """
         Check if scheduling step is complete.
         
-        Scheduling is complete when all three schedules are saved:
-        - workout_schedule
-        - meal_schedule
-        - hydration_preferences
+        Scheduling is complete when both preferences are saved:
+        - hydration (hydration preferences)
+        - supplements (supplement preferences)
+        
+        Note: step_4_complete flag is set by save_supplement_preferences tool.
         
         Args:
             user_id: UUID of the user
             
         Returns:
-            True if all three schedules are saved in agent_context
+            True if both hydration and supplements are saved in agent_context
         """
         stmt = select(OnboardingState).where(
             OnboardingState.user_id == user_id
@@ -246,17 +225,11 @@ Important:
         result = await self.db.execute(stmt)
         state = result.scalars().first()
         
-        if not state or not state.agent_context:
+        if not state:
             return False
         
-        scheduling_context = state.agent_context.get("scheduling", {})
-        
-        # Check if all three schedules are present
-        has_workout = "workout_schedule" in scheduling_context
-        has_meals = "meal_schedule" in scheduling_context
-        has_hydration = "hydration_preferences" in scheduling_context
-        
-        return has_workout and has_meals and has_hydration
+        # Check step_4_complete flag (set by save_supplement_preferences)
+        return state.step_4_complete or False
     
     async def stream_response(self, message: str, conversation_history: list = None):
         """
@@ -295,15 +268,15 @@ Important:
         
         # Define required fields for scheduling
         required_fields = {
-            "workout_days": "list of preferred workout days (e.g., ['Monday', 'Wednesday', 'Friday'])",
-            "workout_time": "preferred workout time (e.g., 'morning', 'afternoon', 'evening', or specific time like '6:00 AM')",
-            "meal_times": "list of preferred meal times (e.g., ['7:00 AM', '12:00 PM', '6:00 PM'])",
-            "water_reminder_frequency": "how often to remind about water (e.g., 'hourly', 'every 2 hours')"
+            "water_reminder_frequency": "how often to remind about water (e.g., 'hourly', 'every 2 hours')",
+            "water_target_ml": "daily water intake goal in milliliters (e.g., 2000, 3000)",
+            "supplement_interest": "whether interested in learning about supplements (yes/no)",
+            "current_supplements": "list of supplements currently taking (optional)"
         }
         
         # Extract info from conversation if not already collected
-        if not collected_info or "workout_schedule" not in collected_info:
-            logger.info(f"Extracting schedule preferences from conversation for user {self.context.user_id}")
+        if not collected_info or "hydration" not in collected_info:
+            logger.info(f"Extracting hydration and supplement preferences from conversation for user {self.context.user_id}")
             extracted = await self.extract_info_from_conversation(
                 conversation_history or [],
                 required_fields
@@ -315,7 +288,7 @@ Important:
             # Save extracted info to context immediately
             if any(v is not None for v in extracted.values()):
                 await self.save_context(UUID(self.context.user_id), collected_info)
-                logger.info(f"Saved extracted schedule preferences: {extracted}")
+                logger.info(f"Saved extracted hydration and supplement preferences: {extracted}")
         
         logger.info(
             f"Scheduling state check",

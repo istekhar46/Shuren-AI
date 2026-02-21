@@ -1,7 +1,7 @@
 """Meal template models for weekly meal planning with dish assignments."""
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.db.base import BaseModel
@@ -28,6 +28,14 @@ class MealTemplate(BaseModel):
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Plan details (from onboarding)
+    plan_name = Column(String(255), nullable=True)
+    daily_calorie_target = Column(Integer, nullable=True)
+    protein_grams = Column(Numeric(6, 2), nullable=True)
+    carbs_grams = Column(Numeric(6, 2), nullable=True)
+    fats_grams = Column(Numeric(6, 2), nullable=True)
+    weekly_template = Column(JSONB, nullable=True)
     
     # Generation metadata
     generated_by = Column(String(50), default='system', nullable=False)

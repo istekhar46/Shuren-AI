@@ -95,8 +95,7 @@ async def register(
     onboarding_state = OnboardingState(
         user_id=new_user.id,
         current_step=1,
-        is_complete=False,
-        step_data={}
+        is_complete=False
     )
     
     db.add(onboarding_state)

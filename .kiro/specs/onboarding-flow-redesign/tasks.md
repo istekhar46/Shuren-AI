@@ -21,41 +21,56 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ## Phase 1: Foundation (Days 1-2)
 
-### 1. Database Schema Updates
+### 1. Database Schema Updates (Fresh Start)
 
-- [ ] 1.1 Create Alembic migration script
-  - Add step completion flags to onboarding_states (step_1_complete through step_4_complete)
-  - Modify current_step default to 1
-  - Drop step_data column from onboarding_states
-  - Add columns to meal_templates (plan_name, calorie targets, macros, weekly_template JSONB)
-  - Clear existing onboarding_states data
+- [x] 1.1 Reset database and migration history
+  - Run `poetry run python scripts/reset_db.py` to drop all tables
+  - Delete all migration files in `backend/alembic/versions/`
+  - Keep only `__init__.py` in versions directory
   - **Acceptance Criteria:**
-    - Migration script runs without errors
-    - All new columns created with correct types
-    - Existing data preserved in meal_templates
-    - onboarding_states table cleared
+    - All tables dropped from database
+    - All migration files deleted
+    - Database is clean slate
 
-- [ ] 1.2 Run migration in development environment
-  - Execute migration using `poetry run alembic upgrade head`
-  - Verify schema changes in database
-  - Test rollback with `poetry run alembic downgrade -1`
+- [x] 1.2 Update SQLAlchemy models for new schema
+  - Update OnboardingState model:
+    - Add step_1_complete through step_4_complete (Boolean, default False)
+    - Set current_step default to 1
+    - Remove step_data column if exists
+    - Keep agent_context, conversation_history, agent_history (JSONB)
+  - Update MealTemplate model:
+    - Add plan_name (String(255), nullable=True)
+    - Add daily_calorie_target (Integer, nullable=True)
+    - Add protein_grams (Numeric(6,2), nullable=True)
+    - Add carbs_grams (Numeric(6,2), nullable=True)
+    - Add fats_grams (Numeric(6,2), nullable=True)
+    - Add weekly_template (JSONB, nullable=True)
+  - **Acceptance Criteria:**
+    - Models updated with new columns
+    - Type hints correct
+    - No linting errors
+
+- [x] 1.3 Create initial migration with complete schema
+  - Run `poetry run alembic revision --autogenerate -m "initial schema with 4-step onboarding"`
+  - Review generated migration file
+  - Verify all tables and columns included
+  - **Acceptance Criteria:**
+    - Migration file created
+    - All tables defined
+    - New columns included in onboarding_states and meal_templates
+
+- [x] 1.4 Apply migration to development database
+  - Run `poetry run alembic upgrade head`
+  - Verify all tables created
+  - Run `poetry run python scripts/check_db.py` to verify
   - **Acceptance Criteria:**
     - Migration applies successfully
-    - Schema matches design document
-    - Rollback works correctly
-
-- [ ] 1.3 Update SQLAlchemy models
-  - Update OnboardingState model with new columns
-  - Update MealTemplate model with new columns
-  - Add type hints for JSONB fields
-  - **Acceptance Criteria:**
-    - Models match database schema
-    - Type hints are correct
-    - No linting errors
+    - All tables exist in database
+    - Schema matches models
 
 ### 2. Agent Orchestrator Updates
 
-- [ ] 2.1 Update step-to-agent mapping
+- [x] 2.1 Update step-to-agent mapping
   - Modify `_step_to_agent()` method to map 4 steps instead of 9
   - Update step validation (1-4 instead of 1-9)
   - **Acceptance Criteria:**
@@ -65,7 +80,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Step 4 → SCHEDULING
     - Invalid steps raise ValueError
 
-- [ ] 2.2 Remove GoalSettingAgent from orchestrator
+- [x] 2.2 Remove GoalSettingAgent from orchestrator
   - Remove GoalSettingAgent from agent_classes dict
   - Remove GOAL_SETTING from OnboardingAgentType enum
   - Update imports
@@ -74,7 +89,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - No references to GOAL_SETTING type
     - Code compiles without errors
 
-- [ ] 2.3 Update agent descriptions
+- [x] 2.3 Update agent descriptions
   - Update agent_descriptions dict in `/onboarding/current-agent` endpoint
   - Update for 4-step flow
   - **Acceptance Criteria:**
@@ -84,7 +99,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 3. Update Pydantic Schemas
 
-- [ ] 3.1 Update OnboardingStateResponse schema
+- [x] 3.1 Update OnboardingStateResponse schema
   - Add step_1_complete through step_4_complete fields
   - Remove step_data field
   - Update documentation
@@ -93,7 +108,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - All fields have correct types
     - Documentation is clear
 
-- [ ] 3.2 Update OnboardingProgressResponse schema
+- [x] 3.2 Update OnboardingProgressResponse schema
   - Update total_states to 4
   - Update state metadata for 4 steps
   - **Acceptance Criteria:**
@@ -106,7 +121,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 4. FitnessAssessmentAgent (Step 1)
 
-- [ ] 4.1 Merge goal-setting functionality
+- [x] 4.1 Merge goal-setting functionality
   - Update system prompt to include goal collection
   - Add goal-related questions to conversation flow
   - **Acceptance Criteria:**
@@ -114,7 +129,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Conversation feels natural
     - All required data collected
 
-- [ ] 4.2 Update save_fitness_assessment tool
+- [x] 4.2 Update save_fitness_assessment tool
   - Extend to save goals (primary_goal, secondary_goal, goal_priority)
   - Validate goal values
   - Save to agent_context["fitness_assessment"]
@@ -126,7 +141,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Database updated properly
     - Step advances to 2
 
-- [ ] 4.3 Write unit tests for FitnessAssessmentAgent
+- [x] 4.3 Write unit tests for FitnessAssessmentAgent
   - Test save_fitness_assessment tool
   - Test validation logic
   - Test step completion
@@ -136,14 +151,14 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 5. WorkoutPlanningAgent (Step 2)
 
-- [ ] 5.1 Integrate WorkoutPlanGenerator service
+- [x] 5.1 Integrate WorkoutPlanGenerator service
   - Import WorkoutPlanGenerator in agent
   - Initialize in __init__ method
   - **Acceptance Criteria:**
     - Service imported correctly
     - No circular dependencies
 
-- [ ] 5.2 Implement generate_workout_plan tool
+- [x] 5.2 Implement generate_workout_plan tool
   - Call WorkoutPlanGenerator.generate_plan()
   - Pass fitness data from step 1
   - Return plan as dict
@@ -152,7 +167,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Plans include all required fields
     - Plans respect constraints
 
-- [ ] 5.3 Implement modify_workout_plan tool
+- [x] 5.3 Implement modify_workout_plan tool
   - Call WorkoutPlanGenerator.modify_plan()
   - Handle modification requests
   - Return modified plan
@@ -161,7 +176,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Modifications applied as requested
     - Plan structure remains valid
 
-- [ ] 5.4 Implement save_workout_plan tool
+- [x] 5.4 Implement save_workout_plan tool
   - Validate plan structure
   - Collect workout schedule (days and times)
   - Save plan and schedule to agent_context["workout_planning"]
@@ -173,7 +188,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Database updated properly
     - Step advances to 3
 
-- [ ] 5.5 Update system prompt for plan approval workflow
+- [x] 5.5 Update system prompt for plan approval workflow
   - Add instructions for presenting plans
   - Add instructions for handling modifications
   - Add instructions for getting approval
@@ -183,7 +198,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Agent presents plans clearly
     - Agent handles modifications well
 
-- [ ] 5.6 Write unit tests for WorkoutPlanningAgent
+- [x] 5.6 Write unit tests for WorkoutPlanningAgent
   - Test generate_workout_plan tool
   - Test modify_workout_plan tool
   - Test save_workout_plan tool
@@ -194,14 +209,14 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 6. DietPlanningAgent (Step 3)
 
-- [ ] 6.1 Integrate MealPlanGenerator service
+- [x] 6.1 Integrate MealPlanGenerator service
   - Import MealPlanGenerator in agent
   - Initialize in __init__ method
   - **Acceptance Criteria:**
     - Service imported correctly
     - No circular dependencies
 
-- [ ] 6.2 Implement generate_meal_plan tool
+- [x] 6.2 Implement generate_meal_plan tool
   - Call MealPlanGenerator.generate_plan()
   - Pass fitness and workout data from previous steps
   - Return plan as dict
@@ -210,7 +225,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Plans include macros and sample meals
     - Plans respect dietary restrictions
 
-- [ ] 6.3 Implement modify_meal_plan tool
+- [x] 6.3 Implement modify_meal_plan tool
   - Call MealPlanGenerator.modify_plan()
   - Handle modification requests
   - Return modified plan
@@ -219,7 +234,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Modifications applied as requested
     - Plan structure remains valid
 
-- [ ] 6.4 Implement save_meal_plan tool
+- [x] 6.4 Implement save_meal_plan tool
   - Validate plan structure
   - Collect meal schedule (meal times)
   - Save plan and schedule to agent_context["diet_planning"]
@@ -231,7 +246,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Database updated properly
     - Step advances to 4
 
-- [ ] 6.5 Update system prompt for plan approval workflow
+- [x] 6.5 Update system prompt for plan approval workflow
   - Add instructions for presenting meal plans
   - Add instructions for handling modifications
   - Add instructions for getting approval
@@ -241,7 +256,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Agent presents plans clearly
     - Agent handles modifications well
 
-- [ ] 6.6 Write unit tests for DietPlanningAgent
+- [x] 6.6 Write unit tests for DietPlanningAgent
   - Test generate_meal_plan tool
   - Test modify_meal_plan tool
   - Test save_meal_plan tool
@@ -252,7 +267,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 7. SchedulingAgent (Step 4)
 
-- [ ] 7.1 Remove workout/meal schedule collection
+- [x] 7.1 Remove workout/meal schedule collection
   - Remove save_workout_schedule tool (moved to WorkoutPlanningAgent)
   - Remove save_meal_schedule tool (moved to DietPlanningAgent)
   - Update imports
@@ -261,14 +276,14 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - No broken references
     - Code compiles
 
-- [ ] 7.2 Keep save_hydration_preferences tool
+- [x] 7.2 Keep save_hydration_preferences tool
   - Verify tool works correctly
   - Update to save to agent_context["scheduling"]["hydration"]
   - **Acceptance Criteria:**
     - Tool saves hydration preferences
     - Data structure matches design
 
-- [ ] 7.3 Implement save_supplement_preferences tool
+- [x] 7.3 Implement save_supplement_preferences tool
   - Collect interest in supplements
   - Collect current supplements (optional)
   - Save to agent_context["scheduling"]["supplements"]
@@ -278,7 +293,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Step 4 marked complete
     - No step advancement (stays at 4)
 
-- [ ] 7.4 Update system prompt
+- [x] 7.4 Update system prompt
   - Remove workout/meal schedule instructions
   - Add supplement guidance instructions
   - Emphasize informational only (no prescriptions)
@@ -286,7 +301,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Prompt reflects new responsibilities
     - Agent provides education not prescriptions
 
-- [ ] 7.5 Write unit tests for SchedulingAgent
+- [x] 7.5 Write unit tests for SchedulingAgent
   - Test save_hydration_preferences tool
   - Test save_supplement_preferences tool
   - Test step completion
@@ -300,7 +315,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 8. API Endpoint Updates
 
-- [ ] 8.1 Update GET /onboarding/progress endpoint
+- [x] 8.1 Update GET /onboarding/progress endpoint
   - Update STATE_METADATA for 4 steps
   - Update total_states to 4
   - Update completion percentage calculation
@@ -309,14 +324,14 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Completion percentage accurate
     - State metadata correct
 
-- [ ] 8.2 Update GET /onboarding/state endpoint
+- [x] 8.2 Update GET /onboarding/state endpoint
   - Return step completion flags
   - Remove step_data from response
   - **Acceptance Criteria:**
     - Response includes step_1_complete through step_4_complete
     - No step_data in response
 
-- [ ] 8.3 Keep POST /onboarding/chat endpoint
+- [x] 8.3 Keep POST /onboarding/chat endpoint
   - Verify works with updated orchestrator
   - Test with all 4 agents
   - **Acceptance Criteria:**
@@ -324,14 +339,14 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Agent routing correct
     - Conversation history saved
 
-- [ ] 8.4 Keep GET /onboarding/current-agent endpoint
+- [x] 8.4 Keep GET /onboarding/current-agent endpoint
   - Update agent descriptions
   - Verify works with 4-step flow
   - **Acceptance Criteria:**
     - Returns correct agent for each step
     - Descriptions match new flow
 
-- [ ] 8.5 Keep POST /onboarding/complete endpoint
+- [x] 8.5 Keep POST /onboarding/complete endpoint
   - Verify works with new agent_context structure
   - Test profile creation from 4-step data
   - **Acceptance Criteria:**
@@ -339,7 +354,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - All related entities created
     - Profile locked correctly
 
-- [ ] 8.6 Remove POST /onboarding/step endpoint
+- [x] 8.6 Remove POST /onboarding/step endpoint
   - Delete endpoint from router
   - Remove from API documentation
   - **Acceptance Criteria:**
@@ -349,7 +364,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 9. ProfileCreationService Integration
 
-- [ ] 9.1 Verify ProfileCreationService reads new agent_context structure
+- [x] 9.1 Verify ProfileCreationService reads new agent_context structure
   - Test with fitness_assessment data
   - Test with workout_planning data (plan + schedule)
   - Test with diet_planning data (plan + schedule)
@@ -358,21 +373,21 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Service reads all data correctly
     - No errors with new structure
 
-- [ ] 9.2 Update profile creation to use workout_planning.plan
+- [x] 9.2 Update profile creation to use workout_planning.plan
   - Read plan from agent_context["workout_planning"]["plan"]
   - Create WorkoutPlan entity with plan_data JSONB
   - **Acceptance Criteria:**
     - WorkoutPlan created correctly
     - plan_data populated from agent_context
 
-- [ ] 9.3 Update profile creation to use diet_planning.plan
+- [x] 9.3 Update profile creation to use diet_planning.plan
   - Read plan from agent_context["diet_planning"]["plan"]
   - Create MealPlanTemplate entity with weekly_template JSONB
   - **Acceptance Criteria:**
     - MealPlanTemplate created correctly
     - weekly_template populated from agent_context
 
-- [ ] 9.4 Update schedule creation
+- [x] 9.4 Update schedule creation
   - Read workout schedule from agent_context["workout_planning"]["schedule"]
   - Read meal schedule from agent_context["diet_planning"]["schedule"]
   - Create WorkoutSchedule and MealSchedule entities
@@ -382,7 +397,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 
 ### 10. Integration Testing
 
-- [ ] 10.1 Write end-to-end onboarding flow test
+- [x] 10.1 Write end-to-end onboarding flow test
   - Test complete flow from step 1 to completion
   - Verify all data saved correctly
   - Verify profile created with all entities
@@ -391,7 +406,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - All steps work together
     - Profile creation works
 
-- [ ] 10.2 Test agent handoffs
+- [x] 10.2 Test agent handoffs
   - Test transition from step 1 to 2
   - Test transition from step 2 to 3
   - Test transition from step 3 to 4
@@ -401,7 +416,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Context available to next agent
     - No data loss
 
-- [ ] 10.3 Test plan generation and modification
+- [x] 10.3 Test plan generation and modification
   - Test workout plan generation
   - Test workout plan modification
   - Test meal plan generation
@@ -411,7 +426,7 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Modifications work correctly
     - Plans remain valid after modifications
 
-- [ ] 10.4 Test error handling
+- [x] 10.4 Test error handling
   - Test with invalid inputs
   - Test with missing data
   - Test with LLM failures
@@ -550,11 +565,13 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
 ### 15. Staging Deployment
 
 - [ ] 15.1 Deploy to staging environment
-  - Run database migration
+  - Reset staging database: `poetry run python scripts/reset_db.py`
+  - Run migration: `poetry run alembic upgrade head`
   - Deploy updated code
   - Verify all services running
   - **Acceptance Criteria:**
-    - Migration successful
+    - Database reset successful
+    - Migration creates all tables
     - Code deployed without errors
     - All health checks pass
 
@@ -585,12 +602,16 @@ This task list breaks down the implementation of the 4-step onboarding flow rede
     - Can toggle without deployment
 
 - [ ] 16.2 Deploy to production
-  - Run database migration during maintenance window
+  - **IMPORTANT**: Coordinate with team for production database reset
+  - Backup existing data if needed
+  - Reset production database during maintenance window
+  - Run migration: `poetry run alembic upgrade head`
   - Deploy updated code
   - Verify all services running
   - **Acceptance Criteria:**
-    - Migration successful
-    - Zero downtime deployment
+    - Database reset successful
+    - Migration creates all tables
+    - Zero downtime deployment (use maintenance window)
     - All health checks pass
 
 - [ ] 16.3 Enable for 10% of users

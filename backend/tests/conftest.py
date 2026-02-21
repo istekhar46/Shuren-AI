@@ -192,9 +192,12 @@ async def test_user(db_session: AsyncSession) -> User:
     onboarding_state = OnboardingState(
         id=uuid4(),
         user_id=user.id,
-        current_step=0,
+        current_step=1,
         is_complete=False,
-        step_data={},
+        step_1_complete=False,
+        step_2_complete=False,
+        step_3_complete=False,
+        step_4_complete=False,
         current_agent=None,
         agent_context={},
         conversation_history=[],
@@ -236,9 +239,12 @@ async def oauth_user(db_session: AsyncSession) -> User:
     onboarding_state = OnboardingState(
         id=uuid4(),
         user_id=user.id,
-        current_step=0,
+        current_step=1,
         is_complete=False,
-        step_data={},
+        step_1_complete=False,
+        step_2_complete=False,
+        step_3_complete=False,
+        step_4_complete=False,
         current_agent=None,
         agent_context={},
         conversation_history=[],
@@ -478,9 +484,13 @@ async def completed_onboarding_user(
     onboarding_state = OnboardingState(
         id=uuid4(),
         user_id=user.id,
-        current_step=11,
+        current_step=4,
         is_complete=True,
-        step_data=sample_onboarding_data,
+        step_1_complete=True,
+        step_2_complete=True,
+        step_3_complete=True,
+        step_4_complete=True,
+        agent_context=sample_onboarding_data,
         created_at=datetime.now(timezone.utc)
     )
     db_session.add(onboarding_state)

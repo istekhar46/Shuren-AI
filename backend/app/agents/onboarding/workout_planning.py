@@ -110,7 +110,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             try:
                 # Get context from previous agents
                 fitness_level = agent_instance.context.get("fitness_assessment", {}).get("fitness_level", "beginner")
-                primary_goal = agent_instance.context.get("goal_setting", {}).get("primary_goal", "general_fitness")
+                primary_goal = agent_instance.context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
                 limitations = agent_instance.context.get("fitness_assessment", {}).get("limitations", [])
                 
                 logger.info(
@@ -150,19 +150,27 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         @tool
         async def save_workout_plan(
             plan_data: dict,
+            workout_days: List[str],
+            workout_times: List[str],
             user_approved: bool
         ) -> dict:
             """
-            Save approved workout plan to agent context.
+            Save approved workout plan and schedule to agent context.
             
-            ONLY call this tool when user explicitly approves the plan by saying:
+            ONLY call this tool when user explicitly approves the plan AND provides schedule by saying:
             - "Yes", "Looks good", "Perfect", "I approve", "Let's do it"
             - "Sounds great", "That works", "I'm happy with this"
             
-            Do NOT call this tool unless user has clearly approved.
+            You must also collect:
+            - Which days they want to workout (e.g., ["Monday", "Wednesday", "Friday"])
+            - What times they prefer (e.g., ["06:00", "06:00", "18:00"])
+            
+            Do NOT call this tool unless user has clearly approved AND provided schedule.
             
             Args:
                 plan_data: The workout plan dictionary to save
+                workout_days: List of days (e.g., ["Monday", "Wednesday", "Friday"])
+                workout_times: List of times in HH:MM format (e.g., ["06:00", "18:00"])
                 user_approved: Must be True to save (safety check)
                 
             Returns:
@@ -175,29 +183,49 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                     "message": "Cannot save plan without user approval"
                 }
             
-            # Prepare data with metadata
+            # Validate schedule
+            if len(workout_days) != len(workout_times):
+                return {
+                    "status": "error",
+                    "message": "Workout days and times must have the same length"
+                }
+            
+            # Prepare data with metadata and schedule
             workout_data = {
-                "preferences": {
-                    "location": plan_data.get("location"),
-                    "frequency": plan_data.get("frequency"),
-                    "duration_minutes": plan_data.get("duration_minutes"),
-                    "equipment": plan_data.get("equipment", [])
+                "plan": plan_data,
+                "schedule": {
+                    "days": workout_days,
+                    "times": workout_times
                 },
-                "proposed_plan": plan_data,
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat()
             }
             
-            # Save to context
+            # Save to context and mark step 2 complete, advance to step 3
             try:
-                await agent_instance.save_context(
-                    agent_instance._current_user_id,
-                    workout_data
+                from sqlalchemy import update
+                from app.models.onboarding import OnboardingState
+                
+                # Update onboarding state with new data
+                stmt = (
+                    update(OnboardingState)
+                    .where(OnboardingState.user_id == agent_instance._current_user_id)
+                    .values(
+                        agent_context=OnboardingState.agent_context.op('||')(
+                            {"workout_planning": workout_data}
+                        ),
+                        step_2_complete=True,
+                        current_step=3,
+                        current_agent="diet_planning"
+                    )
                 )
-                logger.info(f"Workout plan saved successfully for user {agent_instance._current_user_id}")
+                await agent_instance.db.execute(stmt)
+                await agent_instance.db.commit()
+                
+                logger.info(f"Workout plan and schedule saved successfully for user {agent_instance._current_user_id}")
                 return {
                     "status": "success",
-                    "message": "Workout plan saved successfully"
+                    "message": "Workout plan and schedule saved successfully. Moving to diet planning."
                 }
             except Exception as e:
                 logger.error(
@@ -473,9 +501,9 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         Returns:
             System prompt including fitness level, primary goal, and limitations
         """
-        # Get context from previous agents
+        # Get context from previous agents (updated for 4-step flow)
         fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
-        primary_goal = self.context.agent_context.get("goal_setting", {}).get("primary_goal", "unknown")
+        primary_goal = self.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "unknown")
         limitations = self.context.agent_context.get("fitness_assessment", {}).get("limitations", [])
         
         # Debug logging
@@ -512,19 +540,33 @@ Already collected workout preferences:
 - Duration: {duration} minutes/session
 
 IMPORTANT INSTRUCTIONS:
-1. Review the "Already collected workout preferences" above
-2. ONLY ask for information that shows "not provided"
-3. NEVER ask for information that has already been collected
-4. Once ALL preferences are collected, call generate_workout_plan tool
-5. After presenting a plan, wait for user approval before calling save_workout_plan
+1. FIRST: Review the conversation history carefully before asking any questions
+2. DO NOT ask questions that the user has already answered in previous messages
+3. Review the "Already collected workout preferences" above
+4. ONLY ask for information that shows "not provided" AND hasn't been mentioned in conversation
+5. Build on information already provided rather than repeating questions
+6. Once ALL preferences are collected, call generate_workout_plan tool
+7. After presenting a plan, wait for user approval
+8. After approval, collect workout schedule (days and times)
+9. Call save_workout_plan with plan, schedule, and user_approved=True
 
-Your role:
+Your role (Step 2 - Workout Planning):
 - Ask ONLY for missing workout preferences
-- Generate a workout plan when all preferences are available
+- Generate a complete workout plan when all preferences are available
 - Present the plan with clear explanation
-- Detect approval intent from user responses
 - Handle modification requests
-- Save plan ONLY after user explicitly approves
+- Get user approval
+- Collect workout schedule (which days and what times)
+- Save plan with schedule
+
+Workflow:
+1. Collect missing preferences (location, equipment, frequency, duration)
+2. Generate plan using generate_workout_plan tool
+3. Present plan clearly with explanation
+4. If user requests changes, use modify_workout_plan tool
+5. Get explicit approval from user
+6. Ask for workout schedule: "Which days work best for you?" and "What times?"
+7. Call save_workout_plan with plan_data, workout_days, workout_times, and user_approved=True
 
 Guidelines:
 - Be concise - ask 1-2 questions at a time for missing information only
@@ -536,10 +578,17 @@ Guidelines:
 - After presenting, explicitly ask: "Does this workout plan work for you?"
 
 Approval Detection:
-- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Call save_workout_plan with user_approved=True
-- User says "sounds great", "that works", "I'm happy with this" → Call save_workout_plan with user_approved=True
+- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Ask for schedule
+- User says "sounds great", "that works", "I'm happy with this" → Ask for schedule
 - User asks questions → Answer questions, don't save yet
 - User requests changes → Call modify_workout_plan with requested changes
+
+Schedule Collection:
+- After approval, ask: "Which days of the week work best for you to workout?"
+- Then ask: "What times work best for each day?" (in HH:MM format like "06:00" or "18:00")
+- Example: If they say Monday/Wednesday/Friday at 6am, you'd save:
+  - workout_days: ["Monday", "Wednesday", "Friday"]
+  - workout_times: ["06:00", "06:00", "06:00"]
 
 Modification Handling:
 - Extract what user wants to change (frequency, duration, exercises, split)
@@ -558,7 +607,7 @@ Goal-Specific Guidance:
 - General Fitness: Balanced approach with strength, cardio, and flexibility
 
 After Saving:
-- Confirm the plan is saved
+- Confirm the plan and schedule are saved
 - Let user know we'll move to nutrition planning next
 - Briefly preview what's coming: "Now let's create your meal plan to support these workouts"
 """

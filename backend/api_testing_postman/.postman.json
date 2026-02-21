@@ -278,10 +278,10 @@
             "url": "{{api_base}}/auth/me",
             "description": "Tests 401 error when using expired JWT token",
             "prerequest_script": [
-              "// Set an expired token (this is a mock expired token)",
+              "// Set an expired token (this is a mock expired token for testing)",
               "pm.request.headers.upsert({",
               "    key: 'Authorization',",
-              "    value: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.expired'",
+              "    value: 'Bearer MOCK_EXPIRED_TOKEN_FOR_TESTING'",
               "});"
             ],
             "test_script": [

@@ -52,7 +52,7 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
         
         # Define Pydantic schema for tool arguments
         class FitnessAssessmentInput(BaseModel):
-            """Input schema for fitness assessment data."""
+            """Input schema for fitness assessment and goal data."""
             fitness_level: str = Field(
                 description="User's fitness level: beginner, intermediate, or advanced"
             )
@@ -62,25 +62,44 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             limitations: List[str] = Field(
                 description="List of physical limitations (equipment, injuries - non-medical)"
             )
+            primary_goal: str = Field(
+                description="Primary fitness goal: fat_loss, muscle_gain, or general_fitness"
+            )
+            secondary_goal: str | None = Field(
+                default=None,
+                description="Optional secondary fitness goal: fat_loss, muscle_gain, or general_fitness"
+            )
+            goal_priority: str | None = Field(
+                default=None,
+                description="Optional goal priority if both primary and secondary goals exist"
+            )
         
         @tool(args_schema=FitnessAssessmentInput)
         async def save_fitness_assessment(
             fitness_level: str,
             experience_details: dict,
-            limitations: List[str]
+            limitations: List[str],
+            primary_goal: str,
+            secondary_goal: str | None = None,
+            goal_priority: str | None = None
         ) -> dict:
             """
-            Save fitness assessment data to agent context.
+            Save fitness assessment and goal data to agent context.
             
             Call this tool when you have collected:
             - Fitness level (beginner/intermediate/advanced)
             - Exercise experience details (frequency, duration, types)
             - Physical limitations (equipment, injuries - non-medical)
+            - Primary fitness goal (fat_loss/muscle_gain/general_fitness)
+            - Optional: Secondary goal and goal priority
             
             Args:
                 fitness_level: User's fitness level (beginner/intermediate/advanced)
                 experience_details: Dict with keys: frequency, duration, types
                 limitations: List of limitation strings
+                primary_goal: Primary fitness goal (fat_loss/muscle_gain/general_fitness)
+                secondary_goal: Optional secondary goal
+                goal_priority: Optional priority description
                 
             Returns:
                 Dict with status and message
@@ -95,23 +114,63 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
                     "message": f"Invalid fitness_level. Must be one of: {valid_levels}"
                 }
             
+            # Validate primary_goal
+            valid_goals = ["fat_loss", "muscle_gain", "general_fitness"]
+            primary_goal_lower = primary_goal.lower().strip().replace(" ", "_")
+            
+            if primary_goal_lower not in valid_goals:
+                return {
+                    "status": "error",
+                    "message": f"Invalid primary_goal. Must be one of: {valid_goals}"
+                }
+            
+            # Validate secondary_goal if provided
+            if secondary_goal:
+                secondary_goal_lower = secondary_goal.lower().strip().replace(" ", "_")
+                if secondary_goal_lower not in valid_goals:
+                    return {
+                        "status": "error",
+                        "message": f"Invalid secondary_goal. Must be one of: {valid_goals}"
+                    }
+            else:
+                secondary_goal_lower = None
+            
             # Prepare data
             assessment_data = {
                 "fitness_level": fitness_level_lower,
                 "experience_details": experience_details,
                 "limitations": [lim.strip() for lim in limitations],
+                "primary_goal": primary_goal_lower,
+                "secondary_goal": secondary_goal_lower,
+                "goal_priority": goal_priority,
                 "completed_at": datetime.utcnow().isoformat()
             }
             
-            # Save to context
+            # Save to context and mark step 1 complete, advance to step 2
             try:
-                await agent_instance.save_context(
-                    agent_instance._current_user_id,
-                    assessment_data
+                from sqlalchemy import update
+                from app.models.onboarding import OnboardingState
+                from sqlalchemy.dialects.postgresql import insert
+                
+                # Update onboarding state with new data
+                stmt = (
+                    update(OnboardingState)
+                    .where(OnboardingState.user_id == agent_instance._current_user_id)
+                    .values(
+                        agent_context=OnboardingState.agent_context.op('||')(
+                            {"fitness_assessment": assessment_data}
+                        ),
+                        step_1_complete=True,
+                        current_step=2,
+                        current_agent="workout_planning"
+                    )
                 )
+                await agent_instance.db.execute(stmt)
+                await agent_instance.db.commit()
+                
                 return {
                     "status": "success",
-                    "message": "Fitness assessment saved successfully"
+                    "message": "Fitness assessment and goals saved successfully. Moving to workout planning."
                 }
             except Exception as e:
                 logger.error(
@@ -289,38 +348,62 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
     
     def get_system_prompt(self) -> str:
         """
-        Get system prompt for fitness assessment.
+        Get system prompt for fitness assessment and goal setting.
         
         Defines the agent's role, behavior, and guidelines for conducting
-        fitness assessments in a conversational manner.
+        fitness assessments AND goal setting in a conversational manner.
         
         Returns:
             System prompt string for fitness assessment agent
         """
-        return """You are a Fitness Assessment Agent helping users determine their fitness level.
+        return """You are a Fitness Assessment Agent helping users determine their fitness level AND define their fitness goals.
 
-Your role:
+Your role (Step 1 - Fitness Assessment & Goal Setting):
 - Ask friendly questions about their exercise experience
 - Assess their fitness level (beginner/intermediate/advanced)
 - Identify any physical limitations (equipment, injuries - non-medical)
+- Help them define clear fitness goals
 - Be encouraging and non-judgmental
 
 Guidelines:
+- IMPORTANT: Review the conversation history carefully before asking questions
+- DO NOT ask questions that the user has already answered in previous messages
+- Build on information already provided rather than repeating questions
 - Keep questions conversational, ask 1-2 questions at a time
 - Don't overwhelm with too many questions at once
 - Never provide medical advice
 - If medical topics are mentioned, acknowledge but redirect to fitness questions
-- When you have collected fitness level, experience details, and limitations, call save_fitness_assessment tool
-- After saving successfully, let the user know we'll move to goal setting
+- Collect BOTH fitness assessment AND goals in this step
+- When you have collected fitness level, experience details, limitations, AND goals, call save_fitness_assessment tool
+- After saving successfully, let the user know we'll move to workout planning
 
 Fitness Level Definitions:
 - Beginner: Little to no exercise experience, or returning after long break
 - Intermediate: Regular exercise for 6+ months, comfortable with basic movements
 - Advanced: Consistent training for 2+ years, experienced with various exercises
 
+Goal Definitions:
+- Fat Loss: Reduce body fat while maintaining muscle mass
+- Muscle Gain: Build muscle mass and strength
+- General Fitness: Improve overall health, endurance, and well-being
+
+Information to Collect:
+1. Fitness Level (REQUIRED): beginner/intermediate/advanced
+2. Experience Details (REQUIRED): How long they've been training, frequency, types of exercise
+3. Limitations (REQUIRED): Equipment access, injuries, physical constraints
+4. Primary Goal (REQUIRED): fat_loss/muscle_gain/general_fitness
+5. Secondary Goal (OPTIONAL): Another goal if they have one
+6. Goal Priority (OPTIONAL): Which goal is more important if they have both
+
+Realistic Expectations by Fitness Level:
+- Beginner: Focus on building habits and foundational strength
+- Intermediate: Can pursue specific goals with structured programming
+- Advanced: Can handle aggressive goals with proper recovery
+
 When to call save_fitness_assessment:
 - User has clearly indicated their fitness level
 - You understand their exercise experience (frequency, duration, types)
 - You know their limitations (equipment, injuries, etc.)
+- User has stated their primary fitness goal
 - User confirms the information is correct or says they're ready to move on
 """

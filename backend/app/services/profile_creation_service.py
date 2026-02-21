@@ -193,7 +193,7 @@ class ProfileCreationService:
     
     def _extract_goal_data(self, agent_context: dict) -> dict:
         """
-        Extract goal setting data from agent_context.
+        Extract goal data from agent_context (now part of fitness_assessment).
         
         Args:
             agent_context: Complete agent_context dictionary
@@ -205,17 +205,18 @@ class ProfileCreationService:
         Raises:
             ValueError: If required goal data is missing
         """
-        goal_setting = agent_context.get("goal_setting", {})
+        # Goals are now collected in fitness_assessment (Step 1)
+        fitness_assessment = agent_context.get("fitness_assessment", {})
         
-        primary_goal = goal_setting.get("primary_goal")
+        primary_goal = fitness_assessment.get("primary_goal")
         if not primary_goal:
-            raise ValueError("Missing required field: goal_setting.primary_goal")
+            raise ValueError("Missing required field: fitness_assessment.primary_goal")
         
         return {
             "primary_goal": primary_goal,
-            "secondary_goal": goal_setting.get("secondary_goal"),
-            "target_weight_kg": goal_setting.get("target_weight_kg"),
-            "target_body_fat_percentage": goal_setting.get("target_body_fat_percentage")
+            "secondary_goal": fitness_assessment.get("secondary_goal"),
+            "target_weight_kg": fitness_assessment.get("target_weight_kg"),
+            "target_body_fat_percentage": fitness_assessment.get("target_body_fat_percentage")
         }
     
     def _extract_workout_data(self, agent_context: dict) -> dict:
@@ -233,26 +234,29 @@ class ProfileCreationService:
             ValueError: If required workout data is missing
         """
         workout_planning = agent_context.get("workout_planning", {})
-        proposed_plan = workout_planning.get("proposed_plan", {})
         
-        frequency = proposed_plan.get("frequency")
+        # In the new structure, the plan is stored directly in workout_planning
+        # Check for both old structure (proposed_plan) and new structure (plan)
+        plan_data = workout_planning.get("plan") or workout_planning.get("proposed_plan", {})
+        
+        frequency = plan_data.get("frequency") or plan_data.get("days_per_week")
         if not frequency:
-            raise ValueError("Missing required field: workout_planning.proposed_plan.frequency")
+            raise ValueError("Missing required field: workout_planning.plan.frequency or days_per_week")
         
-        duration_minutes = proposed_plan.get("duration_minutes")
+        duration_minutes = plan_data.get("duration_minutes") or plan_data.get("minutes_per_session")
         if not duration_minutes:
-            raise ValueError("Missing required field: workout_planning.proposed_plan.duration_minutes")
+            raise ValueError("Missing required field: workout_planning.plan.duration_minutes or minutes_per_session")
         
-        training_split = proposed_plan.get("training_split", [])
+        training_split = plan_data.get("training_split") or plan_data.get("days", [])
         if not training_split:
-            raise ValueError("Missing required field: workout_planning.proposed_plan.training_split")
+            raise ValueError("Missing required field: workout_planning.plan.training_split or days")
         
         return {
             "frequency": frequency,
             "duration_minutes": duration_minutes,
-            "duration_weeks": proposed_plan.get("duration_weeks", 12),
+            "duration_weeks": plan_data.get("duration_weeks", 12),
             "training_split": training_split,
-            "rationale": proposed_plan.get("rationale", "")
+            "rationale": plan_data.get("rationale", "")
         }
     
     def _extract_diet_data(self, agent_context: dict) -> dict:
@@ -269,43 +273,48 @@ class ProfileCreationService:
             ValueError: If required diet data is missing
         """
         diet_planning = agent_context.get("diet_planning", {})
-        preferences = diet_planning.get("preferences", {})
-        proposed_plan = diet_planning.get("proposed_plan", {})
         
-        # Extract dietary preferences
-        diet_type = preferences.get("diet_type")
+        # Extract dietary preferences (stored directly in diet_planning)
+        diet_type = diet_planning.get("diet_type")
         if not diet_type:
-            raise ValueError("Missing required field: diet_planning.preferences.diet_type")
+            raise ValueError("Missing required field: diet_planning.diet_type")
         
-        # Extract meal plan data
-        daily_calories = proposed_plan.get("daily_calories")
+        # Extract meal plan data (check both new structure "plan" and old structure "proposed_plan")
+        plan_data = diet_planning.get("plan") or diet_planning.get("proposed_plan", {})
+        
+        daily_calories = plan_data.get("daily_calories") or plan_data.get("daily_calorie_target")
         if not daily_calories:
-            raise ValueError("Missing required field: diet_planning.proposed_plan.daily_calories")
+            raise ValueError("Missing required field: diet_planning.plan.daily_calories")
         
-        protein_g = proposed_plan.get("protein_g")
-        carbs_g = proposed_plan.get("carbs_g")
-        fats_g = proposed_plan.get("fats_g")
+        protein_g = plan_data.get("protein_g") or plan_data.get("protein_grams")
+        carbs_g = plan_data.get("carbs_g") or plan_data.get("carbs_grams")
+        fats_g = plan_data.get("fats_g") or plan_data.get("fats_grams")
         
         if protein_g is None or carbs_g is None or fats_g is None:
-            raise ValueError("Missing required macronutrient data in diet_planning.proposed_plan")
+            raise ValueError("Missing required macronutrient data in diet_planning.plan")
         
         return {
             "diet_type": diet_type,
-            "allergies": preferences.get("allergies", []),
-            "intolerances": preferences.get("intolerances", []),
-            "dislikes": preferences.get("dislikes", []),
+            "allergies": diet_planning.get("allergies", []),
+            "intolerances": diet_planning.get("intolerances", []),
+            "dislikes": diet_planning.get("dislikes", []),
             "meal_plan": {
                 "daily_calories": daily_calories,
                 "protein_g": protein_g,
                 "carbs_g": carbs_g,
                 "fats_g": fats_g,
-                "meal_frequency": proposed_plan.get("meal_frequency", 3)
+                "meal_frequency": plan_data.get("meal_frequency", 3)
             }
         }
     
     def _extract_schedule_data(self, agent_context: dict) -> dict:
         """
         Extract scheduling data from agent_context.
+        
+        In the new 4-step flow:
+        - Workout schedule is collected in Step 2 (workout_planning)
+        - Meal schedule is collected in Step 3 (diet_planning)
+        - Hydration preferences are collected in Step 4 (scheduling)
         
         Args:
             agent_context: Complete agent_context dictionary
@@ -317,19 +326,32 @@ class ProfileCreationService:
         Raises:
             ValueError: If required schedule data is missing
         """
+        workout_planning = agent_context.get("workout_planning", {})
+        diet_planning = agent_context.get("diet_planning", {})
         scheduling = agent_context.get("scheduling", {})
         
-        workout_schedule = scheduling.get("workout_schedule")
+        # Workout schedule from Step 2
+        workout_schedule = workout_planning.get("schedule")
         if not workout_schedule:
-            raise ValueError("Missing required field: scheduling.workout_schedule")
+            raise ValueError("Missing required field: workout_planning.schedule")
         
-        meal_schedule = scheduling.get("meal_schedule")
+        # Meal schedule from Step 3
+        meal_schedule = diet_planning.get("schedule")
         if not meal_schedule:
-            raise ValueError("Missing required field: scheduling.meal_schedule")
+            raise ValueError("Missing required field: diet_planning.schedule")
         
-        hydration_preferences = scheduling.get("hydration_preferences")
-        if not hydration_preferences:
-            raise ValueError("Missing required field: scheduling.hydration_preferences")
+        # Hydration preferences from Step 4
+        # Check for both new structure (direct fields) and old structure (nested)
+        daily_water_target_ml = scheduling.get("daily_water_target_ml")
+        reminder_frequency_minutes = scheduling.get("reminder_frequency_minutes")
+        
+        if not daily_water_target_ml or not reminder_frequency_minutes:
+            raise ValueError("Missing required fields: scheduling.daily_water_target_ml or reminder_frequency_minutes")
+        
+        hydration_preferences = {
+            "target_ml": daily_water_target_ml,
+            "frequency_hours": reminder_frequency_minutes / 60
+        }
         
         return {
             "workout_schedule": workout_schedule,

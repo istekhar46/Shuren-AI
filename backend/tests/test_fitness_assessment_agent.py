@@ -222,11 +222,44 @@ async def test_save_fitness_assessment_tool_validates_fitness_level(
         result = await save_tool.ainvoke({
             "fitness_level": "invalid_level",
             "experience_details": {"frequency": "3 times per week"},
-            "limitations": []
+            "limitations": [],
+            "primary_goal": "fat_loss"
         })
         
         assert result["status"] == "error"
         assert "Invalid fitness_level" in result["message"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_save_fitness_assessment_tool_validates_primary_goal(
+    db_session: AsyncSession,
+    test_user: User
+):
+    """
+    Test that save_fitness_assessment validates primary_goal parameter.
+    
+    Validates Requirement 4.2: Goal validation.
+    """
+    with patch('app.agents.onboarding.base.settings') as mock_settings:
+        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        
+        agent = FitnessAssessmentAgent(db=db_session, context={})
+        agent._current_user_id = test_user.id
+        
+        tools = agent.get_tools()
+        save_tool = tools[0]
+        
+        # Test invalid primary goal
+        result = await save_tool.ainvoke({
+            "fitness_level": "intermediate",
+            "experience_details": {"frequency": "3 times per week"},
+            "limitations": [],
+            "primary_goal": "invalid_goal"
+        })
+        
+        assert result["status"] == "error"
+        assert "Invalid primary_goal" in result["message"]
 
 
 @pytest.mark.unit
@@ -236,7 +269,7 @@ async def test_save_fitness_assessment_tool_normalizes_data(
     test_user: User
 ):
     """
-    Test that save_fitness_assessment normalizes fitness_level to lowercase.
+    Test that save_fitness_assessment normalizes fitness_level and goals to lowercase.
     
     Validates Requirement 13.1: Data normalization.
     """
@@ -253,7 +286,9 @@ async def test_save_fitness_assessment_tool_normalizes_data(
         result = await save_tool.ainvoke({
             "fitness_level": "INTERMEDIATE",
             "experience_details": {"frequency": "3 times per week"},
-            "limitations": ["  some limitation  "]
+            "limitations": ["  some limitation  "],
+            "primary_goal": "FAT LOSS",
+            "secondary_goal": "Muscle Gain"
         })
         
         assert result["status"] == "success"
@@ -265,6 +300,8 @@ async def test_save_fitness_assessment_tool_normalizes_data(
         
         assert state.agent_context["fitness_assessment"]["fitness_level"] == "intermediate"
         assert state.agent_context["fitness_assessment"]["limitations"][0] == "some limitation"
+        assert state.agent_context["fitness_assessment"]["primary_goal"] == "fat_loss"
+        assert state.agent_context["fitness_assessment"]["secondary_goal"] == "muscle_gain"
 
 
 @pytest.mark.unit
@@ -290,7 +327,8 @@ async def test_save_fitness_assessment_tool_adds_timestamp(
         result = await save_tool.ainvoke({
             "fitness_level": "beginner",
             "experience_details": {"frequency": "new to exercise"},
-            "limitations": []
+            "limitations": [],
+            "primary_goal": "general_fitness"
         })
         
         assert result["status"] == "success"
@@ -327,13 +365,79 @@ async def test_save_fitness_assessment_tool_handles_errors(
         tools = agent.get_tools()
         save_tool = tools[0]
         
-        # Mock save_context to raise an exception
-        with patch.object(agent, 'save_context', side_effect=Exception("Database error")):
+        # Mock db.execute to raise an exception
+        with patch.object(agent.db, 'execute', side_effect=Exception("Database error")):
             result = await save_tool.ainvoke({
                 "fitness_level": "beginner",
                 "experience_details": {"frequency": "new"},
-                "limitations": []
+                "limitations": [],
+                "primary_goal": "general_fitness"
             })
             
             assert result["status"] == "error"
             assert "Failed to save" in result["message"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_save_fitness_assessment_advances_to_step_2(
+    db_session: AsyncSession,
+    test_user: User
+):
+    """
+    Test that save_fitness_assessment marks step 1 complete and advances to step 2.
+    
+    Validates Requirement 4.2: Step advancement.
+    """
+    with patch('app.agents.onboarding.base.settings') as mock_settings:
+        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        
+        agent = FitnessAssessmentAgent(db=db_session, context={})
+        agent._current_user_id = test_user.id
+        
+        tools = agent.get_tools()
+        save_tool = tools[0]
+        
+        result = await save_tool.ainvoke({
+            "fitness_level": "intermediate",
+            "experience_details": {"frequency": "4 times per week"},
+            "limitations": [],
+            "primary_goal": "muscle_gain",
+            "secondary_goal": "fat_loss",
+            "goal_priority": "muscle_gain_primary"
+        })
+        
+        assert result["status"] == "success"
+        
+        # Verify step advancement
+        stmt = select(OnboardingState).where(OnboardingState.user_id == test_user.id)
+        db_result = await db_session.execute(stmt)
+        state = db_result.scalars().first()
+        
+        assert state.step_1_complete is True
+        assert state.current_step == 2
+        assert state.current_agent == "workout_planning"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_system_prompt_includes_goal_definitions(db_session: AsyncSession):
+    """
+    Test that system prompt includes goal definitions.
+    
+    Validates Requirement 4.1: Goal-setting functionality merged.
+    """
+    with patch('app.agents.onboarding.base.settings') as mock_settings:
+        mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        
+        agent = FitnessAssessmentAgent(db=db_session, context={})
+        prompt = agent.get_system_prompt()
+        
+        # Verify goal definitions are present
+        assert "fat loss" in prompt.lower() or "fat_loss" in prompt.lower()
+        assert "muscle gain" in prompt.lower() or "muscle_gain" in prompt.lower()
+        assert "general fitness" in prompt.lower() or "general_fitness" in prompt.lower()
+        
+        # Verify goal collection is mentioned
+        assert "goal" in prompt.lower()
+        assert "primary" in prompt.lower()

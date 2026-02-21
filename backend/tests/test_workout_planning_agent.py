@@ -46,8 +46,10 @@ async def test_agent_instantiation(db_session: AsyncSession):
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
         
         context = {
-            "fitness_assessment": {"fitness_level": "intermediate"},
-            "goal_setting": {"primary_goal": "muscle_gain"}
+            "fitness_assessment": {
+                "fitness_level": "intermediate",
+                "primary_goal": "muscle_gain"
+            }
         }
         
         agent = WorkoutPlanningAgent(db=db_session, context=context)
@@ -78,7 +80,7 @@ async def test_agent_instantiation(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_system_prompt_contains_context_from_previous_agents(db_session: AsyncSession):
     """
-    Test that system prompt includes context from fitness_assessment and goal_setting.
+    Test that system prompt includes context from fitness_assessment.
     
     Validates Requirement 10.1: System prompt includes fitness_level and primary_goal.
     """
@@ -88,10 +90,8 @@ async def test_system_prompt_contains_context_from_previous_agents(db_session: A
         context = {
             "fitness_assessment": {
                 "fitness_level": "intermediate",
+                "primary_goal": "fat_loss",
                 "limitations": ["knee pain", "no equipment"]
-            },
-            "goal_setting": {
-                "primary_goal": "fat_loss"
             }
         }
         

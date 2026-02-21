@@ -41,18 +41,14 @@ def verify_onboarding_completion(agent_context: dict) -> None:
     """
     Verify that all required agent data is present for onboarding completion.
     
-    This function checks that all five onboarding agents have completed their
+    This function checks that all four onboarding agents have completed their
     data collection and that all required fields are present in the agent_context.
     
-    Required agents and their data:
-    1. fitness_assessment - Must have completed_at timestamp
-    2. goal_setting - Must have completed_at timestamp
-    3. workout_planning - Must have user_approved=True
-    4. diet_planning - Must have user_approved=True
-    5. scheduling - Must have all three schedules:
-       - workout_schedule
-       - meal_schedule
-       - hydration_preferences
+    Required agents and their data (4-step flow):
+    1. fitness_assessment - Must have completed_at timestamp and goals
+    2. workout_planning - Must have user_approved=True, plan, and schedule
+    3. diet_planning - Must have user_approved=True, plan, and schedule
+    4. scheduling - Must have hydration preferences
     
     Args:
         agent_context: The agent_context dictionary from OnboardingState
@@ -62,15 +58,10 @@ def verify_onboarding_completion(agent_context: dict) -> None:
         
     Examples:
         >>> agent_context = {
-        ...     "fitness_assessment": {"completed_at": "2024-01-15T10:30:00Z"},
-        ...     "goal_setting": {"completed_at": "2024-01-15T10:35:00Z"},
-        ...     "workout_planning": {"user_approved": True},
-        ...     "diet_planning": {"user_approved": True},
-        ...     "scheduling": {
-        ...         "workout_schedule": {...},
-        ...         "meal_schedule": {...},
-        ...         "hydration_preferences": {...}
-        ...     }
+        ...     "fitness_assessment": {"completed_at": "2024-01-15T10:30:00Z", "primary_goal": "muscle_gain"},
+        ...     "workout_planning": {"user_approved": True, "plan": {...}, "schedule": {...}},
+        ...     "diet_planning": {"user_approved": True, "plan": {...}, "schedule": {...}},
+        ...     "scheduling": {"daily_water_target_ml": 3000, "reminder_frequency_minutes": 120}
         ... }
         >>> verify_onboarding_completion(agent_context)  # No error raised
         
@@ -78,7 +69,7 @@ def verify_onboarding_completion(agent_context: dict) -> None:
         >>> verify_onboarding_completion(incomplete_context)
         Traceback (most recent call last):
         ...
-        OnboardingIncompleteError: Onboarding incomplete: missing goal_setting data
+        OnboardingIncompleteError: Onboarding incomplete: missing workout_planning data
     """
     if not agent_context or not isinstance(agent_context, dict):
         raise OnboardingIncompleteError(
@@ -88,45 +79,56 @@ def verify_onboarding_completion(agent_context: dict) -> None:
     
     missing_data = []
     
-    # Check fitness_assessment
+    # Check fitness_assessment (Step 1) - includes goals now
     if "fitness_assessment" not in agent_context:
         missing_data.append("fitness_assessment")
-    elif "completed_at" not in agent_context.get("fitness_assessment", {}):
-        missing_data.append("fitness_assessment.completed_at")
+    else:
+        fitness_data = agent_context.get("fitness_assessment", {})
+        if "completed_at" not in fitness_data:
+            missing_data.append("fitness_assessment.completed_at")
+        if "primary_goal" not in fitness_data:
+            missing_data.append("fitness_assessment.primary_goal")
     
-    # Check goal_setting
-    if "goal_setting" not in agent_context:
-        missing_data.append("goal_setting")
-    elif "completed_at" not in agent_context.get("goal_setting", {}):
-        missing_data.append("goal_setting.completed_at")
-    
-    # Check workout_planning
+    # Check workout_planning (Step 2) - includes plan and schedule
     if "workout_planning" not in agent_context:
         missing_data.append("workout_planning")
-    elif not agent_context.get("workout_planning", {}).get("user_approved"):
-        missing_data.append("workout_planning.user_approved")
+    else:
+        workout_data = agent_context.get("workout_planning", {})
+        if not workout_data.get("user_approved"):
+            missing_data.append("workout_planning.user_approved")
+        # Check for plan (can be "plan" or "proposed_plan" for backward compatibility)
+        if "plan" not in workout_data and "proposed_plan" not in workout_data:
+            missing_data.append("workout_planning.plan")
+        # Check for schedule
+        if "schedule" not in workout_data:
+            missing_data.append("workout_planning.schedule")
     
-    # Check diet_planning
+    # Check diet_planning (Step 3) - includes plan and schedule
     if "diet_planning" not in agent_context:
         missing_data.append("diet_planning")
-    elif not agent_context.get("diet_planning", {}).get("user_approved"):
-        missing_data.append("diet_planning.user_approved")
+    else:
+        diet_data = agent_context.get("diet_planning", {})
+        if not diet_data.get("user_approved"):
+            missing_data.append("diet_planning.user_approved")
+        # Check for plan (can be "plan" or "proposed_plan" for backward compatibility)
+        if "plan" not in diet_data and "proposed_plan" not in diet_data:
+            missing_data.append("diet_planning.plan")
+        # Check for schedule
+        if "schedule" not in diet_data:
+            missing_data.append("diet_planning.schedule")
     
-    # Check scheduling
+    # Check scheduling (Step 4) - hydration preferences only
     if "scheduling" not in agent_context:
         missing_data.append("scheduling")
     else:
         scheduling_data = agent_context.get("scheduling", {})
         
-        # Check for all three required schedules
-        if "workout_schedule" not in scheduling_data:
-            missing_data.append("scheduling.workout_schedule")
+        # Check for hydration preferences (new structure: direct fields)
+        if "daily_water_target_ml" not in scheduling_data:
+            missing_data.append("scheduling.daily_water_target_ml")
         
-        if "meal_schedule" not in scheduling_data:
-            missing_data.append("scheduling.meal_schedule")
-        
-        if "hydration_preferences" not in scheduling_data:
-            missing_data.append("scheduling.hydration_preferences")
+        if "reminder_frequency_minutes" not in scheduling_data:
+            missing_data.append("scheduling.reminder_frequency_minutes")
     
     # If any data is missing, raise error
     if missing_data:

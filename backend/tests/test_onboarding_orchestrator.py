@@ -313,27 +313,15 @@ async def test_get_current_agent_raises_error_for_missing_user(
 
 
 # ============================================================================
-# Test: Step to Agent Mapping
+# Test: Step to Agent Mapping (4-Step Flow)
 # ============================================================================
-
-@pytest.mark.unit
-def test_step_to_agent_maps_step_0_to_fitness_assessment(db_session: AsyncSession):
-    """
-    Test that step 0 maps to FITNESS_ASSESSMENT.
-    
-    Validates Requirement 5.2: Steps 0-2 map to FITNESS_ASSESSMENT.
-    """
-    orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(0)
-    assert agent_type == OnboardingAgentType.FITNESS_ASSESSMENT
-
 
 @pytest.mark.unit
 def test_step_to_agent_maps_step_1_to_fitness_assessment(db_session: AsyncSession):
     """
     Test that step 1 maps to FITNESS_ASSESSMENT.
     
-    Validates Requirement 5.2: Steps 0-2 map to FITNESS_ASSESSMENT.
+    Validates Requirement 2.1: Step 1 maps to FITNESS_ASSESSMENT.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     agent_type = orchestrator._step_to_agent(1)
@@ -341,99 +329,56 @@ def test_step_to_agent_maps_step_1_to_fitness_assessment(db_session: AsyncSessio
 
 
 @pytest.mark.unit
-def test_step_to_agent_maps_step_2_to_fitness_assessment(db_session: AsyncSession):
+def test_step_to_agent_maps_step_2_to_workout_planning(db_session: AsyncSession):
     """
-    Test that step 2 maps to FITNESS_ASSESSMENT.
+    Test that step 2 maps to WORKOUT_PLANNING.
     
-    Validates Requirement 5.2: Steps 0-2 map to FITNESS_ASSESSMENT.
+    Validates Requirement 2.1: Step 2 maps to WORKOUT_PLANNING.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     agent_type = orchestrator._step_to_agent(2)
-    assert agent_type == OnboardingAgentType.FITNESS_ASSESSMENT
+    assert agent_type == OnboardingAgentType.WORKOUT_PLANNING
 
 
 @pytest.mark.unit
-def test_step_to_agent_maps_step_3_to_goal_setting(db_session: AsyncSession):
+def test_step_to_agent_maps_step_3_to_diet_planning(db_session: AsyncSession):
     """
-    Test that step 3 maps to GOAL_SETTING.
+    Test that step 3 maps to DIET_PLANNING.
     
-    Validates Requirement 5.3: Step 3 maps to GOAL_SETTING.
+    Validates Requirement 2.1: Step 3 maps to DIET_PLANNING.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     agent_type = orchestrator._step_to_agent(3)
-    assert agent_type == OnboardingAgentType.GOAL_SETTING
+    assert agent_type == OnboardingAgentType.DIET_PLANNING
 
 
 @pytest.mark.unit
-def test_step_to_agent_maps_step_4_to_workout_planning(db_session: AsyncSession):
+def test_step_to_agent_maps_step_4_to_scheduling(db_session: AsyncSession):
     """
-    Test that step 4 maps to WORKOUT_PLANNING.
+    Test that step 4 maps to SCHEDULING.
     
-    Validates Requirement 5.4: Steps 4-5 map to WORKOUT_PLANNING.
+    Validates Requirement 2.1: Step 4 maps to SCHEDULING.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     agent_type = orchestrator._step_to_agent(4)
-    assert agent_type == OnboardingAgentType.WORKOUT_PLANNING
-
-
-@pytest.mark.unit
-def test_step_to_agent_maps_step_5_to_workout_planning(db_session: AsyncSession):
-    """
-    Test that step 5 maps to WORKOUT_PLANNING.
-    
-    Validates Requirement 5.4: Steps 4-5 map to WORKOUT_PLANNING.
-    """
-    orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(5)
-    assert agent_type == OnboardingAgentType.WORKOUT_PLANNING
-
-
-@pytest.mark.unit
-def test_step_to_agent_maps_step_6_to_diet_planning(db_session: AsyncSession):
-    """
-    Test that step 6 maps to DIET_PLANNING.
-    
-    Validates Requirement 5.5: Steps 6-7 map to DIET_PLANNING.
-    """
-    orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(6)
-    assert agent_type == OnboardingAgentType.DIET_PLANNING
-
-
-@pytest.mark.unit
-def test_step_to_agent_maps_step_7_to_diet_planning(db_session: AsyncSession):
-    """
-    Test that step 7 maps to DIET_PLANNING.
-    
-    Validates Requirement 5.5: Steps 6-7 map to DIET_PLANNING.
-    """
-    orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(7)
-    assert agent_type == OnboardingAgentType.DIET_PLANNING
-
-
-@pytest.mark.unit
-def test_step_to_agent_maps_step_8_to_scheduling(db_session: AsyncSession):
-    """
-    Test that step 8 maps to SCHEDULING.
-    
-    Validates Requirement 5.6: Steps 8-9 map to SCHEDULING.
-    """
-    orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(8)
     assert agent_type == OnboardingAgentType.SCHEDULING
 
 
 @pytest.mark.unit
-def test_step_to_agent_maps_step_9_to_scheduling(db_session: AsyncSession):
+def test_step_to_agent_raises_error_for_step_0(db_session: AsyncSession):
     """
-    Test that step 9 maps to SCHEDULING.
+    Test that _step_to_agent raises ValueError for step 0.
     
-    Validates Requirement 5.6: Steps 8-9 map to SCHEDULING.
+    Validates Requirement 2.1: Invalid steps raise ValueError.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
-    agent_type = orchestrator._step_to_agent(9)
-    assert agent_type == OnboardingAgentType.SCHEDULING
+    
+    with pytest.raises(ValueError) as exc_info:
+        orchestrator._step_to_agent(0)
+    
+    assert "Invalid onboarding step" in str(exc_info.value)
+    assert "0" in str(exc_info.value)
+    assert "Must be between 1 and 4" in str(exc_info.value)
 
 
 @pytest.mark.unit
@@ -441,7 +386,7 @@ def test_step_to_agent_raises_error_for_negative_step(db_session: AsyncSession):
     """
     Test that _step_to_agent raises ValueError for negative step.
     
-    Validates Requirement 5.7: Invalid steps raise ValueError.
+    Validates Requirement 2.1: Invalid steps raise ValueError.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     
@@ -453,11 +398,28 @@ def test_step_to_agent_raises_error_for_negative_step(db_session: AsyncSession):
 
 
 @pytest.mark.unit
-def test_step_to_agent_raises_error_for_step_greater_than_9(db_session: AsyncSession):
+def test_step_to_agent_raises_error_for_step_5(db_session: AsyncSession):
     """
-    Test that _step_to_agent raises ValueError for step > 9.
+    Test that _step_to_agent raises ValueError for step 5.
     
-    Validates Requirement 5.7: Invalid steps raise ValueError.
+    Validates Requirement 2.1: Invalid steps raise ValueError (step > 4).
+    """
+    orchestrator = OnboardingAgentOrchestrator(db=db_session)
+    
+    with pytest.raises(ValueError) as exc_info:
+        orchestrator._step_to_agent(5)
+    
+    assert "Invalid onboarding step" in str(exc_info.value)
+    assert "5" in str(exc_info.value)
+    assert "Must be between 1 and 4" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_step_to_agent_raises_error_for_step_10(db_session: AsyncSession):
+    """
+    Test that _step_to_agent raises ValueError for step 10.
+    
+    Validates Requirement 2.1: Invalid steps raise ValueError.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     
@@ -473,7 +435,7 @@ def test_step_to_agent_raises_error_for_step_100(db_session: AsyncSession):
     """
     Test that _step_to_agent raises ValueError for very large step.
     
-    Validates Requirement 5.7: Invalid steps raise ValueError.
+    Validates Requirement 2.1: Invalid steps raise ValueError.
     """
     orchestrator = OnboardingAgentOrchestrator(db=db_session)
     
@@ -489,16 +451,27 @@ def test_step_to_agent_raises_error_for_step_100(db_session: AsyncSession):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_get_current_agent_returns_correct_agent_for_step_0(
+async def test_get_current_agent_returns_correct_agent_for_step_1(
     db_session: AsyncSession,
     test_user: User
 ):
     """
-    Test that get_current_agent returns FitnessAssessmentAgent for step 0.
+    Test that get_current_agent returns FitnessAssessmentAgent for step 1.
     
     Validates Requirements 5.1, 5.2, 5.8, 5.9: Complete orchestration flow.
     """
     with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
+        # Update user's step to 1
+        from sqlalchemy import update
+        
+        stmt = (
+            update(OnboardingState)
+            .where(OnboardingState.user_id == test_user.id)
+            .values(current_step=1)
+        )
+        await db_session.execute(stmt)
+        await db_session.commit()
+        
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         
         agent = await orchestrator.get_current_agent(test_user.id)
@@ -509,23 +482,23 @@ async def test_get_current_agent_returns_correct_agent_for_step_0(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_get_current_agent_returns_correct_agent_for_step_3(
+async def test_get_current_agent_returns_correct_agent_for_step_2(
     db_session: AsyncSession,
     test_user: User
 ):
     """
-    Test that get_current_agent returns GoalSettingAgent for step 3.
+    Test that get_current_agent returns WorkoutPlanningAgent for step 2.
     
     Validates Requirements 5.1, 5.3, 5.8, 5.9: Complete orchestration flow.
     """
     with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
-        # Update user's step to 3
+        # Update user's step to 2
         from sqlalchemy import update
         
         stmt = (
             update(OnboardingState)
             .where(OnboardingState.user_id == test_user.id)
-            .values(current_step=3)
+            .values(current_step=2)
         )
         await db_session.execute(stmt)
         await db_session.commit()
@@ -533,7 +506,7 @@ async def test_get_current_agent_returns_correct_agent_for_step_3(
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         agent = await orchestrator.get_current_agent(test_user.id)
         
-        assert isinstance(agent, GoalSettingAgent)
+        assert isinstance(agent, WorkoutPlanningAgent)
 
 
 @pytest.mark.unit
@@ -562,7 +535,7 @@ async def test_get_current_agent_passes_context_from_database(
             update(OnboardingState)
             .where(OnboardingState.user_id == test_user.id)
             .values(
-                current_step=3,
+                current_step=2,
                 agent_context=test_context
             )
         )
@@ -590,6 +563,17 @@ async def test_get_current_agent_handles_empty_context(
     Validates Requirement 5.9: Handle missing context.
     """
     with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
+        # Update user's step to 1
+        from sqlalchemy import update
+        
+        stmt = (
+            update(OnboardingState)
+            .where(OnboardingState.user_id == test_user.id)
+            .values(current_step=1)
+        )
+        await db_session.execute(stmt)
+        await db_session.commit()
+        
         orchestrator = OnboardingAgentOrchestrator(db=db_session)
         agent = await orchestrator.get_current_agent(test_user.id)
         
@@ -599,30 +583,30 @@ async def test_get_current_agent_handles_empty_context(
 
 
 # ============================================================================
-# Test: Integration Tests for Orchestrator (Task 8.3)
+# Test: Integration Tests for Orchestrator (4-Step Flow)
 # ============================================================================
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_routing_to_scheduling_agent_for_step_8(
+async def test_routing_to_scheduling_agent_for_step_4(
     db_session: AsyncSession,
     test_user: User
 ):
     """
-    Test that orchestrator routes to SchedulingAgent for step 8.
+    Test that orchestrator routes to SchedulingAgent for step 4.
     
-    Validates Requirement 1.1: Routing to SchedulingAgent for steps 8-9.
+    Validates Requirement 1.1: Routing to SchedulingAgent for step 4.
     
-    **Feature: scheduling-agent-completion**
+    **Feature: onboarding-flow-redesign**
     """
     with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
-        # Update user's step to 8
+        # Update user's step to 4
         from sqlalchemy import update
         
         stmt = (
             update(OnboardingState)
             .where(OnboardingState.user_id == test_user.id)
-            .values(current_step=8, current_agent="scheduling")
+            .values(current_step=4, current_agent="scheduling")
         )
         await db_session.execute(stmt)
         await db_session.commit()
@@ -632,37 +616,6 @@ async def test_routing_to_scheduling_agent_for_step_8(
         
         assert isinstance(agent, SchedulingAgent)
         assert agent.db == db_session
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_routing_to_scheduling_agent_for_step_9(
-    db_session: AsyncSession,
-    test_user: User
-):
-    """
-    Test that orchestrator routes to SchedulingAgent for step 9.
-    
-    Validates Requirement 1.1: Routing to SchedulingAgent for steps 8-9.
-    
-    **Feature: scheduling-agent-completion**
-    """
-    with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
-        # Update user's step to 9
-        from sqlalchemy import update
-        
-        stmt = (
-            update(OnboardingState)
-            .where(OnboardingState.user_id == test_user.id)
-            .values(current_step=9, current_agent="scheduling")
-        )
-        await db_session.execute(stmt)
-        await db_session.commit()
-        
-        orchestrator = OnboardingAgentOrchestrator(db=db_session)
-        agent = await orchestrator.get_current_agent(test_user.id)
-        
-        assert isinstance(agent, SchedulingAgent)
 
 
 @pytest.mark.integration
@@ -677,7 +630,7 @@ async def test_no_routing_to_onboarding_agents_when_complete(
     Validates Requirement 16.1, 16.2: Do not route to onboarding agents
     if onboarding complete.
     
-    **Feature: scheduling-agent-completion**
+    **Feature: onboarding-flow-redesign**
     """
     # Mark onboarding as complete
     from sqlalchemy import update
@@ -686,7 +639,7 @@ async def test_no_routing_to_onboarding_agents_when_complete(
         update(OnboardingState)
         .where(OnboardingState.user_id == test_user.id)
         .values(
-            current_step=9,
+            current_step=4,
             is_complete=True,
             current_agent="general_assistant"
         )
@@ -716,15 +669,15 @@ async def test_advance_step_from_diet_planning_to_scheduling(
     
     Validates that step advancement works correctly when moving to scheduling agent.
     
-    **Feature: scheduling-agent-completion**
+    **Feature: onboarding-flow-redesign**
     """
-    # Set user to step 7 (last diet planning step)
+    # Set user to step 3 (diet planning step)
     from sqlalchemy import update, select
     
     stmt = (
         update(OnboardingState)
         .where(OnboardingState.user_id == test_user.id)
-        .values(current_step=7, current_agent="diet_planning")
+        .values(current_step=3, current_agent="diet_planning")
     )
     await db_session.execute(stmt)
     await db_session.commit()
@@ -734,12 +687,12 @@ async def test_advance_step_from_diet_planning_to_scheduling(
     # Advance to next step
     await orchestrator.advance_step(test_user.id)
     
-    # Verify step advanced to 8 and agent changed to scheduling
+    # Verify step advanced to 4 and agent changed to scheduling
     stmt = select(OnboardingState).where(OnboardingState.user_id == test_user.id)
     result = await db_session.execute(stmt)
     state = result.scalar_one()
     
-    assert state.current_step == 8
+    assert state.current_step == 4
     assert state.current_agent == "scheduling"
 
 
@@ -754,7 +707,7 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
     
     Validates that context continuity is maintained when routing to scheduling agent.
     
-    **Feature: scheduling-agent-completion**
+    **Feature: onboarding-flow-redesign**
     """
     with patch('app.agents.onboarding.base.settings', mock_llm_settings()):
         # Set up complete context from previous agents
@@ -763,39 +716,46 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
         complete_context = {
             "fitness_assessment": {
                 "fitness_level": "intermediate",
-                "limitations": ["no_equipment"],
+                "primary_goal": "muscle_gain",
+                "secondary_goal": "fat_loss",
                 "completed_at": "2024-01-01T10:00:00Z"
             },
-            "goal_setting": {
-                "primary_goal": "muscle_gain",
-                "completed_at": "2024-01-01T10:05:00Z"
-            },
             "workout_planning": {
-                "proposed_plan": {
+                "equipment": ["gym_full"],
+                "injuries": [],
+                "days_per_week": 4,
+                "plan": {
                     "frequency": 4,
                     "duration_minutes": 60,
                     "training_split": [
                         {"name": "Upper Body", "muscle_groups": ["chest", "back"], "type": "strength"}
                     ]
                 },
-                "user_approved": True,
+                "schedule": {
+                    "days": ["Monday", "Tuesday", "Thursday", "Friday"],
+                    "times": ["06:00", "06:00", "06:00", "06:00"]
+                },
                 "completed_at": "2024-01-01T10:10:00Z"
             },
             "diet_planning": {
-                "preferences": {
-                    "diet_type": "omnivore",
-                    "allergies": [],
-                    "intolerances": [],
-                    "dislikes": []
-                },
-                "proposed_plan": {
+                "diet_type": "omnivore",
+                "allergies": [],
+                "intolerances": [],
+                "dislikes": [],
+                "meal_frequency": 4,
+                "plan": {
                     "daily_calories": 2800,
                     "protein_g": 175.0,
                     "carbs_g": 350.0,
                     "fats_g": 78.0,
                     "meal_frequency": 4
                 },
-                "user_approved": True,
+                "schedule": {
+                    "breakfast": "07:00",
+                    "lunch": "12:00",
+                    "snack": "15:00",
+                    "dinner": "19:00"
+                },
                 "completed_at": "2024-01-01T10:15:00Z"
             }
         }
@@ -804,7 +764,7 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
             update(OnboardingState)
             .where(OnboardingState.user_id == test_user.id)
             .values(
-                current_step=8,
+                current_step=4,
                 current_agent="scheduling",
                 agent_context=complete_context
             )
@@ -819,7 +779,6 @@ async def test_scheduling_agent_receives_context_from_previous_agents(
         assert isinstance(agent, SchedulingAgent)
         assert agent.context.agent_context == complete_context
         assert "fitness_assessment" in agent.context.agent_context
-        assert "goal_setting" in agent.context.agent_context
         assert "workout_planning" in agent.context.agent_context
         assert "diet_planning" in agent.context.agent_context
 

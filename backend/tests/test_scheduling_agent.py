@@ -39,6 +39,8 @@ async def test_agent_instantiation(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = SchedulingAgent(db=db_session, context={})
         
@@ -68,6 +70,8 @@ async def test_system_prompt_includes_workout_plan(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "workout_planning": {
@@ -103,6 +107,8 @@ async def test_system_prompt_includes_meal_plan(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "diet_planning": {
@@ -138,6 +144,8 @@ async def test_system_prompt_includes_schedule_instructions(db_session: AsyncSes
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "workout_planning": {"proposed_plan": {"frequency": 3, "duration_minutes": 45}},
@@ -178,6 +186,8 @@ async def test_system_prompt_handles_missing_context(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         # Empty context
         agent = SchedulingAgent(db=db_session, context={})
@@ -205,6 +215,8 @@ async def test_get_tools_returns_empty_list(db_session: AsyncSession):
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = SchedulingAgent(db=db_session, context={})
         tools = agent.get_tools()
@@ -230,6 +242,8 @@ async def test_check_if_complete_without_saved_schedules(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = SchedulingAgent(db=db_session, context={})
         
@@ -279,6 +293,8 @@ async def test_check_if_complete_with_only_workout_schedule(
     
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = SchedulingAgent(db=db_session, context={})
         
@@ -339,6 +355,8 @@ async def test_check_if_complete_with_all_schedules(
     
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         agent = SchedulingAgent(db=db_session, context={})
         
@@ -365,6 +383,8 @@ async def test_process_message_returns_agent_response(
     """
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "workout_planning": {"proposed_plan": {"frequency": 3, "duration_minutes": 45}},
@@ -445,6 +465,8 @@ async def test_process_message_sets_complete_onboarding_when_done(
     
     with patch('app.agents.onboarding.base.settings') as mock_settings:
         mock_settings.ANTHROPIC_API_KEY = "test-api-key"
+        mock_settings.LLM_PROVIDER = "anthropic"
+        mock_settings.ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
         
         context = {
             "workout_planning": {"proposed_plan": {"frequency": 3, "duration_minutes": 45}},

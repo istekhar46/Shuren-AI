@@ -28,76 +28,42 @@ from app.services.agent_orchestrator import AgentType
 logger = logging.getLogger(__name__)
 
 
-# State metadata for 9-state onboarding flow
-# Provides rich metadata for each onboarding state including name, description,
+# State metadata for 4-step onboarding flow
+# Provides rich metadata for each onboarding step including name, description,
 # agent type, and required fields. Used by progress endpoint and UI rendering.
-# This consolidates the previous 11-step flow into 9 states:
-# - Old step 1 (basic info) removed (moved to registration)
-# - Old steps 4 & 5 merged into new state 3
-# - Remaining steps renumbered 1-9
+# This consolidates the previous 9-step flow into 4 steps:
+# - Step 1: Fitness Assessment (includes fitness level AND goals)
+# - Step 2: Workout Planning (plan generation and approval)
+# - Step 3: Diet Planning (meal plan generation and approval)
+# - Step 4: Scheduling (hydration and supplement preferences)
 STATE_METADATA = {
     1: StateInfo(
         state_number=1,
-        name="Fitness Level Assessment",
+        name="Fitness Assessment",
         agent="fitness_assessment",
-        description="Tell us about your current fitness level",
-        required_fields=["fitness_level"]
+        description="Tell us about your fitness level and goals",
+        required_fields=["fitness_level", "primary_goal"]
     ),
     2: StateInfo(
         state_number=2,
-        name="Primary Fitness Goals",
-        agent="fitness_assessment",
-        description="What are your fitness goals?",
-        required_fields=["goals"]
+        name="Workout Planning",
+        agent="workout_planning",
+        description="Let's create your personalized workout plan",
+        required_fields=["workout_plan", "workout_schedule"]
     ),
     3: StateInfo(
         state_number=3,
-        name="Workout Preferences & Constraints",
-        agent="goal_setting",
-        description="Tell us about your equipment, injuries, and limitations",
-        required_fields=["equipment", "injuries", "limitations"]
+        name="Diet Planning",
+        agent="diet_planning",
+        description="Build your personalized meal plan",
+        required_fields=["meal_plan", "meal_schedule"]
     ),
     4: StateInfo(
         state_number=4,
-        name="Diet Preferences & Restrictions",
-        agent="diet_planning",
-        description="Share your dietary preferences and restrictions",
-        required_fields=["diet_type", "allergies", "intolerances", "dislikes"]
-    ),
-    5: StateInfo(
-        state_number=5,
-        name="Fixed Meal Plan Selection",
-        agent="diet_planning",
-        description="Set your daily calorie and macro targets",
-        required_fields=["daily_calorie_target", "protein_percentage", "carbs_percentage", "fats_percentage"]
-    ),
-    6: StateInfo(
-        state_number=6,
-        name="Meal Timing Schedule",
-        agent="workout_planning",
-        description="When do you want to eat your meals?",
-        required_fields=["meals"]
-    ),
-    7: StateInfo(
-        state_number=7,
-        name="Workout Schedule",
-        agent="workout_planning",
-        description="When do you want to work out?",
-        required_fields=["workouts"]
-    ),
-    8: StateInfo(
-        state_number=8,
-        name="Hydration Schedule",
+        name="Hydration & Supplements",
         agent="scheduling",
-        description="Set your daily water intake goals",
-        required_fields=["daily_water_target_ml"]
-    ),
-    9: StateInfo(
-        state_number=9,
-        name="Supplement Preferences",
-        agent="scheduling",
-        description="Tell us about your supplement preferences (optional)",
-        required_fields=["interested_in_supplements"]
+        description="Set up hydration reminders and supplement preferences",
+        required_fields=["hydration_preferences", "supplement_preferences"]
     ),
 }
 
@@ -183,52 +149,33 @@ class OnboardingService:
         if not state:
             raise OnboardingValidationError("Onboarding state not found")
         
-        # Extract completed states from both step_data and agent_context
-        # This supports both old (step_data) and new (agent_context) approaches
+        # Extract completed states from step completion flags
+        # In the 4-step flow, agents set step_X_complete flags
         completed = []
         
-        # Check step_data (old approach - for backward compatibility)
-        if state.step_data:
-            for i in range(1, 10):
-                if f"step_{i}" in state.step_data:
-                    if i not in completed:
-                        completed.append(i)
-        
-        # Check agent_context (new approach - agents save here)
-        # Map agent types to their corresponding states
-        agent_to_states = {
-            "fitness_assessment": [1, 2],  # States 1-2
-            "goal_setting": [3],            # State 3
-            "diet_planning": [4, 5],        # States 4-5
-            "workout_planning": [6, 7],     # States 6-7
-            "scheduling": [8, 9]            # States 8-9
-        }
-        
-        if state.agent_context:
-            for agent_type, states in agent_to_states.items():
-                if agent_type in state.agent_context:
-                    # Agent has saved data, mark its states as complete
-                    for state_num in states:
-                        if state_num not in completed and state_num <= state.current_step:
-                            completed.append(state_num)
-        
-        # Sort completed states
-        completed.sort()
+        if state.step_1_complete:
+            completed.append(1)
+        if state.step_2_complete:
+            completed.append(2)
+        if state.step_3_complete:
+            completed.append(3)
+        if state.step_4_complete:
+            completed.append(4)
         
         # Get current and next state metadata
-        current_info = STATE_METADATA[state.current_step] if state.current_step >= 1 else STATE_METADATA[1]
-        next_state = state.current_step + 1 if state.current_step < 9 else None
+        current_info = STATE_METADATA[state.current_step] if 1 <= state.current_step <= 4 else STATE_METADATA[1]
+        next_state = state.current_step + 1 if state.current_step < 4 else None
         next_info = STATE_METADATA.get(next_state) if next_state else None
         
         # Calculate completion percentage
-        percentage = int((len(completed) / 9) * 100)
+        percentage = int((len(completed) / 4) * 100)
         
-        # Check if can complete (all 9 states done)
-        can_complete = len(completed) == 9
+        # Check if can complete (all 4 steps done)
+        can_complete = len(completed) == 4
         
         return OnboardingProgress(
             current_state=state.current_step,
-            total_states=9,
+            total_states=4,
             completed_states=completed,
             current_state_info=current_info,
             next_state_info=next_info,
@@ -238,15 +185,15 @@ class OnboardingService:
         )
     
     async def can_complete_onboarding(self, user_id: UUID) -> bool:
-        """Check if all required states are complete.
+        """Check if all required steps are complete.
         
-        Verifies that all 9 states have data in step_data JSONB field.
+        Verifies that all 4 steps have been completed by checking step completion flags.
         
         Args:
             user_id: User's unique identifier
             
         Returns:
-            True if all 9 states have data, False otherwise
+            True if all 4 steps are complete, False otherwise
             
         Raises:
             OnboardingValidationError: If onboarding state not found
@@ -255,15 +202,13 @@ class OnboardingService:
         if not state:
             raise OnboardingValidationError("Onboarding state not found")
         
-        # Check if all 9 states have data
-        if not state.step_data:
-            return False
-        
-        for i in range(1, 10):
-            if f"step_{i}" not in state.step_data:
-                return False
-        
-        return True
+        # Check if all 4 steps are complete
+        return (
+            state.step_1_complete and
+            state.step_2_complete and
+            state.step_3_complete and
+            state.step_4_complete
+        )
     
     async def save_onboarding_step(
         self,

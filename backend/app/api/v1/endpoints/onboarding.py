@@ -21,8 +21,6 @@ from app.schemas.onboarding import (
     OnboardingCompleteResponse,
     OnboardingProgressResponse,
     OnboardingStateResponse,
-    OnboardingStepRequest,
-    OnboardingStepResponse,
     CurrentAgentResponse
 )
 from app.schemas.profile import UserProfileResponse
@@ -88,14 +86,15 @@ async def get_onboarding_state(
     Get current onboarding state for authenticated user.
     
     Retrieves the user's current progress through the onboarding flow,
-    including current step number, completion status, and all saved step data.
+    including current step number, completion status, and step completion flags.
     
     Args:
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
     Returns:
-        OnboardingStateResponse with id, user_id, current_step, is_complete, step_data
+        OnboardingStateResponse with id, user_id, current_step, is_complete,
+        step_1_complete through step_4_complete, and agent_context
         
     Raises:
         HTTPException(404): If onboarding state not found
@@ -118,86 +117,11 @@ async def get_onboarding_state(
         user_id=str(onboarding_state.user_id),
         current_step=onboarding_state.current_step,
         is_complete=onboarding_state.is_complete,
-        step_data=onboarding_state.step_data or {}
-    )
-
-
-@router.post("/step", response_model=OnboardingStepResponse, status_code=status.HTTP_200_OK)
-async def save_onboarding_step(
-    step_request: OnboardingStepRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    x_agent_context: Annotated[str | None, Header(alias="X-Agent-Context")] = None
-) -> OnboardingStepResponse:
-    """
-    Save onboarding step data with validation.
-    
-    Validates step data according to step-specific requirements,
-    saves to the onboarding state, and advances the current step.
-    Optionally logs agent context for debugging and analytics.
-    
-    Args:
-        step_request: OnboardingStepRequest with step number and data
-        current_user: Authenticated user from get_current_user dependency
-        db: Database session from dependency injection
-        x_agent_context: Optional agent context from X-Agent-Context header
-        
-    Returns:
-        OnboardingStepResponse with current_step, is_complete, message, and next_state_info
-        
-    Raises:
-        HTTPException(400): If step data is invalid (includes field information)
-        HTTPException(422): If request validation fails (handled by FastAPI)
-        HTTPException(401): If authentication fails (handled by dependency)
-    """
-    import logging
-    from app.services.onboarding_service import STATE_METADATA
-    
-    logger = logging.getLogger(__name__)
-    
-    # Log agent context if provided
-    if x_agent_context:
-        logger.info(
-            f"Onboarding step {step_request.step} called by agent: {x_agent_context}",
-            extra={
-                "user_id": str(current_user.id),
-                "agent": x_agent_context,
-                "step": step_request.step
-            }
-        )
-    
-    # Initialize onboarding service
-    onboarding_service = OnboardingService(db)
-    
-    # Save onboarding step with validation
-    try:
-        onboarding_state = await onboarding_service.save_onboarding_step(
-            user_id=current_user.id,
-            step=step_request.step,
-            data=step_request.data,
-            agent_type=x_agent_context  # Pass agent context for history tracking
-        )
-    except OnboardingValidationError as e:
-        # Return structured validation error with field information
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": e.message,
-                "field": e.field if hasattr(e, 'field') else None,
-                "error_code": "VALIDATION_ERROR"
-            }
-        )
-    
-    # Get next state info
-    next_state = step_request.step + 1 if step_request.step < 9 else None
-    next_state_info = STATE_METADATA.get(next_state) if next_state else None
-    
-    return OnboardingStepResponse(
-        current_step=onboarding_state.current_step,
-        is_complete=onboarding_state.is_complete,
-        message=f"Step {step_request.step} saved successfully",
-        next_state=next_state,
-        next_state_info=next_state_info
+        step_1_complete=onboarding_state.step_1_complete,
+        step_2_complete=onboarding_state.step_2_complete,
+        step_3_complete=onboarding_state.step_3_complete,
+        step_4_complete=onboarding_state.step_4_complete,
+        agent_context=onboarding_state.agent_context or {}
     )
 
 
@@ -501,11 +425,10 @@ async def get_current_agent(
         
         # Get agent description
         agent_descriptions = {
-            OnboardingAgentType.FITNESS_ASSESSMENT: "I'll help assess your current fitness level",
-            OnboardingAgentType.GOAL_SETTING: "Let's define your fitness goals",
-            OnboardingAgentType.WORKOUT_PLANNING: "I'll create your personalized workout plan",
-            OnboardingAgentType.DIET_PLANNING: "Let's build your meal plan",
-            OnboardingAgentType.SCHEDULING: "We'll set up your daily schedule"
+            OnboardingAgentType.FITNESS_ASSESSMENT: "I'll help assess your current fitness level and define your fitness goals",
+            OnboardingAgentType.WORKOUT_PLANNING: "I'll create your personalized workout plan based on your goals and constraints",
+            OnboardingAgentType.DIET_PLANNING: "Let's build your personalized meal plan to support your training",
+            OnboardingAgentType.SCHEDULING: "We'll set up your hydration reminders and supplement preferences"
         }
         
         return CurrentAgentResponse(

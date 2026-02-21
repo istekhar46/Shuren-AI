@@ -12,11 +12,17 @@ async def test_connection():
     
     # Test development database
     try:
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        db_password = os.getenv('DB_PASSWORD', 'your_password_here')
+        
         conn = await asyncpg.connect(
             host='localhost',
             port=5432,
             user='postgres',
-            password='ist@123',
+            password=db_password,
             database='shuren_dev_db'
         )
         
@@ -49,7 +55,7 @@ async def test_connection():
             host='localhost',
             port=5432,
             user='postgres',
-            password='ist@123',
+            password=db_password,
             database='shuren_test_db'
         )
         

@@ -15,7 +15,6 @@ from app.agents.context import OnboardingAgentContext
 from app.agents.onboarding.base import BaseOnboardingAgent
 from app.agents.onboarding.diet_planning import DietPlanningAgent
 from app.agents.onboarding.fitness_assessment import FitnessAssessmentAgent
-from app.agents.onboarding.goal_setting import GoalSettingAgent
 from app.agents.onboarding.scheduling import SchedulingAgent
 from app.agents.onboarding.workout_planning import WorkoutPlanningAgent
 from app.models.conversation import ConversationMessage
@@ -35,12 +34,11 @@ class OnboardingAgentOrchestrator:
     - Instantiate agent with context
     - Route messages to the correct agent
     
-    The orchestrator follows this step-to-agent mapping:
-    - Steps 1-2: FITNESS_ASSESSMENT
-    - Step 3: GOAL_SETTING
-    - Steps 4-5: DIET_PLANNING
-    - Steps 6-7: WORKOUT_PLANNING
-    - Steps 8-9: SCHEDULING
+    The orchestrator follows this step-to-agent mapping (4-step flow):
+    - Step 1: FITNESS_ASSESSMENT (fitness level and goals)
+    - Step 2: WORKOUT_PLANNING (workout constraints and plan generation)
+    - Step 3: DIET_PLANNING (dietary preferences and meal plan generation)
+    - Step 4: SCHEDULING (hydration and supplement preferences)
     """
     
     def __init__(self, db: AsyncSession):
@@ -102,34 +100,31 @@ class OnboardingAgentOrchestrator:
         """
         Map onboarding step number to agent type.
         
-        This method implements the step-to-agent routing logic:
-        - Steps 1-2: Fitness Assessment (understanding current fitness level and goals)
-        - Step 3: Goal Setting (workout constraints and equipment)
-        - Steps 4-5: Diet Planning (dietary preferences and meal planning)
-        - Steps 6-7: Workout Planning (meal and workout scheduling)
-        - Steps 8-9: Scheduling (hydration and supplements)
+        This method implements the step-to-agent routing logic for the 4-step flow:
+        - Step 1: Fitness Assessment (fitness level and goals)
+        - Step 2: Workout Planning (workout constraints and plan generation)
+        - Step 3: Diet Planning (dietary preferences and meal plan generation)
+        - Step 4: Scheduling (hydration and supplement preferences)
         
         Args:
-            step: Current onboarding step (1-9)
+            step: Current onboarding step (1-4)
             
         Returns:
             OnboardingAgentType for this step
             
         Raises:
-            ValueError: If step is out of valid range (1-9)
+            ValueError: If step is out of valid range (1-4)
         """
-        if step < 1 or step > 9:
-            raise ValueError(f"Invalid onboarding step: {step}")
+        if step < 1 or step > 4:
+            raise ValueError(f"Invalid onboarding step: {step}. Must be between 1 and 4.")
         
-        if step <= 2:
+        if step == 1:
             return OnboardingAgentType.FITNESS_ASSESSMENT
-        elif step == 3:
-            return OnboardingAgentType.GOAL_SETTING
-        elif step <= 5:
-            return OnboardingAgentType.DIET_PLANNING
-        elif step <= 7:
+        elif step == 2:
             return OnboardingAgentType.WORKOUT_PLANNING
-        else:  # steps 8-9
+        elif step == 3:
+            return OnboardingAgentType.DIET_PLANNING
+        else:  # step 4
             return OnboardingAgentType.SCHEDULING
     
     async def _create_agent(
@@ -171,7 +166,6 @@ class OnboardingAgentOrchestrator:
             # Instantiate agent
             agent_classes = {
                 OnboardingAgentType.FITNESS_ASSESSMENT: FitnessAssessmentAgent,
-                OnboardingAgentType.GOAL_SETTING: GoalSettingAgent,
                 OnboardingAgentType.WORKOUT_PLANNING: WorkoutPlanningAgent,
                 OnboardingAgentType.DIET_PLANNING: DietPlanningAgent,
                 OnboardingAgentType.SCHEDULING: SchedulingAgent,

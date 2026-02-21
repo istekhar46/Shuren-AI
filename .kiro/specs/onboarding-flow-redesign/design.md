@@ -1131,89 +1131,118 @@ class ProfileCreationService:
 
 ## Database Migration
 
-### Alembic Migration Script
+### Fresh Start Approach
 
-```python
-"""Add 4-step onboarding support
+Since this is a local development environment with no production data to preserve, we'll use a **fresh start approach**:
 
-Revision ID: add_4_step_onboarding
-Revises: previous_revision
-Create Date: 2026-02-20
+1. **Reset Database**: Drop all tables and clear migration history
+2. **Update Models**: Modify SQLAlchemy models with new schema
+3. **Create Initial Migration**: Generate complete schema from models
+4. **Apply Migration**: Create all tables fresh
 
-"""
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+### Database Reset Process
 
-# revision identifiers
-revision = 'add_4_step_onboarding'
-down_revision = 'previous_revision'
-branch_labels = None
-depends_on = None
+```bash
+# 1. Reset database (drops all tables)
+cd backend
+poetry run python scripts/reset_db.py
 
+# 2. Delete old migration files
+# Manually delete all files in backend/alembic/versions/ except __init__.py
 
-def upgrade() -> None:
-    # Modify onboarding_states table
-    op.execute("ALTER TABLE onboarding_states DROP COLUMN IF EXISTS step_data")
-    op.alter_column('onboarding_states', 'current_step', 
-                    server_default=sa.text('1'))
-    
-    op.add_column('onboarding_states', 
-                  sa.Column('step_1_complete', sa.Boolean(), 
-                           server_default=sa.text('false'), nullable=False))
-    op.add_column('onboarding_states', 
-                  sa.Column('step_2_complete', sa.Boolean(), 
-                           server_default=sa.text('false'), nullable=False))
-    op.add_column('onboarding_states', 
-                  sa.Column('step_3_complete', sa.Boolean(), 
-                           server_default=sa.text('false'), nullable=False))
-    op.add_column('onboarding_states', 
-                  sa.Column('step_4_complete', sa.Boolean(), 
-                           server_default=sa.text('false'), nullable=False))
-    
-    # Add columns to meal_templates table
-    op.add_column('meal_templates', 
-                  sa.Column('plan_name', sa.String(255), nullable=True))
-    op.add_column('meal_templates', 
-                  sa.Column('daily_calorie_target', sa.Integer(), nullable=True))
-    op.add_column('meal_templates', 
-                  sa.Column('protein_grams', sa.Numeric(6, 2), nullable=True))
-    op.add_column('meal_templates', 
-                  sa.Column('carbs_grams', sa.Numeric(6, 2), nullable=True))
-    op.add_column('meal_templates', 
-                  sa.Column('fats_grams', sa.Numeric(6, 2), nullable=True))
-    op.add_column('meal_templates', 
-                  sa.Column('weekly_template', postgresql.JSONB(astext_type=sa.Text()), 
-                           nullable=True))
-    
-    # Clear existing onboarding_states (no backward compatibility)
-    op.execute("TRUNCATE TABLE onboarding_states CASCADE")
+# 3. Update SQLAlchemy models
+# Edit backend/app/models/onboarding.py
+# Edit backend/app/models/meal_template.py
 
+# 4. Create initial migration
+poetry run alembic revision --autogenerate -m "initial schema with 4-step onboarding"
 
-def downgrade() -> None:
-    # Remove new columns from onboarding_states
-    op.drop_column('onboarding_states', 'step_4_complete')
-    op.drop_column('onboarding_states', 'step_3_complete')
-    op.drop_column('onboarding_states', 'step_2_complete')
-    op.drop_column('onboarding_states', 'step_1_complete')
-    
-    # Restore step_data column
-    op.add_column('onboarding_states', 
-                  sa.Column('step_data', postgresql.JSONB(astext_type=sa.Text()), 
-                           nullable=True))
-    
-    # Restore current_step default
-    op.alter_column('onboarding_states', 'current_step', 
-                    server_default=sa.text('0'))
-    
-    # Remove new columns from meal_templates
-    op.drop_column('meal_templates', 'weekly_template')
-    op.drop_column('meal_templates', 'fats_grams')
-    op.drop_column('meal_templates', 'carbs_grams')
-    op.drop_column('meal_templates', 'protein_grams')
-    op.drop_column('meal_templates', 'daily_calorie_target')
-    op.drop_column('meal_templates', 'plan_name')
+# 5. Apply migration
+poetry run alembic upgrade head
+
+# 6. Verify tables created
+poetry run python scripts/check_db.py
 ```
+
+### Updated Models
+
+**OnboardingState Model** (`backend/app/models/onboarding.py`):
+```python
+class OnboardingState(Base):
+    __tablename__ = "onboarding_states"
+    
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    current_step = Column(Integer, nullable=False, default=1)  # Changed from 0 to 1
+    is_complete = Column(Boolean, default=False, nullable=False)
+    
+    # Step completion tracking (NEW)
+    step_1_complete = Column(Boolean, default=False, nullable=False)
+    step_2_complete = Column(Boolean, default=False, nullable=False)
+    step_3_complete = Column(Boolean, default=False, nullable=False)
+    step_4_complete = Column(Boolean, default=False, nullable=False)
+    
+    # JSONB fields for agent data
+    agent_context = Column(JSONB, nullable=True)
+    conversation_history = Column(JSONB, nullable=True)
+    agent_history = Column(JSONB, nullable=True)
+    current_agent = Column(String(50), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="onboarding_state")
+```
+
+**MealTemplate Model** (`backend/app/models/meal_template.py`):
+```python
+class MealTemplate(Base):
+    __tablename__ = "meal_templates"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    profile_id = Column(UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=False)
+    week_number = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # NEW: Complete meal plan storage
+    plan_name = Column(String(255), nullable=True)
+    daily_calorie_target = Column(Integer, nullable=True)
+    protein_grams = Column(Numeric(6, 2), nullable=True)
+    carbs_grams = Column(Numeric(6, 2), nullable=True)
+    fats_grams = Column(Numeric(6, 2), nullable=True)
+    weekly_template = Column(JSONB, nullable=True)
+    
+    # Existing fields
+    generated_by = Column(String(50), nullable=True)
+    generation_reason = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    profile = relationship("UserProfile", back_populates="meal_templates")
+    template_meals = relationship("TemplateMeal", back_populates="meal_template", cascade="all, delete-orphan")
+```
+
+### No Backward Compatibility Needed
+
+Since we're starting fresh:
+- ✅ No data migration required
+- ✅ No backward compatibility concerns
+- ✅ Clean schema from the start
+- ✅ Simpler implementation
+
+### Production Deployment Note
+
+For production deployment, coordinate with the team:
+1. Schedule maintenance window
+2. Backup existing data if needed
+3. Reset production database
+4. Apply fresh migration
+5. Users will need to re-onboard (communicate this clearly)
 
 ---
 
