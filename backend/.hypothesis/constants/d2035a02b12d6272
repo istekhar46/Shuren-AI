@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\schemas\__init__.py
+# hypothesis_version: 6.151.4
+
+['FitnessGoalSchema', 'GoogleAuthRequest', 'MealPlanSchema', 'MealScheduleSchema', 'ProfileUpdateRequest', 'TokenResponse', 'UserLogin', 'UserProfileResponse', 'UserRegister', 'UserResponse']

@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\models\preferences.py
+# hypothesis_version: 6.151.4
+
+[100, 'UserProfile', 'deleted_at', 'dietary_preferences', 'fitness_goals', 'lifestyle_baseline', 'lifestyle_baselines', 'meal_plan', 'meal_plans', 'meal_schedules', 'physical_constraints', 'profile_id', 'user_profiles.id', 'valid_energy_level', 'valid_macro_sum', 'valid_sleep_quality', 'valid_stress_level', 'workout_schedules']

@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\services\__init__.py
+# hypothesis_version: 6.151.4
+
+['OnboardingService', 'ProfileService']

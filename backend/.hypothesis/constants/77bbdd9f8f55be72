@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\api\v1\endpoints\auth.py
+# hypothesis_version: 6.151.4
+
+['/google', '/login', '/me', '/register', '@', 'bearer', 'email', 'google', 'name', 'sub', 'user_id']

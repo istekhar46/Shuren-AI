@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# Shuren Backend - Local Development Startup Script
+# This script sets up and starts the backend service for local development
+
+set -e  # Exit on error
+
+echo "=========================================="
+echo "Shuren Backend - Local Development Setup"
+echo "=========================================="
+echo ""
+
+# Check if .env file exists
+if [ ! -f .env ]; then
+    echo "⚠️  Warning: .env file not found!"
+    echo "Creating .env from .env.example..."
+    if [ -f .env.example ]; then
+        cp .env.example .env
+        echo "✅ Created .env file. Please update it with your configuration."
+        echo ""
+        echo "Required variables to configure:"
+        echo "  - DATABASE_URL"
+        echo "  - JWT_SECRET_KEY"
+        echo "  - GOOGLE_CLIENT_ID"
+        echo "  - GOOGLE_CLIENT_SECRET"
+        echo ""
+        read -p "Press Enter to continue after updating .env file..."
+    else
+        echo "❌ Error: .env.example not found!"
+        exit 1
+    fi
+fi
+
+echo "📦 Installing dependencies..."
+poetry install --no-root
+
+echo ""
+echo "🗄️  Checking database configuration..."
+
+# Check if DATABASE_URL points to a remote database
+if grep -q "aivencloud.com\|amazonaws.com\|azure.com\|cloud.google.com" .env; then
+    echo "⚠️  WARNING: DATABASE_URL points to a REMOTE database!"
+    echo "   For local development, you should use a LOCAL database."
+    echo ""
+    echo "   Current DATABASE_URL: $(grep DATABASE_URL .env | cut -d'=' -f2)"
+    echo ""
+    echo "   Recommended local DATABASE_URL:"
+    echo "   DATABASE_URL=postgresql+asyncpg://postgres:ist%40123@localhost:5432/shuren_dev_db"
+    echo ""
+    read -p "Do you want to continue with the REMOTE database? (y/N): " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Aborted. Please update DATABASE_URL in .env to use a local database."
+        exit 1
+    fi
+    echo "⚠️  Proceeding with REMOTE database..."
+fi
+
+echo ""
+echo "🗄️  Running database migrations..."
+poetry run alembic upgrade head
+
+echo ""
+echo "✅ Setup complete!"
+echo ""
+echo "🚀 Starting Shuren Backend API..."
+echo "   API: http://localhost:8000"
+echo "   Docs: http://localhost:8000/api/docs"
+echo "   ReDoc: http://localhost:8000/api/redoc"
+echo ""
+echo "Press Ctrl+C to stop the server"
+echo "=========================================="
+echo ""
+
+# Start the development server with auto-reload
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

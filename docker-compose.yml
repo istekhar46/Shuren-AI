@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: shuren_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shuren}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shuren_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-shuren_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shuren}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: shuren_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  livekit_agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.agent
+    container_name: shuren_livekit_agent
+    environment:
+      # LiveKit Configuration
+      LIVEKIT_URL: ${LIVEKIT_URL}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      
+      # Database Configuration
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://shuren:shuren_dev_password@postgres:5432/shuren_db}
+      
+      # Redis Configuration
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      
+      # LLM Provider Configuration
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      
+      # Voice Service API Keys
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY}
+      
+      # Voice Optimization Settings
+      VOICE_CONTEXT_CACHE_TTL: ${VOICE_CONTEXT_CACHE_TTL:-3600}
+      VOICE_MAX_RESPONSE_TOKENS: ${VOICE_MAX_RESPONSE_TOKENS:-150}
+      VOICE_LLM_PROVIDER: ${VOICE_LLM_PROVIDER:-openai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

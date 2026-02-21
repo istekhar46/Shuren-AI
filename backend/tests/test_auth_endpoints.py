@@ -1,0 +1,376 @@
+"""
+Tests for authentication endpoints.
+
+Validates user registration, login, Google OAuth, and current user retrieval.
+
+Note: These tests verify endpoint logic. Full integration tests with PostgreSQL
+should be run separately as SQLite doesn't support JSONB columns used in the schema.
+"""
+
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+from uuid import uuid4
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.v1.endpoints.auth import router
+from app.core.security import hash_password, create_access_token
+from app.models.user import User
+from app.models.onboarding import OnboardingState
+
+
+@pytest.fixture
+def mock_db():
+    """Create a mock database session."""
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+    db.execute = AsyncMock()
+    return db
+
+
+@pytest.fixture
+def app(mock_db):
+    """Create FastAPI test application with mocked database."""
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1/auth", tags=["auth"])
+    
+    # Override get_db dependency
+    from app.db.session import get_db
+    
+    async def override_get_db():
+        yield mock_db
+    
+    app.dependency_overrides[get_db] = override_get_db
+    
+    return app
+
+
+@pytest.fixture
+def client(app):
+    """Create test client."""
+    return TestClient(app)
+
+
+class TestRegisterEndpoint:
+    """Tests for POST /api/v1/auth/register endpoint."""
+    
+    def test_register_success(self, client, mock_db):
+        """Test successful user registration."""
+        # Mock database to return no existing user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.return_value = mock_result
+        
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "password": "securePassword123",
+                "full_name": "New User"
+            }
+        )
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert "user_id" in data
+    
+    def test_register_duplicate_email(self, client, mock_db):
+        """Test registration with duplicate email returns 400."""
+        # Mock database to return existing user
+        existing_user = User(
+            id=uuid4(),
+            email="duplicate@example.com",
+            hashed_password=hash_password("password"),
+            full_name="Existing User"
+        )
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=existing_user)
+        mock_db.execute.return_value = mock_result
+        
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "duplicate@example.com",
+                "password": "password456",
+                "full_name": "Second User"
+            }
+        )
+        
+        assert response.status_code == 400
+        assert "already registered" in response.json()["detail"].lower()
+    
+    def test_register_invalid_email(self, client):
+        """Test registration with invalid email returns 422."""
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "not-an-email",
+                "password": "password123",
+                "full_name": "Test User"
+            }
+        )
+        
+        assert response.status_code == 422
+    
+    def test_register_short_password(self, client):
+        """Test registration with password < 8 characters returns 422."""
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "user@example.com",
+                "password": "short",
+                "full_name": "Test User"
+            }
+        )
+        
+        assert response.status_code == 422
+
+
+class TestLoginEndpoint:
+    """Tests for POST /api/v1/auth/login endpoint."""
+    
+    def test_login_success(self, client, mock_db):
+        """Test successful login with valid credentials."""
+        # Create user with hashed password
+        password = "myPassword123"
+        user = User(
+            id=uuid4(),
+            email="login@example.com",
+            hashed_password=hash_password(password),
+            full_name="Login User",
+            is_active=True
+        )
+        
+        # Mock database to return user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=user)
+        mock_db.execute.return_value = mock_result
+        
+        # Login
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "login@example.com",
+                "password": password
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert "user_id" in data
+    
+    def test_login_invalid_email(self, client, mock_db):
+        """Test login with non-existent email returns 401."""
+        # Mock database to return no user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.return_value = mock_result
+        
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "nonexistent@example.com",
+                "password": "password123"
+            }
+        )
+        
+        assert response.status_code == 401
+        assert "Invalid email or password" in response.json()["detail"]
+    
+    def test_login_invalid_password(self, client, mock_db):
+        """Test login with incorrect password returns 401."""
+        # Create user
+        user = User(
+            id=uuid4(),
+            email="user@example.com",
+            hashed_password=hash_password("correctPassword"),
+            full_name="Test User",
+            is_active=True
+        )
+        
+        # Mock database to return user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=user)
+        mock_db.execute.return_value = mock_result
+        
+        # Login with wrong password
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "user@example.com",
+                "password": "wrongPassword"
+            }
+        )
+        
+        assert response.status_code == 401
+        assert "Invalid email or password" in response.json()["detail"]
+    
+    def test_login_oauth_user_without_password(self, client, mock_db):
+        """Test login fails for OAuth user (no password set)."""
+        # Create OAuth user without password
+        user = User(
+            id=uuid4(),
+            email="oauth@example.com",
+            hashed_password=None,
+            full_name="OAuth User",
+            oauth_provider="google",
+            oauth_provider_user_id="123456",
+            is_active=True
+        )
+        
+        # Mock database to return user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=user)
+        mock_db.execute.return_value = mock_result
+        
+        # Try to login with password
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "oauth@example.com",
+                "password": "anyPassword"
+            }
+        )
+        
+        assert response.status_code == 401
+
+
+class TestGoogleAuthEndpoint:
+    """Tests for POST /api/v1/auth/google endpoint."""
+    
+    def test_google_auth_new_user(self, client, mock_db):
+        """Test Google OAuth creates new user."""
+        # Mock database to return no existing user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.return_value = mock_result
+        
+        mock_user_info = {
+            'email': 'newgoogle@example.com',
+            'name': 'Google User',
+            'sub': 'google-user-id-123',
+            'email_verified': True
+        }
+        
+        with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={"id_token": "valid-google-token"}
+            )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert "user_id" in data
+    
+    def test_google_auth_existing_user(self, client, mock_db):
+        """Test Google OAuth returns token for existing user."""
+        # Create existing OAuth user
+        user = User(
+            id=uuid4(),
+            email="existing@example.com",
+            hashed_password=None,
+            full_name="Existing User",
+            oauth_provider="google",
+            oauth_provider_user_id="existing-google-id",
+            is_active=True
+        )
+        
+        # Mock database to return existing user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=user)
+        mock_db.execute.return_value = mock_result
+        
+        mock_user_info = {
+            'email': 'existing@example.com',
+            'name': 'Existing User',
+            'sub': 'existing-google-id',
+            'email_verified': True
+        }
+        
+        with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={"id_token": "valid-google-token"}
+            )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert str(user.id) == data["user_id"]
+    
+    def test_google_auth_invalid_token(self, client):
+        """Test Google OAuth with invalid token returns 401."""
+        with patch('app.api.v1.endpoints.auth.verify_google_token', side_effect=ValueError("Invalid token")):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={"id_token": "invalid-token"}
+            )
+        
+        assert response.status_code == 401
+
+
+class TestGetMeEndpoint:
+    """Tests for GET /api/v1/auth/me endpoint."""
+    
+    def test_get_me_success(self, client, mock_db):
+        """Test /me endpoint returns current user data."""
+        # Create user with created_at timestamp
+        from datetime import datetime, timezone
+        user = User(
+            id=uuid4(),
+            email="me@example.com",
+            hashed_password=hash_password("password"),
+            full_name="Me User",
+            is_active=True,
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        # Mock database to return user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=user)
+        mock_db.execute.return_value = mock_result
+        
+        # Get token
+        token = create_access_token({"user_id": str(user.id)})
+        
+        # Call /me endpoint
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "me@example.com"
+        assert data["full_name"] == "Me User"
+        assert data["is_active"] is True
+    
+    def test_get_me_no_token(self, client):
+        """Test /me endpoint without token returns 401."""
+        response = client.get("/api/v1/auth/me")
+        
+        # FastAPI returns 401 when no auth header is provided
+        assert response.status_code == 401
+    
+    def test_get_me_invalid_token(self, client):
+        """Test /me endpoint with invalid token returns 401."""
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer invalid-token"}
+        )
+        
+        assert response.status_code == 401
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

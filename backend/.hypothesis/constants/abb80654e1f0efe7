@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\core\security.py
+# hypothesis_version: 6.151.4
+
+['Invalid token issuer', 'accounts.google.com', 'email', 'email_verified', 'exp', 'iat', 'iss', 'name', 'picture', 'sub', 'utf-8']
