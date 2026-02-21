@@ -1,4 +1,0 @@
-# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\main.py
-# hypothesis_version: 6.151.4
-
-[401, 403, 404, ' -> ', '%Y-%m-%d %H:%M:%S', '*', '/', '/api/docs', '/api/openapi.json', '/api/redoc', '/api/v1/auth', '/api/v1/onboarding', '/api/v1/profiles', '/health', '1.0.0', 'Authentication', 'Bearer', 'Health', 'Onboarding', 'Profiles', 'Resource not found', 'Root', 'Validation error', 'WWW-Authenticate', 'app', 'detail', 'docs', 'errors', 'field', 'healthy', 'loc', 'message', 'msg', 'path', 'redoc', 'status', 'type', 'version']

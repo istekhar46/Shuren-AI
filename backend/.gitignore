@@ -73,6 +73,12 @@ docs/_build/
 .pybuilder/
 target/
 
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

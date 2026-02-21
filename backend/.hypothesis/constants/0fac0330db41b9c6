@@ -1,4 +1,0 @@
-# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\models\onboarding.py
-# hypothesis_version: 6.151.4
-
-['User', 'deleted_at', 'idx_onboarding_user', 'onboarding_state', 'onboarding_states', 'user_id', 'users.id']
