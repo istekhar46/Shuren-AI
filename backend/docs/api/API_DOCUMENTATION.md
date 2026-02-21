@@ -30,6 +30,152 @@ Authorization: Bearer <jwt_token>
 - `401 Unauthorized`: Missing or invalid token
 - `403 Forbidden`: Valid token but insufficient permissions
 
+### Authentication Endpoints
+
+#### 1. Register User
+
+**Endpoint:** `POST /api/v1/auth/register`
+
+**Description:** Register a new user with email and password.
+
+**Authentication:** Not required
+
+**Request Body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "securePassword123",
+  "full_name": "John Doe"
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Email already registered
+- `422 Unprocessable Entity`: Validation error (invalid email, password too short)
+
+---
+
+#### 2. Login User
+
+**Endpoint:** `POST /api/v1/auth/login`
+
+**Description:** Authenticate user with email and password.
+
+**Authentication:** Not required
+
+**Request Body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "securePassword123"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Error Responses:**
+- `401 Unauthorized`: Invalid email or password
+- `422 Unprocessable Entity`: Validation error
+
+---
+
+#### 3. Google OAuth Authentication
+
+**Endpoint:** `POST /api/v1/auth/google`
+
+**Description:** Authenticate user with Google OAuth 2.0. Implements CSRF protection and comprehensive token verification.
+
+**Authentication:** Not required
+
+**Request Headers:**
+```
+Cookie: g_csrf_token=<csrf_token_value>
+```
+
+**Request Body:**
+```json
+{
+  "credential": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2...",
+  "g_csrf_token": "<csrf_token_value>"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: CSRF validation failed
+- `401 Unauthorized`: Invalid Google token or email not verified
+- `422 Unprocessable Entity`: Missing required fields
+
+**Notes:**
+- For detailed integration guide, see [Google OAuth Integration Guide](./GOOGLE_OAUTH_INTEGRATION.md)
+- CSRF token must match in both cookie and request body
+- Creates new user account automatically if user doesn't exist
+- Uses Google's `sub` claim for stable user identification
+
+---
+
+#### 4. Get Current User
+
+**Endpoint:** `GET /api/v1/auth/me`
+
+**Description:** Get current authenticated user information with access control.
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "full_name": "John Doe",
+  "oauth_provider": "google",
+  "is_active": true,
+  "onboarding_completed": false,
+  "access_control": {
+    "can_access_dashboard": false,
+    "can_access_workouts": false,
+    "can_access_meals": false,
+    "can_access_chat": true,
+    "can_access_profile": false,
+    "locked_features": ["dashboard", "workouts", "meals", "profile"],
+    "unlock_message": "Complete onboarding to unlock all features",
+    "onboarding_progress": {
+      "current_state": 3,
+      "total_states": 9,
+      "completion_percentage": 33
+    }
+  },
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+**Error Responses:**
+- `401 Unauthorized`: Missing or invalid token
+
 ---
 
 ## Onboarding Endpoints

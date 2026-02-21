@@ -1,5 +1,5 @@
 import api from './api';
-import type { TokenResponse, UserResponse, LoginRequest, RegisterRequest } from '../types/api';
+import type { TokenResponse, UserResponse, LoginRequest, RegisterRequest, GoogleAuthRequest } from '../types/auth.types';
 
 /**
  * Authentication service for handling user registration, login, and logout
@@ -27,6 +27,22 @@ export const authService = {
   async login(email: string, password: string): Promise<TokenResponse> {
     const payload: LoginRequest = { email, password };
     const response = await api.post<TokenResponse>('/auth/login', payload);
+    return response.data;
+  },
+
+  /**
+   * Authenticate user with Google OAuth
+   * @param credential Google ID token (JWT) from Google Identity Services
+   * @param csrfToken CSRF token extracted from g_csrf_token cookie
+   * @returns Authentication response with token and user data
+   * @throws Error if authentication fails or CSRF validation fails
+   */
+  async googleLogin(credential: string, csrfToken: string): Promise<TokenResponse> {
+    const payload: GoogleAuthRequest = {
+      credential,
+      g_csrf_token: csrfToken,
+    };
+    const response = await api.post<TokenResponse>('/auth/google', payload);
     return response.data;
   },
 

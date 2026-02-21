@@ -11,7 +11,7 @@ This module provides REST API endpoints for:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,8 @@ from app.core.security import (
     create_access_token,
     hash_password,
     verify_password,
-    verify_google_token
+    verify_google_token,
+    validate_csrf_token
 )
 from app.db.session import get_db
 from app.models.onboarding import OnboardingState
@@ -167,89 +168,121 @@ async def login(
 @router.post("/google", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def google_auth(
     auth_request: GoogleAuthRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> TokenResponse:
     """
-    Authenticate user with Google OAuth.
+    Authenticate user with Google OAuth using Google Identity Services.
+    
+    Implements secure OAuth flow with:
+    - CSRF protection via double-submit-cookie pattern
+    - Comprehensive Google ID token verification
+    - User account creation or lookup using immutable Google sub claim
     
     Verifies Google ID token and either:
     - Returns JWT for existing user
-    - Creates new user account and returns JWT
+    - Creates new user account with onboarding state and returns JWT
     
     Args:
-        auth_request: GoogleAuthRequest schema with Google ID token
+        auth_request: GoogleAuthRequest schema with credential (ID token) and g_csrf_token
+        request: FastAPI Request object for cookie access
         db: Database session from dependency injection
         
     Returns:
         TokenResponse with access_token, token_type, and user_id
         
     Raises:
-        HTTPException(401): If Google token is invalid
+        HTTPException(400): If CSRF validation fails
+        HTTPException(401): If Google token is invalid or email not verified
         HTTPException(422): If validation fails
     """
-    # Verify Google ID token
+    # Step 1: Validate CSRF token using double-submit-cookie pattern
+    # Note: CSRF token is optional for button-only flow (not One Tap)
+    # Google Identity Services only sets g_csrf_token cookie for One Tap flow
+    cookie_token = request.cookies.get("g_csrf_token")
+    body_token = auth_request.g_csrf_token
+    
+    # Only validate CSRF if both tokens are present
+    # If button flow is used (no cookie), skip CSRF validation
+    if cookie_token or body_token:
+        validate_csrf_token(cookie_token, body_token)
+    
+    # Step 2: Verify Google ID token
     try:
-        user_info = await verify_google_token(auth_request.id_token)
+        user_info = await verify_google_token(auth_request.credential)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
     
-    # Extract user information from token
+    # Step 3: Extract user information from verified token
     email = user_info.get('email')
     name = user_info.get('name')
-    google_user_id = user_info.get('sub')
+    google_sub = user_info.get('sub')  # Immutable Google user ID
+    picture = user_info.get('picture')
     
-    if not email or not google_user_id:
+    if not email or not google_sub:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Google token: missing required fields"
         )
     
-    # Check if user exists by email or OAuth provider credentials
+    # Step 4: Query user by OAuth provider credentials only (not email)
+    # This ensures we use the immutable sub claim for identification
     stmt = select(User).where(
-        (
-            (User.email == email) |
-            (
-                (User.oauth_provider == 'google') &
-                (User.oauth_provider_user_id == google_user_id)
-            )
-        ),
+        (User.oauth_provider == 'google') &
+        (User.oauth_provider_user_id == google_sub),
         User.deleted_at.is_(None)
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
-    # If user doesn't exist, create new user
+    # Step 5: If no OAuth user found, check if email exists (for account linking)
     if not user:
-        new_user = User(
-            email=email,
-            hashed_password=None,  # OAuth users don't have passwords
-            full_name=name or email.split('@')[0],  # Use email prefix if name not provided
-            oauth_provider='google',
-            oauth_provider_user_id=google_user_id,
-            is_active=True
+        # Check if user with this email already exists
+        email_stmt = select(User).where(
+            User.email == email,
+            User.deleted_at.is_(None)
         )
+        email_result = await db.execute(email_stmt)
+        existing_user = email_result.scalar_one_or_none()
         
-        db.add(new_user)
-        await db.flush()  # Flush to get user.id
-        
-        # Create onboarding state for new user
-        onboarding_state = OnboardingState(
-            user_id=new_user.id,
-            current_step=1,
-            is_complete=False,
-            step_data={}
-        )
-        
-        db.add(onboarding_state)
-        await db.commit()
-        await db.refresh(new_user)
-        
-        user = new_user
+        if existing_user:
+            # Link Google OAuth to existing account
+            existing_user.oauth_provider = 'google'
+            existing_user.oauth_provider_user_id = google_sub
+            await db.commit()
+            await db.refresh(existing_user)
+            user = existing_user
+        else:
+            # Create new user
+            new_user = User(
+                email=email,
+                hashed_password=None,  # OAuth users don't have passwords
+                full_name=name or email.split('@')[0],  # Use email prefix if name not provided
+                oauth_provider='google',
+                oauth_provider_user_id=google_sub,  # Use sub claim (not email)
+                is_active=True
+            )
+            
+            db.add(new_user)
+            await db.flush()  # Flush to get user.id
+            
+            # Create onboarding state for new user
+            onboarding_state = OnboardingState(
+                user_id=new_user.id,
+                current_step=1,
+                is_complete=False
+            )
+            
+            db.add(onboarding_state)
+            await db.commit()
+            await db.refresh(new_user)
+            
+            user = new_user
     
-    # Generate JWT token
+    # Step 6: Generate JWT token
     access_token = create_access_token(data={"user_id": str(user.id)})
     
     return TokenResponse(

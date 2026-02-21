@@ -10,11 +10,17 @@ This module provides functions for:
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 import bcrypt
+import hmac
+import logging
 from jose import jwt, JWTError
 from google.auth.transport import requests
 from google.oauth2 import id_token
+from fastapi import HTTPException
 
 from app.core.config import settings
+
+# Configure logger for security events
+logger = logging.getLogger(__name__)
 
 
 # Bcrypt cost factor (rounds)
@@ -70,6 +76,70 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     
     # Verify password
     return bcrypt.checkpw(password_bytes, hashed_bytes)
+
+
+def validate_csrf_token(cookie_token: Optional[str], body_token: Optional[str]) -> None:
+    """
+    Validate CSRF tokens using double-submit-cookie pattern.
+    
+    This function implements CSRF protection by verifying that the token from the cookie
+    matches the token from the request body. Uses constant-time comparison to prevent
+    timing attacks.
+    
+    Args:
+        cookie_token: g_csrf_token from cookie
+        body_token: g_csrf_token from request body
+        
+    Raises:
+        HTTPException(400): If tokens are missing or don't match
+        
+    Security:
+        - Uses hmac.compare_digest for constant-time comparison
+        - Logs all validation failures for security monitoring
+        - Does not expose token values in error messages
+        
+    Example:
+        >>> validate_csrf_token("abc123", "abc123")  # Success, no exception
+        >>> validate_csrf_token("abc123", "xyz789")  # Raises HTTPException
+        >>> validate_csrf_token(None, "abc123")      # Raises HTTPException
+    """
+    # Check if cookie token is present
+    if not cookie_token:
+        logger.error(
+            "CSRF validation failed: Missing g_csrf_token cookie",
+            extra={"security_event": "csrf_validation_failure", "reason": "missing_cookie"}
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="CSRF validation failed: Missing g_csrf_token cookie"
+        )
+    
+    # Check if body token is present
+    if not body_token:
+        logger.error(
+            "CSRF validation failed: Missing g_csrf_token in request body",
+            extra={"security_event": "csrf_validation_failure", "reason": "missing_body_token"}
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="CSRF validation failed: Missing g_csrf_token in request body"
+        )
+    
+    # Compare tokens using constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(cookie_token, body_token):
+        logger.error(
+            "CSRF validation failed: Token mismatch",
+            extra={
+                "security_event": "csrf_validation_failure",
+                "reason": "token_mismatch",
+                "cookie_token_length": len(cookie_token),
+                "body_token_length": len(body_token)
+            }
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="CSRF validation failed: Token mismatch"
+        )
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
@@ -152,27 +222,32 @@ def decode_access_token(token: str) -> Dict[str, Any]:
 
 async def verify_google_token(token: str) -> Dict[str, Any]:
     """
-    Verify a Google ID token and extract user information.
+    Verify Google ID token and extract user information.
     
-    Uses Google's official token verification to validate:
-    - Token signature
-    - Token expiration
-    - Token audience (matches GOOGLE_CLIENT_ID)
-    - Token issuer (Google)
+    Performs comprehensive verification:
+    - Signature verification using Google's public keys
+    - Audience (aud) claim validation
+    - Issuer (iss) claim validation
+    - Expiration (exp) claim validation
+    - Email verification status check
+    - Hosted domain (hd) validation for Workspace accounts
     
     Args:
-        token: Google ID token string from client
+        token: Google ID token string
         
     Returns:
-        Dictionary containing user information:
-        - email: User's email address
-        - name: User's full name
-        - sub: Google user ID (unique identifier)
-        - email_verified: Whether email is verified
-        - picture: URL to user's profile picture (optional)
+        Dictionary with verified user information:
+        {
+            'sub': str,  # Google user ID (unique, immutable)
+            'email': str,
+            'email_verified': bool,
+            'name': str,
+            'picture': str,  # Optional
+            'hd': str  # Optional, for Workspace accounts
+        }
         
     Raises:
-        ValueError: If token is invalid or verification fails
+        ValueError: If token verification fails
         
     Example:
         >>> user_info = await verify_google_token(google_id_token)
@@ -183,6 +258,7 @@ async def verify_google_token(token: str) -> Dict[str, Any]:
     """
     try:
         # Verify the token using Google's verification endpoint
+        # This automatically validates signature, expiration, and audience
         idinfo = id_token.verify_oauth2_token(
             token,
             requests.Request(),
@@ -191,17 +267,65 @@ async def verify_google_token(token: str) -> Dict[str, Any]:
         
         # Verify the issuer
         if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+            logger.error(
+                "Google token verification failed: Invalid issuer",
+                extra={
+                    "security_event": "google_token_verification_failure",
+                    "reason": "invalid_issuer",
+                    "issuer": idinfo.get('iss')
+                }
+            )
             raise ValueError('Invalid token issuer')
         
-        # Return user information
+        # Verify email is verified
+        email_verified = idinfo.get('email_verified', False)
+        if not email_verified:
+            logger.error(
+                "Google token verification failed: Email not verified",
+                extra={
+                    "security_event": "google_token_verification_failure",
+                    "reason": "email_not_verified",
+                    "email": idinfo.get('email')
+                }
+            )
+            raise ValueError('Email address is not verified')
+        
+        # Validate hosted domain for Workspace accounts
+        hd = idinfo.get('hd')
+        email = idinfo.get('email')
+        if hd and email:
+            # Extract domain from email
+            email_domain = email.split('@')[1] if '@' in email else None
+            if email_domain and hd != email_domain:
+                logger.error(
+                    "Google token verification failed: Hosted domain mismatch",
+                    extra={
+                        "security_event": "google_token_verification_failure",
+                        "reason": "hosted_domain_mismatch",
+                        "hd_claim": hd,
+                        "email_domain": email_domain
+                    }
+                )
+                raise ValueError('Hosted domain does not match email domain')
+        
+        # Return user information with all required claims
         return {
-            'email': idinfo.get('email'),
+            'sub': idinfo.get('sub'),  # Google user ID (unique, immutable)
+            'email': email,
+            'email_verified': email_verified,
             'name': idinfo.get('name'),
-            'sub': idinfo.get('sub'),  # Google user ID
-            'email_verified': idinfo.get('email_verified', False),
-            'picture': idinfo.get('picture')
+            'picture': idinfo.get('picture'),
+            'hd': hd  # Hosted domain for Workspace accounts
         }
         
     except ValueError as e:
-        # Token verification failed
+        # Token verification failed - log with sanitized information
+        logger.error(
+            f"Google token verification failed: {str(e)}",
+            extra={
+                "security_event": "google_token_verification_failure",
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+        )
         raise ValueError(f"Invalid Google token: {str(e)}")

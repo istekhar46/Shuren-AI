@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { handleApiError } from '../utils/errorHandling';
+import { GoogleSignInButton } from '../components/auth/GoogleSignInButton';
+import type { TokenResponse } from '../types/auth.types';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleError, setGoogleError] = useState('');
   const [validationErrors, setValidationErrors] = useState<{
     email?: string;
     password?: string;
@@ -55,6 +58,44 @@ export const LoginPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleSuccess = async (response: TokenResponse) => {
+    try {
+      setGoogleError('');
+      console.log('Google authentication successful, processing...');
+      
+      // The GoogleSignInButton already called the backend and got the token
+      // We just need to store it and update AuthContext
+      localStorage.setItem('auth_token', response.access_token);
+      console.log('Token stored in localStorage');
+      
+      // Import authService to fetch user data
+      const { authService } = await import('../services/authService');
+      
+      // Fetch user data to check onboarding status
+      console.log('Fetching user data...');
+      const userData = await authService.getCurrentUser();
+      console.log('User data received:', userData);
+      
+      // Store user data in localStorage
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      console.log('User data stored in localStorage');
+      
+      // Force a page reload to update AuthContext
+      // This ensures the AuthContext picks up the new token and user data
+      const destination = userData.onboarding_completed ? '/dashboard' : '/onboarding';
+      console.log('Redirecting to:', destination);
+      window.location.href = destination;
+    } catch (err) {
+      console.error('Error in handleGoogleSuccess:', err);
+      const appError = handleApiError(err);
+      setGoogleError(appError.message);
+    }
+  };
+
+  const handleGoogleError = (error: Error) => {
+    setGoogleError(error.message);
   };
 
   return (
@@ -153,6 +194,37 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
         </form>
+
+        {/* OR Divider */}
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-gray-50 text-gray-500">OR</span>
+          </div>
+        </div>
+
+        {/* Google Sign-In */}
+        <div className="mt-6">
+          {googleError && (
+            <div className="rounded-md bg-red-50 p-4 mb-4">
+              <div className="flex">
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">{googleError}</h3>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex justify-center">
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              disabled={loading}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ interface AuthContextType {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
+  googleLogin: (credential: string, csrfToken: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -75,6 +76,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(userData);
   };
 
+  const googleLogin = async (credential: string, csrfToken: string): Promise<void> => {
+    // Import authService dynamically to avoid circular dependency
+    const { authService } = await import('../services/authService');
+    
+    // Call Google OAuth endpoint
+    const response = await authService.googleLogin(credential, csrfToken);
+    
+    // Store access token in localStorage
+    localStorage.setItem('auth_token', response.access_token);
+    setToken(response.access_token);
+    
+    // Fetch full user data from /auth/me
+    const userData = await authService.getCurrentUser();
+    
+    // Store user data in localStorage
+    localStorage.setItem('auth_user', JSON.stringify(userData));
+    setUser(userData);
+  };
+
   const logout = (): void => {
     // Clear localStorage
     localStorage.removeItem('auth_token');
@@ -91,6 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     token,
     login,
     register,
+    googleLogin,
     logout,
     loading,
   };
