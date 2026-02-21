@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\models\user.py
+# hypothesis_version: 6.151.4
+
+[255, 'OnboardingState', 'UserProfile', 'all, delete-orphan', 'deleted_at', 'email', 'idx_users_email', 'idx_users_oauth', 'oauth_provider', 'unique_oauth_user', 'user', 'users']

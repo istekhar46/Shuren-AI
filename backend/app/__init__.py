@@ -1,0 +1,1 @@
+"""Shuren Backend Application"""

@@ -1,0 +1,4 @@
+# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\models\profile.py
+# hypothesis_version: 6.151.4
+
+[500, 'DietaryPreference', 'FitnessGoal', 'HydrationPreference', 'LifestyleBaseline', 'MealPlan', 'MealSchedule', 'PhysicalConstraint', 'User', 'UserProfile', 'UserProfileVersion', 'WorkoutSchedule', 'all, delete-orphan', 'deleted_at', 'idx_profile_user', 'idx_profile_versions', 'profile', 'profile_id', 'unique_user_profile', 'user_id', 'user_profiles', 'user_profiles.id', 'users.id', 'version_number', 'versions']
