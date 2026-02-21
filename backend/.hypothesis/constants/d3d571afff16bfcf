@@ -1,4 +1,0 @@
-# file: C:\Users\EthaN\Desktop\shuren AI\backend\app\services\profile_service.py
-# hypothesis_version: 6.151.4
-
-[403, 404, 500, 'Profile not found', 'allergies', 'carbs_percentage', 'constraint_type', 'daily_calorie_target', 'day_of_week', 'description', 'diet_type', 'dietary_preferences', 'dislikes', 'enable_notifications', 'energy_level', 'fats_percentage', 'fitness_goals', 'fitness_level', 'goal_type', 'intolerances', 'is_locked', 'lifestyle_baseline', 'meal_name', 'meal_plan', 'meal_schedules', 'physical_constraints', 'priority', 'protein_percentage', 'scheduled_time', 'severity', 'sleep_quality', 'stress_level', 'target_weight_kg', 'unlock', 'workout_schedules']
