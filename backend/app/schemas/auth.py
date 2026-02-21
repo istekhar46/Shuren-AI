@@ -20,8 +20,16 @@ class UserLogin(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    """Schema for Google OAuth authentication"""
-    id_token: str = Field(..., description="Google ID token from OAuth flow")
+    """Schema for Google OAuth authentication request using Google Identity Services"""
+    credential: str = Field(
+        ...,
+        min_length=1,
+        description="Google ID token (credential) from OAuth flow"
+    )
+    g_csrf_token: str = Field(
+        default="",
+        description="CSRF token for double-submit-cookie validation (optional for button flow)"
+    )
 
 
 class TokenResponse(BaseModel):

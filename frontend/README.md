@@ -37,7 +37,61 @@ Edit `.env`:
 ```
 VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_LIVEKIT_URL=ws://localhost:7880
+VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 ```
+
+#### Google OAuth Setup
+
+To enable "Sign in with Google" functionality:
+
+1. **Create Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+   - Note your project ID
+
+2. **Enable Google Identity Services**
+   - In the Google Cloud Console, go to "APIs & Services" > "Library"
+   - Search for "Google+ API" or "Google Identity Services"
+   - Click "Enable"
+
+3. **Create OAuth 2.0 Credentials**
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth 2.0 Client ID"
+   - If prompted, configure the OAuth consent screen:
+     - User Type: External (for testing) or Internal (for organization)
+     - App name: Shuren AI
+     - User support email: Your email
+     - Developer contact: Your email
+   - Application type: "Web application"
+   - Name: "Shuren Frontend"
+
+4. **Configure Authorized Origins** ⚠️ CRITICAL STEP
+   - In the OAuth 2.0 Client ID settings, find "Authorized JavaScript origins"
+   - Click "ADD URI" and add these origins:
+     - `http://localhost:3000` (if using port 3000)
+     - `http://localhost:5173` (Vite default port)
+     - Add your production domain when deploying (e.g., `https://yourdomain.com`)
+   - **Important**: The origin must match EXACTLY where your frontend is running
+   - Authorized redirect URIs are not needed for Google Identity Services
+   - Click "Save" at the bottom of the page
+   
+   **Common Error**: If you see "The given origin is not allowed for the given client ID":
+   - This means the origin is not added to authorized JavaScript origins
+   - Check which port your frontend is running on (look at the browser URL)
+   - Add that exact origin (including `http://` and port number)
+   - Wait 1-2 minutes for Google's changes to propagate
+   - Clear browser cache and reload the page
+
+5. **Copy Client ID**
+   - Copy the generated Client ID (format: `xxxxx.apps.googleusercontent.com`)
+   - Paste it in your `.env` file as `VITE_GOOGLE_CLIENT_ID`
+
+6. **Testing**
+   - The Google OAuth button will appear on login and registration pages
+   - Test with your Google account
+   - For production, submit your app for OAuth verification
+
+**Note**: The Client ID is public and safe to include in frontend code. The backend validates the Google ID token for security.
 
 ### 3. Start Development Server
 
@@ -200,6 +254,46 @@ npm test -- --coverage            # With coverage report
 - **Step not updating**: Refresh progress from `/onboarding/progress` endpoint
 - **Plans not displaying**: Check plan detection logic in `planDetectionService`
 - **Can't complete onboarding**: Ensure all 4 steps are completed (100% progress)
+
+### Google OAuth Issues
+
+**Error: "The given origin is not allowed for the given client ID"**
+- **Cause**: Your frontend URL is not added to "Authorized JavaScript origins" in Google Cloud Console
+- **Solution**:
+  1. Check which port your frontend is running on (e.g., `http://localhost:3000` or `http://localhost:5173`)
+  2. Go to [Google Cloud Console](https://console.cloud.google.com/) > APIs & Services > Credentials
+  3. Click on your OAuth 2.0 Client ID
+  4. Under "Authorized JavaScript origins", click "ADD URI"
+  5. Add the exact URL where your frontend is running (e.g., `http://localhost:3000`)
+  6. Click "Save"
+  7. Wait 1-2 minutes for changes to propagate
+  8. Clear browser cache and reload the page
+
+**Error: "CSRF token not found"**
+- **Cause**: Google Identity Services didn't set the g_csrf_token cookie (expected for button flow)
+- **Solution**: This is normal for the button flow. The frontend sends an empty string for CSRF token, which the backend accepts.
+
+**Error: "Token has wrong audience"**
+- **Cause**: Backend is configured with a different Google Client ID than the frontend
+- **Solution**: 
+  1. Check `VITE_GOOGLE_CLIENT_ID` in `frontend/.env`
+  2. Check `GOOGLE_CLIENT_ID` in `backend/.env`
+  3. Both must be the SAME Client ID from Google Cloud Console
+  4. Restart both frontend and backend after changing
+
+**Google button not appearing**
+- **Cause**: Script loading timing issue or configuration error
+- **Solution**:
+  1. Check browser console for errors
+  2. Verify `VITE_GOOGLE_CLIENT_ID` is set in `.env`
+  3. Clear browser cache and reload
+  4. Check that Google Identity Services script loaded (look for console log)
+  5. Try navigating to a different page and back
+
+**Third-party cookies warning**
+- **Cause**: Chrome is phasing out third-party cookies
+- **Impact**: This warning is informational and doesn't affect functionality
+- **Solution**: No action needed. Google Identity Services works without third-party cookies.
 
 ### Backend Connection Issues
 - Ensure backend is running on `http://localhost:8000`

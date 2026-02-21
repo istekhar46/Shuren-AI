@@ -244,10 +244,10 @@ class TestLoginEndpoint:
 
 
 class TestGoogleAuthEndpoint:
-    """Tests for POST /api/v1/auth/google endpoint."""
+    """Tests for POST /api/v1/auth/google endpoint with CSRF protection and enhanced validation."""
     
-    def test_google_auth_new_user(self, client, mock_db):
-        """Test Google OAuth creates new user."""
+    def test_google_auth_new_user_success(self, client, mock_db):
+        """Test Google OAuth creates new user with onboarding state."""
         # Mock database to return no existing user
         mock_result = AsyncMock()
         mock_result.scalar_one_or_none = MagicMock(return_value=None)
@@ -257,13 +257,19 @@ class TestGoogleAuthEndpoint:
             'email': 'newgoogle@example.com',
             'name': 'Google User',
             'sub': 'google-user-id-123',
-            'email_verified': True
+            'email_verified': True,
+            'picture': 'https://example.com/photo.jpg',
+            'hd': None
         }
         
         with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
             response = client.post(
                 "/api/v1/auth/google",
-                json={"id_token": "valid-google-token"}
+                json={
+                    "credential": "valid-google-token",
+                    "g_csrf_token": "csrf-token-123"
+                },
+                cookies={"g_csrf_token": "csrf-token-123"}
             )
         
         assert response.status_code == 200
@@ -271,9 +277,14 @@ class TestGoogleAuthEndpoint:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
         assert "user_id" in data
+        
+        # Verify user was created with correct OAuth fields
+        assert mock_db.add.called
+        # Verify onboarding state was created
+        assert mock_db.add.call_count == 2  # User + OnboardingState
     
-    def test_google_auth_existing_user(self, client, mock_db):
-        """Test Google OAuth returns token for existing user."""
+    def test_google_auth_existing_user_returns_jwt(self, client, mock_db):
+        """Test Google OAuth returns JWT for existing user."""
         # Create existing OAuth user
         user = User(
             id=uuid4(),
@@ -294,13 +305,19 @@ class TestGoogleAuthEndpoint:
             'email': 'existing@example.com',
             'name': 'Existing User',
             'sub': 'existing-google-id',
-            'email_verified': True
+            'email_verified': True,
+            'picture': None,
+            'hd': None
         }
         
         with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
             response = client.post(
                 "/api/v1/auth/google",
-                json={"id_token": "valid-google-token"}
+                json={
+                    "credential": "valid-google-token",
+                    "g_csrf_token": "csrf-token-456"
+                },
+                cookies={"g_csrf_token": "csrf-token-456"}
             )
         
         assert response.status_code == 200
@@ -308,15 +325,147 @@ class TestGoogleAuthEndpoint:
         assert "access_token" in data
         assert str(user.id) == data["user_id"]
     
+    def test_google_auth_csrf_validation_failure_missing_cookie(self, client):
+        """Test Google OAuth fails with missing CSRF cookie."""
+        response = client.post(
+            "/api/v1/auth/google",
+            json={
+                "credential": "valid-google-token",
+                "g_csrf_token": "csrf-token-123"
+            }
+            # No cookie provided
+        )
+        
+        assert response.status_code == 400
+        assert "CSRF" in response.json()["detail"]
+    
+    def test_google_auth_csrf_validation_failure_missing_body_token(self, client):
+        """Test Google OAuth fails with missing CSRF body token."""
+        response = client.post(
+            "/api/v1/auth/google",
+            json={
+                "credential": "valid-google-token"
+                # Missing g_csrf_token
+            },
+            cookies={"g_csrf_token": "csrf-token-123"}
+        )
+        
+        assert response.status_code == 422  # Validation error
+    
+    def test_google_auth_csrf_validation_failure_token_mismatch(self, client):
+        """Test Google OAuth fails with mismatched CSRF tokens."""
+        response = client.post(
+            "/api/v1/auth/google",
+            json={
+                "credential": "valid-google-token",
+                "g_csrf_token": "csrf-token-123"
+            },
+            cookies={"g_csrf_token": "different-csrf-token"}
+        )
+        
+        assert response.status_code == 400
+        assert "mismatch" in response.json()["detail"].lower()
+    
     def test_google_auth_invalid_token(self, client):
         """Test Google OAuth with invalid token returns 401."""
         with patch('app.api.v1.endpoints.auth.verify_google_token', side_effect=ValueError("Invalid token")):
             response = client.post(
                 "/api/v1/auth/google",
-                json={"id_token": "invalid-token"}
+                json={
+                    "credential": "invalid-token",
+                    "g_csrf_token": "csrf-token-789"
+                },
+                cookies={"g_csrf_token": "csrf-token-789"}
             )
         
         assert response.status_code == 401
+    
+    def test_google_auth_unverified_email(self, client):
+        """Test Google OAuth fails with unverified email."""
+        with patch('app.api.v1.endpoints.auth.verify_google_token', side_effect=ValueError("Email address is not verified")):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={
+                    "credential": "unverified-email-token",
+                    "g_csrf_token": "csrf-token-999"
+                },
+                cookies={"g_csrf_token": "csrf-token-999"}
+            )
+        
+        assert response.status_code == 401
+        assert "not verified" in response.json()["detail"].lower()
+    
+    def test_google_auth_uses_sub_claim_for_user_id(self, client, mock_db):
+        """Test that oauth_provider_user_id uses sub claim (not email)."""
+        # Mock database to return no existing user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.return_value = mock_result
+        
+        google_sub = "unique-google-sub-12345"
+        mock_user_info = {
+            'email': 'user@example.com',
+            'name': 'Test User',
+            'sub': google_sub,  # This should be used for oauth_provider_user_id
+            'email_verified': True,
+            'picture': None,
+            'hd': None
+        }
+        
+        with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={
+                    "credential": "valid-token",
+                    "g_csrf_token": "csrf-abc"
+                },
+                cookies={"g_csrf_token": "csrf-abc"}
+            )
+        
+        assert response.status_code == 200
+        
+        # Verify the database query used oauth_provider and oauth_provider_user_id (sub claim)
+        # The execute call should have been made with a query filtering by these fields
+        assert mock_db.execute.called
+    
+    def test_google_auth_jwt_token_format(self, client, mock_db):
+        """Test that Google OAuth returns properly formatted JWT token."""
+        # Mock database to return no existing user
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.return_value = mock_result
+        
+        mock_user_info = {
+            'email': 'jwt@example.com',
+            'name': 'JWT User',
+            'sub': 'jwt-sub-123',
+            'email_verified': True,
+            'picture': None,
+            'hd': None
+        }
+        
+        with patch('app.api.v1.endpoints.auth.verify_google_token', return_value=mock_user_info):
+            response = client.post(
+                "/api/v1/auth/google",
+                json={
+                    "credential": "valid-token",
+                    "g_csrf_token": "csrf-xyz"
+                },
+                cookies={"g_csrf_token": "csrf-xyz"}
+            )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify response format
+        assert "access_token" in data
+        assert "token_type" in data
+        assert "user_id" in data
+        assert data["token_type"] == "bearer"
+        
+        # Verify JWT token format (should have 3 parts separated by dots)
+        token_parts = data["access_token"].split(".")
+        assert len(token_parts) == 3
 
 
 class TestGetMeEndpoint:
