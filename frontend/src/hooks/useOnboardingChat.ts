@@ -50,7 +50,7 @@ interface UseOnboardingChatReturn {
  * Custom hook for managing onboarding chat state and interactions
  * 
  * Handles:
- * - Onboarding progress tracking (9 states)
+ * - Onboarding progress tracking (4 steps)
  * - Agent context and state metadata
  * - Streaming chat messages
  * - Plan detection and approval workflow
@@ -61,7 +61,7 @@ interface UseOnboardingChatReturn {
 export const useOnboardingChat = (): UseOnboardingChatReturn => {
   // Progress state
   const [currentState, setCurrentState] = useState<number>(0);
-  const [totalStates] = useState<number>(9);
+  const [totalStates] = useState<number>(4);
   const [completedStates, setCompletedStates] = useState<number[]>([]);
   const [completionPercentage, setCompletionPercentage] = useState<number>(0);
   const [isComplete, setIsComplete] = useState<boolean>(false);
@@ -90,6 +90,20 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
   const navigate = useNavigate();
   
   /**
+   * Validate and clamp state to valid range (1-4)
+   */
+  const validateState = useCallback((state: number): number => {
+    return Math.max(1, Math.min(4, state));
+  }, []);
+  
+  /**
+   * Check if agent type is valid (one of 4 types)
+   */
+  const isValidAgent = useCallback((agent: string): agent is OnboardingAgentType => {
+    return ['fitness_assessment', 'workout_planning', 'diet_planning', 'scheduling'].includes(agent);
+  }, []);
+  
+  /**
    * Fetch onboarding progress and conversation history on mount
    * Requirements:
    * - TR-2.1: Use /onboarding/progress for initial load
@@ -105,15 +119,21 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
         ]);
         
         // Update progress state
-        setCurrentState(progress.current_state);
-        setCompletedStates(progress.completed_states);
+        setCurrentState(validateState(progress.current_state));
+        setCompletedStates(progress.completed_states.filter(s => s >= 1 && s <= 4));
         setCompletionPercentage(progress.completion_percentage);
         setIsComplete(progress.is_complete);
         setCanComplete(progress.can_complete);
         
         // Update agent state
         setStateMetadata(progress.current_state_info);
-        setCurrentAgent(progress.current_state_info.agent);
+        // Validate agent type before setting
+        if (isValidAgent(progress.current_state_info.agent)) {
+          setCurrentAgent(progress.current_state_info.agent);
+        } else {
+          console.warn(`Invalid agent type: ${progress.current_state_info.agent}, defaulting to fitness_assessment`);
+          setCurrentAgent('fitness_assessment');
+        }
         setAgentDescription(progress.current_state_info.description);
         
         // Load conversation history
@@ -218,8 +238,11 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
           
           // Handle state updates
           if (data.state_updated && data.progress) {
-            setCurrentState(data.progress.current_state);
-            setCompletedStates(data.progress.completed_states);
+            // Validate and filter completed_states to only include 1-4
+            const validCompletedStates = data.progress.completed_states.filter(s => s >= 1 && s <= 4);
+            
+            setCurrentState(validateState(data.progress.current_state));
+            setCompletedStates(validCompletedStates);
             setCompletionPercentage(data.progress.completion_percentage);
             setIsComplete(data.progress.is_complete);
             setCanComplete(data.progress.can_complete);
@@ -228,7 +251,13 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
             onboardingService.getOnboardingProgress()
               .then(progress => {
                 setStateMetadata(progress.current_state_info);
-                setCurrentAgent(progress.current_state_info.agent);
+                // Validate agent type before setting
+                if (isValidAgent(progress.current_state_info.agent)) {
+                  setCurrentAgent(progress.current_state_info.agent);
+                } else {
+                  console.warn(`Invalid agent type: ${progress.current_state_info.agent}, defaulting to fitness_assessment`);
+                  setCurrentAgent('fitness_assessment');
+                }
                 setAgentDescription(progress.current_state_info.description);
               })
               .catch(err => {

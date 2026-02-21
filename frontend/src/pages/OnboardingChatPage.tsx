@@ -16,7 +16,7 @@ import { ErrorMessage } from '../components/common/ErrorMessage';
  * 
  * Features:
  * - Agent context display showing current agent
- * - Progress tracking with 9-state system
+ * - Progress tracking with 4-step system
  * - Streaming chat interface
  * - Plan preview and approval workflow
  * - Automatic state progression
@@ -133,7 +133,7 @@ export const OnboardingChatPage: React.FC = () => {
                       <span role="img" aria-label="celebration">🎉</span> Onboarding Complete!
                     </h3>
                     <p className="text-green-800 mb-4">
-                      You've completed all onboarding steps. Click below to finalize your profile and start your fitness journey!
+                      You've completed all 4 onboarding steps. Click below to finalize your profile and start your fitness journey!
                     </p>
                     <button
                       onClick={completeOnboarding}

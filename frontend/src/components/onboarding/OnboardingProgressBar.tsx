@@ -30,25 +30,25 @@ export const OnboardingProgressBar: React.FC<OnboardingProgressBarProps> = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Define all 9 onboarding states with their names
+  // Define all 4 onboarding steps with their names and agent types
   const allStates = [
-    { number: 1, name: 'Fitness Level Assessment' },
-    { number: 2, name: 'Primary Fitness Goals' },
-    { number: 3, name: 'Workout Preferences & Constraints' },
-    { number: 4, name: 'Diet Preferences & Restrictions' },
-    { number: 5, name: 'Fixed Meal Plan Selection' },
-    { number: 6, name: 'Meal Timing Schedule' },
-    { number: 7, name: 'Workout Schedule' },
-    { number: 8, name: 'Hydration Schedule' },
-    { number: 9, name: 'Supplement Preferences' },
+    { number: 1, name: 'Fitness Assessment', agent: 'fitness_assessment' },
+    { number: 2, name: 'Workout Planning', agent: 'workout_planning' },
+    { number: 3, name: 'Diet Planning', agent: 'diet_planning' },
+    { number: 4, name: 'Scheduling', agent: 'scheduling' },
   ];
 
   /**
    * Determine the status of a state
-   * @param stateNumber - The state number to check
+   * @param stateNumber - The state number to check (1-4)
    * @returns 'completed' | 'current' | 'upcoming'
    */
   const getStateStatus = (stateNumber: number): 'completed' | 'current' | 'upcoming' => {
+    // Validate state number is 1-4
+    if (stateNumber < 1 || stateNumber > 4) {
+      return 'upcoming';
+    }
+    
     if (completedStates.includes(stateNumber)) {
       return 'completed';
     }

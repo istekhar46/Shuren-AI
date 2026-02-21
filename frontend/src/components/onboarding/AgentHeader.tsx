@@ -30,7 +30,6 @@ export const AgentHeader: React.FC<AgentHeaderProps> = ({
   const getAgentName = (type: OnboardingAgentType): string => {
     const agentNames: Record<OnboardingAgentType, string> = {
       [OnboardingAgentType.FITNESS_ASSESSMENT]: 'Fitness Assessment Agent',
-      [OnboardingAgentType.GOAL_SETTING]: 'Goal Setting Agent',
       [OnboardingAgentType.WORKOUT_PLANNING]: 'Workout Planning Agent',
       [OnboardingAgentType.DIET_PLANNING]: 'Diet Planning Agent',
       [OnboardingAgentType.SCHEDULING]: 'Scheduling Agent',
@@ -44,7 +43,6 @@ export const AgentHeader: React.FC<AgentHeaderProps> = ({
   const getAgentIcon = (type: OnboardingAgentType): string => {
     const agentIcons: Record<OnboardingAgentType, string> = {
       [OnboardingAgentType.FITNESS_ASSESSMENT]: '💪',
-      [OnboardingAgentType.GOAL_SETTING]: '🎯',
       [OnboardingAgentType.WORKOUT_PLANNING]: '🏋️',
       [OnboardingAgentType.DIET_PLANNING]: '🥗',
       [OnboardingAgentType.SCHEDULING]: '📅',
@@ -58,7 +56,6 @@ export const AgentHeader: React.FC<AgentHeaderProps> = ({
   const getAgentColorClass = (type: OnboardingAgentType): string => {
     const agentColors: Record<OnboardingAgentType, string> = {
       [OnboardingAgentType.FITNESS_ASSESSMENT]: 'bg-purple-600',
-      [OnboardingAgentType.GOAL_SETTING]: 'bg-blue-600',
       [OnboardingAgentType.WORKOUT_PLANNING]: 'bg-green-600',
       [OnboardingAgentType.DIET_PLANNING]: 'bg-orange-600',
       [OnboardingAgentType.SCHEDULING]: 'bg-indigo-600',

@@ -66,7 +66,7 @@ frontend/
 │   │   ├── auth/              # Login, Register
 │   │   ├── onboarding/        # Agent-based onboarding components
 │   │   │   ├── AgentHeader.tsx           # Current agent display
-│   │   │   ├── OnboardingProgressBar.tsx # 9-state progress tracker
+│   │   │   ├── OnboardingProgressBar.tsx # 4-step progress tracker
 │   │   │   ├── PlanPreviewCard.tsx       # Plan approval UI
 │   │   │   ├── WorkoutPlanPreview.tsx    # Workout plan display
 │   │   │   └── MealPlanPreview.tsx       # Meal plan display
@@ -124,13 +124,13 @@ frontend/
 - ✅ Voice responses (Cartesia TTS)
 
 ### Agent-Based Onboarding (Latest)
-- ✅ Conversational onboarding with 5 specialized AI agents
-- ✅ 9-state onboarding flow (replacing old 12-step form)
+- ✅ Conversational onboarding with 4 specialized AI agents
+- ✅ 4-step onboarding flow (replacing old 12-step form)
 - ✅ Real-time streaming responses
 - ✅ Workout plan generation and approval
 - ✅ Meal plan generation and approval
 - ✅ Progress tracking with visual indicators
-- ✅ Agent context display (current agent, state, description)
+- ✅ Agent context display (current agent, step, description)
 
 ## Development Guidelines
 
@@ -139,15 +139,15 @@ frontend/
 The new onboarding system uses conversational AI agents instead of traditional forms:
 
 #### Architecture
-- **5 Specialized Agents**: Fitness Assessment, Goal Setting, Workout Planning, Diet Planning, Scheduling
-- **9 States**: User progresses through 9 onboarding states (0-8)
+- **4 Specialized Agents**: Fitness Assessment, Workout Planning, Diet Planning, Scheduling
+- **4 Steps**: User progresses through 4 onboarding steps (1-4)
 - **Streaming Responses**: Real-time SSE streaming for natural conversation
 - **Plan Approval**: Interactive review and approval of workout/meal plans
 
 #### Key Components
 - `OnboardingChatPage`: Main container with chat interface
-- `AgentHeader`: Displays current agent and state information
-- `OnboardingProgressBar`: Visual progress through 9 states
+- `AgentHeader`: Displays current agent and step information
+- `OnboardingProgressBar`: Visual progress through 4 steps
 - `PlanPreviewCard`: Modal for reviewing workout/meal plans
 - `useOnboardingChat`: Custom hook managing onboarding state
 
@@ -156,16 +156,11 @@ The new onboarding system uses conversational AI agents instead of traditional f
 - `GET /api/v1/chat/onboarding-stream` - Stream chat responses (SSE)
 - `POST /api/v1/onboarding/complete` - Complete onboarding and create profile
 
-#### State Flow
-1. **State 0**: Fitness Level Assessment
-2. **State 1**: Primary Fitness Goals
-3. **State 2**: Workout Preferences & Constraints
-4. **State 3**: Dietary Preferences & Restrictions
-5. **State 4**: Meal Planning Preferences
-6. **State 5**: Workout Schedule & Timing
-7. **State 6**: Lifestyle & Baseline Assessment
-8. **State 7**: Workout Plan Generation & Approval
-9. **State 8**: Meal Plan Generation & Approval
+#### Step Flow
+1. **Step 1**: Fitness Assessment (fitness level, experience, goals)
+2. **Step 2**: Workout Planning (equipment, schedule, constraints)
+3. **Step 3**: Diet Planning (diet type, allergies, meal preferences)
+4. **Step 4**: Scheduling (hydration, supplements, reminders)
 
 #### Testing
 - Unit tests for components and hooks
@@ -202,9 +197,9 @@ npm test -- --coverage            # With coverage report
 
 ### Onboarding Issues
 - **Streaming not working**: Check SSE connection, verify backend is running
-- **State not updating**: Refresh progress from `/onboarding/progress` endpoint
+- **Step not updating**: Refresh progress from `/onboarding/progress` endpoint
 - **Plans not displaying**: Check plan detection logic in `planDetectionService`
-- **Can't complete onboarding**: Ensure all 9 states are completed (100% progress)
+- **Can't complete onboarding**: Ensure all 4 steps are completed (100% progress)
 
 ### Backend Connection Issues
 - Ensure backend is running on `http://localhost:8000`
@@ -223,7 +218,7 @@ This frontend implements the agent-based onboarding system integrated with the S
 1. ✅ Project setup and infrastructure
 2. ✅ Authentication system
 3. ✅ User profile and context
-4. ✅ Agent-based onboarding flow (9 states)
+4. ✅ Agent-based onboarding flow (4 steps)
 5. ✅ Dashboard page
 6. ✅ Text chat interface
 7. ✅ Voice session interface

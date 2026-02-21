@@ -6,12 +6,11 @@
  */
 
 /**
- * Agent types for onboarding flow
+ * Agent types for 4-step onboarding flow
  * Maps to backend OnboardingAgentType enum
  */
 export const AgentType = {
   FITNESS_ASSESSMENT: 'fitness_assessment',
-  GOAL_SETTING: 'goal_setting',
   WORKOUT_PLANNING: 'workout_planning',
   DIET_PLANNING: 'diet_planning',
   SCHEDULING: 'scheduling'
@@ -22,14 +21,14 @@ export type AgentType = typeof AgentType[keyof typeof AgentType];
 /**
  * Onboarding progress response
  * Returned by GET /api/v1/onboarding/progress
- * Contains current state, completion status, and metadata
+ * Contains current step (1-4), completion status, and metadata
  */
 export interface OnboardingProgress {
-  current_state: number;
-  total_states: number;
-  completed_states: number[];
+  current_state: number;        // 1-4
+  total_states: number;          // Always 4
+  completed_states: number[];    // Array of completed step numbers (1-4)
   is_complete: boolean;
-  completion_percentage: number;
+  completion_percentage: number; // 0-100
   can_complete: boolean;
   current_state_info: StateMetadata;
   next_state_info: StateMetadata | null;
@@ -37,12 +36,12 @@ export interface OnboardingProgress {
 
 /**
  * State metadata for UI rendering
- * Provides information about each onboarding state
+ * Provides information about each onboarding step (1-4)
  */
 export interface StateMetadata {
-  state_number: number;
-  name: string;
-  agent: AgentType;
+  state_number: number;      // 1-4
+  name: string;              // e.g., "Fitness Assessment"
+  agent: AgentType;          // One of 4 agent types
   description: string;
   required_fields: string[];
 }
@@ -175,4 +174,15 @@ export interface OnboardingCompleteResponse {
   is_locked: boolean;
   onboarding_complete: boolean;
   message: string;
+}
+
+/**
+ * Step completion flags for 4-step flow
+ * Used internally to track which steps are complete
+ */
+export interface StepCompletionFlags {
+  step_1_complete: boolean;
+  step_2_complete: boolean;
+  step_3_complete: boolean;
+  step_4_complete: boolean;
 }

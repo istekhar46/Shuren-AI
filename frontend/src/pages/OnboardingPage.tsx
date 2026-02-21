@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
  * @deprecated This form-based onboarding flow has been replaced by OnboardingChatPage.
  * This component now redirects to the new agent-based conversational onboarding.
  * 
- * The old 12-step form flow has been replaced with a 9-state conversational flow
+ * The old 12-step form flow has been replaced with a 4-step conversational flow
  * powered by specialized AI agents.
  * 
  * Migration: All users are automatically redirected to /onboarding-chat
