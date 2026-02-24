@@ -24,7 +24,10 @@ export const MessageInput = ({ onSend, disabled, placeholder }: MessageInputProp
   };
 
   return (
-    <div className="border-t border-gray-300 p-4 bg-white">
+    <div
+      className="p-4"
+      style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-primary)' }}
+    >
       <div className="flex gap-2">
         <textarea
           value={message}
@@ -33,12 +36,17 @@ export const MessageInput = ({ onSend, disabled, placeholder }: MessageInputProp
           placeholder={placeholder || "Type your message... (Press Enter to send, Shift+Enter for new line)"}
           disabled={disabled}
           rows={3}
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+          className="flex-1 px-4 py-2 rounded-lg resize-none focus:ring-2 focus:ring-[var(--color-violet)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text-primary)',
+          }}
         />
         <button
           onClick={handleSend}
           disabled={disabled || !message.trim()}
-          className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          className="ds-btn-primary px-6 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Send
         </button>

@@ -12,20 +12,21 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   className = '',
 }) => {
   const sizeClasses = {
-    sm: 'w-6 h-6 border-2',
-    md: 'w-12 h-12 border-4',
-    lg: 'w-16 h-16 border-4',
+    sm: 'w-6 h-6',
+    md: 'w-12 h-12',
+    lg: 'w-16 h-16',
   };
 
   return (
     <div className={`flex flex-col items-center justify-center ${className}`}>
       <div
-        className={`${sizeClasses[size]} border-blue-600 border-t-transparent rounded-full animate-spin`}
+        className={`${sizeClasses[size]} rounded-full animate-spin`}
+        style={{ borderWidth: size === 'sm' ? 2 : 4, borderColor: 'var(--color-violet)', borderTopColor: 'transparent' }}
         role="status"
         aria-label="Loading"
       />
       {message && (
-        <p className="mt-4 text-gray-600 text-center">{message}</p>
+        <p className="mt-4 text-center" style={{ color: 'var(--color-text-muted)' }}>{message}</p>
       )}
     </div>
   );

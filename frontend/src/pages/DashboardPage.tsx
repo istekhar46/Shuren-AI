@@ -6,103 +6,124 @@ import { ProfileSummary } from '../components/dashboard/ProfileSummary';
 import { MealPlanSummary } from '../components/dashboard/MealPlanSummary';
 import { WorkoutScheduleSummary } from '../components/dashboard/WorkoutScheduleSummary';
 import { QuickActions } from '../components/dashboard/QuickActions';
+import './DashboardPage.css';
 
 export const DashboardPage: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { profile, refreshProfile, loading, error } = useUser();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch profile on mount
     refreshProfile().catch((err) => {
       console.error('Failed to load profile:', err);
     });
   }, [refreshProfile]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
+  /* ── Loading ── */
   if (loading && !profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+          <div
+            className="animate-spin rounded-full h-12 w-12 mx-auto"
+            style={{ borderWidth: 3, borderColor: 'var(--color-violet)', borderTopColor: 'transparent' }}
+          />
+          <p className="mt-4" style={{ color: 'var(--color-text-muted)' }}>Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
+  /* ── Error ── */
   if (error && !profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={() => refreshProfile()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            Retry
-          </button>
+          <p className="mb-4" style={{ color: '#f87171' }}>{error}</p>
+          <button onClick={() => refreshProfile()} className="ds-btn-primary">Retry</button>
         </div>
       </div>
     );
   }
 
+  /* ── No profile ── */
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
-          <p className="text-gray-600">No profile found. Please complete onboarding.</p>
-          <button
-            onClick={() => navigate('/onboarding')}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            Start Onboarding
-          </button>
+          <p style={{ color: 'var(--color-text-muted)' }}>No profile found. Please complete onboarding.</p>
+          <button onClick={() => navigate('/onboarding')} className="ds-btn-primary mt-4">Start Onboarding</button>
         </div>
       </div>
     );
   }
 
+  /* ── Derived stats ── */
+  const calories = profile.mealPlan?.dailyCalories || 0;
+  const protein = profile.mealPlan?.macros?.protein || 0;
+  const workoutDays = profile.workoutSchedule?.daysPerWeek || 0;
+  const goalCount = profile.goals?.length || 0;
+
+  const greeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const stats = [
+    { icon: '🔥', value: calories, unit: 'kcal', label: 'Daily Calories', accent: 'violet' },
+    { icon: '💪', value: `${protein}g`, unit: '', label: 'Protein Target', accent: 'pink' },
+    { icon: '🏋️', value: workoutDays, unit: 'days', label: 'Workout Days/Wk', accent: 'coral' },
+    { icon: '🎯', value: goalCount, unit: goalCount === 1 ? 'goal' : 'goals', label: 'Active Goals', accent: 'emerald' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Shuren AI Dashboard</h1>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {user?.email}</span>
-              <button
-                onClick={handleLogout}
-                className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
-              >
-                Logout
-              </button>
-            </div>
+    <div className="dash-grid">
+      {/* ━━━ Hero Welcome Card ━━━ */}
+      <div className="dash-hero dash-span-4">
+        <div className="relative z-10">
+          <p className="text-sm mb-1" style={{ color: 'var(--color-text-faint)' }}>{today}</p>
+          <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            {greeting()}, <span className="ds-gradient-text">{user?.email?.split('@')[0] || 'there'}</span>
+          </h1>
+          <p style={{ color: 'var(--color-text-muted)' }}>Here's your fitness snapshot for today</p>
+        </div>
+      </div>
+
+      {/* ━━━ Stat Metric Cards ━━━ */}
+      {stats.map((s) => (
+        <div key={s.label} className="dash-stat">
+          <div className={`dash-stat-icon dash-stat-icon--${s.accent}`}>{s.icon}</div>
+          <div className="dash-stat-value">
+            {s.value}
+            {s.unit && <span className="dash-stat-unit">{s.unit}</span>}
           </div>
+          <div className="dash-stat-label">{s.label}</div>
         </div>
-      </header>
+      ))}
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Profile Summary */}
-          <ProfileSummary profile={profile} />
+      {/* ━━━ Profile + Meal Plan (side-by-side on desktop) ━━━ */}
+      <div className="dash-span-2">
+        <ProfileSummary profile={profile} />
+      </div>
+      <div className="dash-span-2">
+        <MealPlanSummary profile={profile} />
+      </div>
 
-          {/* Meal Plan Summary */}
-          <MealPlanSummary profile={profile} />
-
-          {/* Workout Schedule Summary */}
-          <WorkoutScheduleSummary profile={profile} />
-
-          {/* Quick Actions */}
-          <QuickActions />
-        </div>
-      </main>
+      {/* ━━━ Workout Schedule + Quick Actions (side-by-side on desktop) ━━━ */}
+      <div className="dash-span-2">
+        <WorkoutScheduleSummary profile={profile} />
+      </div>
+      <div className="dash-span-2">
+        <QuickActions />
+      </div>
     </div>
   );
 };

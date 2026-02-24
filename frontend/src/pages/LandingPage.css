@@ -1,0 +1,349 @@
+/* ═══════════════════════════════════════════════════════════
+   Landing Page — Layout-Only Styles
+   ═══════════════════════════════════════════════════════════
+   All design tokens and reusable components live in index.css
+   (ds-btn-*, ds-card, ds-badge, ds-glass-panel, etc.).
+   This file contains ONLY landing-page-specific layout,
+   background effects, and structural positioning.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Page root ── */
+.landing-root {
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    font-family: var(--font-family);
+}
+
+/* ────────────────────────────────
+   Aurora Background Effects
+   ──────────────────────────────── */
+.landing-aurora {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+}
+
+.landing-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.45;
+    will-change: transform;
+}
+
+.landing-orb--1 {
+    width: 700px;
+    height: 700px;
+    top: -15%;
+    right: -10%;
+    background: radial-gradient(circle, rgba(167 139 250 / 0.5) 0%, transparent 70%);
+    animation: auroraFloat1 18s ease-in-out infinite;
+}
+
+.landing-orb--2 {
+    width: 550px;
+    height: 550px;
+    bottom: -10%;
+    left: -8%;
+    background: radial-gradient(circle, rgba(244 114 182 / 0.45) 0%, transparent 70%);
+    animation: auroraFloat2 22s ease-in-out infinite;
+}
+
+.landing-orb--3 {
+    width: 400px;
+    height: 400px;
+    top: 40%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(251 113 133 / 0.3) 0%, transparent 70%);
+    animation: auroraFloat3 25s ease-in-out infinite;
+}
+
+.landing-orb--4 {
+    width: 300px;
+    height: 300px;
+    top: 10%;
+    left: 20%;
+    background: radial-gradient(circle, rgba(139 92 246 / 0.3) 0%, transparent 70%);
+    animation: auroraFloat4 20s ease-in-out infinite;
+}
+
+@keyframes auroraFloat1 {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    33% {
+        transform: translate(-40px, 30px) scale(1.08);
+    }
+
+    66% {
+        transform: translate(30px, -20px) scale(0.95);
+    }
+}
+
+@keyframes auroraFloat2 {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    33% {
+        transform: translate(50px, -30px) scale(1.1);
+    }
+
+    66% {
+        transform: translate(-30px, 40px) scale(0.93);
+    }
+}
+
+@keyframes auroraFloat3 {
+
+    0%,
+    100% {
+        transform: translateX(-50%) translate(0, 0) scale(1);
+    }
+
+    50% {
+        transform: translateX(-50%) translate(20px, -40px) scale(1.12);
+    }
+}
+
+@keyframes auroraFloat4 {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    50% {
+        transform: translate(-30px, 20px) scale(1.15);
+    }
+}
+
+/* Noise texture overlay */
+.landing-noise {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 200px;
+}
+
+
+/* ────────────────────────────────
+   Section Layout
+   ──────────────────────────────── */
+
+/* Navbar */
+.landing-nav {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-5) var(--space-6);
+    max-width: 80rem;
+    margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+    .landing-nav {
+        padding: var(--space-5) var(--space-10);
+    }
+}
+
+.landing-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-extrabold);
+    letter-spacing: -0.025em;
+    color: var(--color-text-primary);
+    text-decoration: none;
+}
+
+.landing-logo-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-sm);
+    background: var(--gradient-accent);
+    font-size: 0.85rem;
+    font-weight: var(--font-weight-black);
+    color: var(--color-text-primary);
+}
+
+.landing-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* Hero */
+.landing-hero {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-16) var(--space-6) var(--space-20);
+    max-width: 56rem;
+    margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+    .landing-hero {
+        padding-top: var(--space-24);
+        padding-bottom: var(--space-24);
+    }
+}
+
+@media (min-width: 1024px) {
+    .landing-hero {
+        padding-top: 8rem;
+    }
+}
+
+.landing-h1 {
+    margin: var(--space-6) 0;
+}
+
+.landing-hero-sub {
+    max-width: 38rem;
+    margin: 0 auto var(--space-10);
+    font-size: var(--font-size-lg);
+    line-height: var(--line-height-loose);
+    color: var(--color-text-muted);
+}
+
+.landing-hero-ctas {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+@media (min-width: 640px) {
+    .landing-hero-ctas {
+        flex-direction: row;
+        gap: var(--space-6);
+    }
+}
+
+/* Stats strip */
+.landing-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    margin-top: var(--space-16);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--color-border);
+    width: 100%;
+    max-width: 36rem;
+}
+
+@media (min-width: 640px) {
+    .landing-stats {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.landing-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-5) var(--space-3);
+    background: rgba(10 10 18 / 0.8);
+    backdrop-filter: blur(12px);
+}
+
+.landing-stat-value {
+    font-size: 1.5rem;
+    font-weight: var(--font-weight-extrabold);
+}
+
+.landing-stat-label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* Features section */
+.landing-features {
+    position: relative;
+    z-index: 5;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-20);
+    text-align: center;
+}
+
+.landing-grid {
+    display: grid;
+    gap: var(--space-5);
+    text-align: left;
+}
+
+@media (min-width: 640px) {
+    .landing-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .landing-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Card icon  */
+.landing-card-icon {
+    margin-bottom: var(--space-4);
+}
+
+/* Final CTA */
+.landing-final {
+    position: relative;
+    z-index: 5;
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: 0 var(--space-6) var(--space-24);
+}
+
+/* Footer */
+.landing-footer {
+    position: relative;
+    z-index: 5;
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-faint);
+}
+
+/* ── Responsive fine-tuning ── */
+@media (max-width: 480px) {
+    .landing-hero-sub {
+        font-size: 0.95rem;
+    }
+}

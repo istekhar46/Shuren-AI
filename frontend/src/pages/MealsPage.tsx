@@ -15,7 +15,6 @@ export const MealsPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Date range for meal plan and shopping list
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -28,9 +27,7 @@ export const MealsPage = () => {
   });
 
   useEffect(() => {
-    if (viewMode === 'plan') {
-      loadMealPlan();
-    }
+    if (viewMode === 'plan') loadMealPlan();
   }, [viewMode]);
 
   const loadMealPlan = async () => {
@@ -38,13 +35,10 @@ export const MealsPage = () => {
       setLoading(true);
       setError(null);
       const mealPlan = await mealService.getMealPlan();
-      
       if (!mealPlan) {
         setMeals([]);
         setError('No meal plan configured yet. Complete onboarding to set up your meal plan.');
       } else {
-        // Meal plan exists but doesn't contain actual meals
-        // The backend only returns nutritional targets, not individual meals
         setMeals([]);
       }
     } catch (err) {
@@ -55,94 +49,73 @@ export const MealsPage = () => {
     }
   };
 
-  const handleMealClick = (meal: Meal) => {
-    setSelectedMeal(meal);
-  };
+  const handleMealClick = (meal: Meal) => setSelectedMeal(meal);
+  const handleCloseMealDetails = () => setSelectedMeal(null);
 
-  const handleCloseMealDetails = () => {
-    setSelectedMeal(null);
-  };
+  const tabs: { key: ViewMode; label: string }[] = [
+    { key: 'plan', label: 'Meal Plan' },
+    { key: 'browse', label: 'Browse Dishes' },
+    { key: 'shopping', label: 'Shopping List' },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ background: 'var(--color-bg-primary)', minHeight: '100vh' }}>
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Meals</h1>
-          <p className="text-gray-600">
+          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>Meals</h1>
+          <p style={{ color: 'var(--color-text-muted)' }}>
             View your meal plan, browse dishes, and generate shopping lists
           </p>
         </div>
 
         {/* View Mode Tabs */}
-        <div className="mb-6 border-b border-gray-200">
+        <div className="mb-6" style={{ borderBottom: '1px solid var(--color-border)' }}>
           <nav className="flex gap-8">
-            <button
-              onClick={() => setViewMode('plan')}
-              className={`pb-4 px-1 border-b-2 font-medium transition-colors ${
-                viewMode === 'plan'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Meal Plan
-            </button>
-            <button
-              onClick={() => setViewMode('browse')}
-              className={`pb-4 px-1 border-b-2 font-medium transition-colors ${
-                viewMode === 'browse'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Browse Dishes
-            </button>
-            <button
-              onClick={() => setViewMode('shopping')}
-              className={`pb-4 px-1 border-b-2 font-medium transition-colors ${
-                viewMode === 'shopping'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Shopping List
-            </button>
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setViewMode(tab.key)}
+                className="pb-4 px-1 font-medium transition-colors"
+                style={{
+                  borderBottom: `2px solid ${viewMode === tab.key ? 'var(--color-violet)' : 'transparent'}`,
+                  color: viewMode === tab.key ? 'var(--color-violet)' : 'var(--color-text-muted)',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
         </div>
 
-        {/* Date Range Selector (for Plan and Shopping views) */}
+        {/* Date Range Selector */}
         {(viewMode === 'plan' || viewMode === 'shopping') && (
-          <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="ds-card mb-6">
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label htmlFor="startDate" className="text-sm font-medium text-gray-700">
-                  From:
-                </label>
-                <input
-                  type="date"
-                  id="startDate"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label htmlFor="endDate" className="text-sm font-medium text-gray-700">
-                  To:
-                </label>
-                <input
-                  type="date"
-                  id="endDate"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+              {[
+                { id: 'startDate', label: 'From:', value: startDate, onChange: setStartDate },
+                { id: 'endDate', label: 'To:', value: endDate, onChange: setEndDate },
+              ].map((picker) => (
+                <div key={picker.id} className="flex items-center gap-2">
+                  <label htmlFor={picker.id} className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                    {picker.label}
+                  </label>
+                  <input
+                    type="date"
+                    id={picker.id}
+                    value={picker.value}
+                    onChange={(e) => picker.onChange(e.target.value)}
+                    className="px-3 py-2 rounded-lg focus:ring-2 focus:ring-[var(--color-violet)] focus:border-transparent"
+                    style={{
+                      background: 'var(--color-bg-surface)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  />
+                </div>
+              ))}
               {viewMode === 'plan' && (
-                <button
-                  onClick={loadMealPlan}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
+                <button onClick={loadMealPlan} className="ds-btn-primary">
                   Refresh
                 </button>
               )}
@@ -150,36 +123,35 @@ export const MealsPage = () => {
           </div>
         )}
 
-        {/* Error Message */}
+        {/* Error */}
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div
+            className="mb-6 px-4 py-3 rounded-lg"
+            style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}
+          >
             {error}
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div
+              className="animate-spin rounded-full h-12 w-12"
+              style={{ borderWidth: 3, borderColor: 'var(--color-violet)', borderTopColor: 'transparent' }}
+            />
           </div>
         )}
 
-        {/* Content based on view mode */}
+        {/* Content */}
         {!loading && (
           <>
-            {viewMode === 'plan' && (
-              <MealPlanView meals={meals} onMealClick={handleMealClick} />
-            )}
-
+            {viewMode === 'plan' && <MealPlanView meals={meals} onMealClick={handleMealClick} />}
             {viewMode === 'browse' && <DishBrowser />}
-
-            {viewMode === 'shopping' && (
-              <ShoppingList startDate={startDate} endDate={endDate} />
-            )}
+            {viewMode === 'shopping' && <ShoppingList startDate={startDate} endDate={endDate} />}
           </>
         )}
 
-        {/* Meal Details Modal */}
         <MealDetails meal={selectedMeal} onClose={handleCloseMealDetails} />
       </div>
     </div>

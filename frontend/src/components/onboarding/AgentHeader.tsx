@@ -69,7 +69,7 @@ export const AgentHeader: React.FC<AgentHeaderProps> = ({
 
   return (
     <div 
-      className={`sticky top-0 z-10 ${colorClass} text-white shadow-lg transition-all duration-300`}
+      className={`sticky top-0 z-10 ${colorClass} text-white shadow-lg transition-all duration-300 rounded-md`}
       role="banner"
       aria-label="Current onboarding agent"
     >

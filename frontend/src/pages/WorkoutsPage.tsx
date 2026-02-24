@@ -23,13 +23,10 @@ export const WorkoutsPage = () => {
     try {
       setLoading(true);
       setError(null);
-
-      // Backend supports: getTodayWorkout() and getSchedule()
       const [today, scheduleData] = await Promise.all([
         workoutService.getTodayWorkout(),
         workoutService.getSchedule(),
       ]);
-
       setTodayWorkout(today);
       setSchedule(scheduleData);
     } catch (err) {
@@ -41,7 +38,6 @@ export const WorkoutsPage = () => {
   };
 
   const handleRequestDemo = (exerciseName: string) => {
-    // Navigate to chat with pre-filled message
     navigate('/chat', {
       state: {
         prefillMessage: `Can you show me how to do ${exerciseName}?`,
@@ -52,47 +48,52 @@ export const WorkoutsPage = () => {
 
   if (loading) {
     return (
-      <div className="workouts-page p-6">
-        <div className="text-center py-8">Loading workouts...</div>
+      <div className="p-6 text-center py-8" style={{ color: 'var(--color-text-muted)' }}>
+        Loading workouts...
       </div>
     );
   }
 
+  const toggleBtnClass = (active: boolean) =>
+    `px-4 py-2 rounded-md text-sm font-medium transition-all ${
+      active
+        ? 'text-white'
+        : ''
+    }`;
+
   return (
-    <div className="workouts-page p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto" style={{ background: 'var(--color-bg-primary)', minHeight: '100vh' }}>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Workouts</h1>
-        
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Workouts</h1>
+
         <div className="flex gap-2">
-          <button
-            onClick={() => setViewMode('today')}
-            className={`px-4 py-2 rounded-md ${
-              viewMode === 'today'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => setViewMode('schedule')}
-            className={`px-4 py-2 rounded-md ${
-              viewMode === 'schedule'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Schedule
-          </button>
+          {(['today', 'schedule'] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={toggleBtnClass(viewMode === mode)}
+              style={
+                viewMode === mode
+                  ? { background: 'var(--gradient-accent)' }
+                  : { background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
+              }
+            >
+              {mode === 'today' ? 'Today' : 'Schedule'}
+            </button>
+          ))}
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-md mb-4">
+        <div
+          className="px-4 py-3 rounded-md mb-4"
+          style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}
+        >
           {error}
           <button
             onClick={() => setError(null)}
-            className="float-right text-red-700 hover:text-red-900"
+            className="float-right hover:opacity-80"
+            style={{ color: '#f87171' }}
           >
             ×
           </button>
@@ -102,21 +103,16 @@ export const WorkoutsPage = () => {
       {viewMode === 'today' && (
         <div>
           {todayWorkout ? (
-            <TodayWorkout
-              workout={todayWorkout}
-              onRequestDemo={handleRequestDemo}
-            />
+            <TodayWorkout workout={todayWorkout} onRequestDemo={handleRequestDemo} />
           ) : (
-            <div className="bg-white rounded-lg shadow p-6 text-center">
-              <p className="text-gray-600">No workout scheduled for today. Enjoy your rest day!</p>
+            <div className="ds-card text-center">
+              <p style={{ color: 'var(--color-text-muted)' }}>No workout scheduled for today. Enjoy your rest day!</p>
             </div>
           )}
         </div>
       )}
 
-      {viewMode === 'schedule' && (
-        <WorkoutSchedule schedule={schedule} />
-      )}
+      {viewMode === 'schedule' && <WorkoutSchedule schedule={schedule} />}
     </div>
   );
 };
