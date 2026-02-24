@@ -439,6 +439,7 @@ async def chat_onboarding_stream(
             initial_step = None
             chunk_count = 0
             error_occurred = False
+            user_message_saved = False
             
             # Start metrics tracking
             session_metrics = metrics_tracker.start_session(user_id, message_id)
@@ -540,6 +541,30 @@ async def chat_onboarding_stream(
                     for msg in reversed(history_messages)
                 ]
                 
+                # Save user message to database BEFORE streaming begins
+                # This ensures conversation history is preserved even if client disconnects
+                try:
+                    user_msg_record = ConversationMessage(
+                        user_id=current_user.id,
+                        role="user",
+                        content=message,
+                        agent_type=None
+                    )
+                    db.add(user_msg_record)
+                    await db.commit()
+                    user_message_saved = True
+                except Exception as e:
+                    logger.error(
+                        "Failed to save user message before streaming",
+                        extra={
+                            "event": "user_message_save_failed",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_message": str(e)
+                        },
+                        exc_info=True
+                    )
+                
                 # Stream response chunks via agent.stream_response()
                 # Note: Agent tools may be called during streaming and need db_session
                 try:
@@ -608,16 +633,9 @@ async def chat_onboarding_stream(
                     yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
                 
-                # Save user message and complete assistant response after streaming
+                # Save assistant response after streaming completes
+                # (user message was already saved before streaming began)
                 try:
-                    user_message = ConversationMessage(
-                        user_id=current_user.id,
-                        role="user",
-                        content=message,
-                        agent_type=None
-                    )
-                    db.add(user_message)
-                    
                     assistant_message = ConversationMessage(
                         user_id=current_user.id,
                         role="assistant",
@@ -631,12 +649,12 @@ async def chat_onboarding_stream(
                     
                 except Exception as e:
                     logger.error(
-                        "Failed to save conversation",
+                        "Failed to save assistant response",
                         extra={
                             "event": "database_save_failed",
                             "user_id": user_id,
                             "message_id": message_id,
-                            "error_type": "conversation_save_failed",
+                            "error_type": "assistant_save_failed",
                             "error_message": str(e)
                         },
                         exc_info=True
@@ -713,6 +731,39 @@ async def chat_onboarding_stream(
                         "chunks_sent": chunk_count
                     }
                 )
+                
+                # Save the partial assistant response even on client disconnect
+                # This preserves conversation context for subsequent messages
+                if full_response:
+                    try:
+                        from app.models.conversation import ConversationMessage
+                        assistant_message = ConversationMessage(
+                            user_id=current_user.id,
+                            role="assistant",
+                            content=full_response,
+                            agent_type=agent_type_value
+                        )
+                        db.add(assistant_message)
+                        await db.commit()
+                        logger.info(
+                            "Saved partial assistant response on client disconnect",
+                            extra={
+                                "event": "partial_response_saved",
+                                "user_id": user_id,
+                                "message_id": message_id,
+                                "response_length": len(full_response)
+                            }
+                        )
+                    except Exception as save_err:
+                        logger.error(
+                            f"Failed to save partial response on disconnect: {save_err}",
+                            extra={
+                                "event": "partial_response_save_failed",
+                                "user_id": user_id,
+                                "message_id": message_id
+                            }
+                        )
+                
                 # Complete metrics tracking with cancellation
                 if agent_type_value:
                     metrics_tracker.complete_session(

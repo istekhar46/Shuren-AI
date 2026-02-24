@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.v1.endpoints import auth, chat, meals, onboarding, profiles, workouts
+from app.api.v1.endpoints import auth, profiles, workouts
 from app.api import v1
 from app.core.config import settings
 from app.core.exceptions import ProfileLockedException
@@ -107,12 +107,6 @@ app.include_router(
 )
 
 app.include_router(
-    onboarding.router,
-    prefix="/api/v1/onboarding",
-    tags=["Onboarding"]
-)
-
-app.include_router(
     profiles.router,
     prefix="/api/v1/profiles",
     tags=["Profiles"]
@@ -124,13 +118,7 @@ app.include_router(
     tags=["Workouts"]
 )
 
-app.include_router(
-    meals.router,
-    prefix="/api/v1/meals",
-    tags=["Meals"]
-)
-
-# Include v1 API router (meal templates, shopping list, dishes, chat)
+# Include v1 API router (meals, meal_templates, shopping_list, dishes, chat, onboarding, voice_sessions)
 app.include_router(
     v1.api_router,
     prefix="/api/v1"
@@ -203,7 +191,7 @@ async def unauthorized_handler(request: Request, exc: Exception) -> JSONResponse
 
 
 @app.exception_handler(403)
-async def forbidden_handler(request: Request, exc: Exception) -> JSONResponse:
+async def forbidden_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """
     Handle 403 Forbidden errors.
     
@@ -212,13 +200,9 @@ async def forbidden_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     logger.warning(f"403 Forbidden: {request.url}")
     
-    # If it's an HTTPException, preserve the detail message
-    if isinstance(exc, HTTPException):
-        detail = exc.detail
-        error_code = getattr(exc, 'error_code', 'FORBIDDEN')
-    else:
-        detail = "Access forbidden - insufficient permissions"
-        error_code = "FORBIDDEN"
+    # Preserve the detail message; fall back if not present (shouldn't happen for HTTPException)
+    detail = exc.detail if exc.detail else "Access forbidden - insufficient permissions"
+    error_code = getattr(exc, 'error_code', 'FORBIDDEN')
     
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,

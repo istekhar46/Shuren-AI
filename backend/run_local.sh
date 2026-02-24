@@ -37,25 +37,6 @@ poetry install --no-root
 echo ""
 echo "🗄️  Checking database configuration..."
 
-# Check if DATABASE_URL points to a remote database
-if grep -q "aivencloud.com\|amazonaws.com\|azure.com\|cloud.google.com" .env; then
-    echo "⚠️  WARNING: DATABASE_URL points to a REMOTE database!"
-    echo "   For local development, you should use a LOCAL database."
-    echo ""
-    echo "   Current DATABASE_URL: $(grep DATABASE_URL .env | cut -d'=' -f2)"
-    echo ""
-    echo "   Recommended local DATABASE_URL:"
-    echo "   DATABASE_URL=postgresql+asyncpg://postgres:ist%40123@localhost:5432/shuren_dev_db"
-    echo ""
-    read -p "Do you want to continue with the REMOTE database? (y/N): " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "❌ Aborted. Please update DATABASE_URL in .env to use a local database."
-        exit 1
-    fi
-    echo "⚠️  Proceeding with REMOTE database..."
-fi
-
 echo ""
 echo "🗄️  Running database migrations..."
 poetry run alembic upgrade head

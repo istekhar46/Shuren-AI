@@ -155,6 +155,18 @@ class GoalSettingAgent(BaseOnboardingAgent):
         # Store user_id for tool access
         self._current_user_id = user_id
         
+        # Build chat history from context
+        from langchain_core.messages import HumanMessage, AIMessage
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
         # Build prompt with context from fitness assessment
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.get_system_prompt()),
@@ -178,10 +190,10 @@ class GoalSettingAgent(BaseOnboardingAgent):
             handle_parsing_errors=True
         )
         
-        # Execute agent
+        # Execute agent with actual conversation history
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # Conversation history is included via _build_messages in stream_response
+            "chat_history": chat_history
         })
         
         # Check if step is complete

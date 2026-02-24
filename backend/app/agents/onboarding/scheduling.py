@@ -161,6 +161,18 @@ Important:
         # Create tools with db and user_id bound
         tools = create_scheduling_tools(self.db, user_id)
         
+        # Build chat history from context
+        from langchain_core.messages import HumanMessage, AIMessage
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
         # Build prompt with context
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.get_system_prompt()),
@@ -184,10 +196,10 @@ Important:
             handle_parsing_errors=True
         )
         
-        # Execute agent
+        # Execute agent with actual conversation history
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # Conversation history is included via _build_messages in stream_response
+            "chat_history": chat_history
         })
         
         # Check if step is complete (all three schedules saved)
