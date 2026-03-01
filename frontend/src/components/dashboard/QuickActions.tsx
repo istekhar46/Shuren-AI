@@ -12,14 +12,6 @@ const actions = [
     path: '/chat',
   },
   {
-    title: 'Voice Session',
-    description: 'Talk to your AI coach in real-time',
-    icon: '🎤',
-    accent: 'pink',
-    iconBg: 'rgba(244,114,182,0.12)',
-    path: '/voice',
-  },
-  {
     title: 'Meal Plans',
     description: 'View meals, browse dishes, shop lists',
     icon: '🍽️',

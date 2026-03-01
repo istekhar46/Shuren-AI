@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { onboardingService } from '../services/onboardingService';
 import { planDetectionService } from '../services/planDetectionService';
+import { useUser } from '../contexts/UserContext';
 import type {
   OnboardingStreamChunk,
   StateMetadata,
@@ -88,6 +89,7 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
   // Refs
   const cancelStreamRef = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
+  const { refreshOnboardingStatus } = useUser();
   
   /**
    * Validate and clamp state to valid range (1-4)
@@ -147,6 +149,17 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
             isStreaming: false,
           }));
           setMessages(chatMessages);
+        } else {
+          // Display a hardcoded greeting message for first-time users
+          const initialGreeting: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: "Welcome to Shuren AI! I'm your onboarding assistant. To get started, I'd love to learn a bit about your current fitness level and your goals. What brings you here today?",
+            agentType: (progress.current_state_info.agent || 'fitness_assessment') as GeneralAgentType,
+            timestamp: new Date().toISOString(),
+            isStreaming: false,
+          };
+          setMessages([initialGreeting]);
         }
         
         setInitialLoadComplete(true);
@@ -343,12 +356,14 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
     
     try {
       await onboardingService.completeOnboarding();
+      // Update UserContext so ProtectedRoute knows onboarding is done
+      await refreshOnboardingStatus();
       navigate('/dashboard');
     } catch (err) {
       console.error('Failed to complete onboarding:', err);
       setError('Failed to complete onboarding. Please try again.');
     }
-  }, [canComplete, navigate]);
+  }, [canComplete, navigate, refreshOnboardingStatus]);
   
   /**
    * Cleanup effect for component unmount

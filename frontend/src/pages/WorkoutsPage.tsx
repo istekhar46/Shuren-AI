@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workoutService } from '../services/workoutService';
-import type { WorkoutDayResponse, WorkoutScheduleResponse } from '../types/workout.types';
+import type { WorkoutPlanResponse, WorkoutDayResponse, WorkoutScheduleResponse } from '../types/workout.types';
 import { WorkoutSchedule } from '../components/workouts/WorkoutSchedule';
 import { TodayWorkout } from '../components/workouts/TodayWorkout';
+import { FullWorkoutPlan } from '../components/workouts/FullWorkoutPlan';
 
-type ViewMode = 'today' | 'schedule';
+type ViewMode = 'today' | 'schedule' | 'plan';
 
 export const WorkoutsPage = () => {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [todayWorkout, setTodayWorkout] = useState<WorkoutDayResponse | null>(null);
   const [schedule, setSchedule] = useState<WorkoutScheduleResponse[]>([]);
+  const [fullPlan, setFullPlan] = useState<WorkoutPlanResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,12 +25,14 @@ export const WorkoutsPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const [today, scheduleData] = await Promise.all([
+      const [today, scheduleData, planData] = await Promise.all([
         workoutService.getTodayWorkout(),
         workoutService.getSchedule(),
+        workoutService.getWorkoutPlan(),
       ]);
       setTodayWorkout(today);
       setSchedule(scheduleData);
+      setFullPlan(planData);
     } catch (err) {
       setError('Failed to load workout data. Please try again.');
       console.error('Error loading workouts:', err);
@@ -62,12 +66,13 @@ export const WorkoutsPage = () => {
     }`;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto" style={{ background: 'var(--color-bg-primary)', minHeight: '100vh' }}>
+    <div style={{ background: 'var(--color-bg-primary)', minHeight: '100vh', width: '100%' }}>
+      <div className="p-6 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Workouts</h1>
 
         <div className="flex gap-2">
-          {(['today', 'schedule'] as ViewMode[]).map((mode) => (
+          {(['today', 'schedule', 'plan'] as ViewMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
@@ -78,7 +83,7 @@ export const WorkoutsPage = () => {
                   : { background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
               }
             >
-              {mode === 'today' ? 'Today' : 'Schedule'}
+              {mode === 'today' ? 'Today' : mode === 'schedule' ? 'Schedule' : 'Full Plan'}
             </button>
           ))}
         </div>
@@ -113,6 +118,9 @@ export const WorkoutsPage = () => {
       )}
 
       {viewMode === 'schedule' && <WorkoutSchedule schedule={schedule} />}
+
+      {viewMode === 'plan' && <FullWorkoutPlan plan={fullPlan} onRequestDemo={handleRequestDemo} />}
+      </div>
     </div>
   );
 };

@@ -11,7 +11,7 @@ This module provides REST API endpoints for:
 import json
 import logging
 import time
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -264,6 +264,14 @@ async def chat_onboarding(
         
         # NEW: Store initial state for comparison
         initial_step = state.current_step
+        initial_completed_count = sum([
+            1 for step_complete in [
+                state.step_1_complete,
+                state.step_2_complete,
+                state.step_3_complete,
+                state.step_4_complete
+            ] if step_complete
+        ])
         
         # 3. Verify current_state matches
         if state.current_step != request.current_state:
@@ -301,7 +309,15 @@ async def chat_onboarding(
         
         # 6. Check if state was updated (agent called save function)
         updated_state = await onboarding_service.get_onboarding_state(current_user.id)
-        state_updated = updated_state.current_step > initial_step
+        updated_completed_count = sum([
+            1 for step_complete in [
+                updated_state.step_1_complete,
+                updated_state.step_2_complete,
+                updated_state.step_3_complete,
+                updated_state.step_4_complete
+            ] if step_complete
+        ])
+        state_updated = (updated_state.current_step > initial_step) or (updated_completed_count > initial_completed_count)
         
         # 7. Get progress
         progress = await onboarding_service.get_progress(current_user.id)
@@ -487,6 +503,14 @@ async def chat_onboarding_stream(
                     return
                 
                 initial_step = state.current_step
+                initial_completed_count = sum([
+                    1 for step_complete in [
+                        state.step_1_complete,
+                        state.step_2_complete,
+                        state.step_3_complete,
+                        state.step_4_complete
+                    ] if step_complete
+                ])
                 
                 # Get specialized onboarding agent
                 orchestrator = OnboardingAgentOrchestrator(db)
@@ -577,9 +601,19 @@ async def chat_onboarding_stream(
                     # Check if agent's work is complete (data was saved)
                     step_complete = await agent._check_if_complete(current_user.id)
                     
-                    # If complete, advance to next step
-                    if step_complete:
-                        await orchestrator.advance_step(current_user.id)
+                    # Check if state was updated (agent called save function)
+                    updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+                    updated_completed_count = sum([
+                        1 for step_complete in [
+                            updated_state.step_1_complete,
+                            updated_state.step_2_complete,
+                            updated_state.step_3_complete,
+                            updated_state.step_4_complete
+                        ] if step_complete
+                    ])
+                    state_updated = (updated_state.current_step > initial_step) or (updated_completed_count > initial_completed_count)
+                    
+                    if state_updated:
                         logger.info(
                             f"Advanced onboarding step for user {user_id}",
                             extra={
@@ -587,17 +621,44 @@ async def chat_onboarding_stream(
                                 "user_id": user_id,
                                 "message_id": message_id,
                                 "from_step": initial_step,
+                                "to_step": updated_state.current_step,
                                 "agent_type": agent_type_value
                             }
                         )
                     
-                    # Check if state was updated (agent called save function)
-                    updated_state = await onboarding_service.get_onboarding_state(current_user.id)
-                    state_updated = updated_state.current_step > initial_step
-                    
                     # Get progress
                     progress = await onboarding_service.get_progress(current_user.id)
                     
+                    # Save assistant response before streaming completes
+                    # to prevent client disconnect from throwing CancelledError during db.commit
+                    try:
+                        from app.models.conversation import ConversationMessage
+                        assistant_message = ConversationMessage(
+                            user_id=current_user.id,
+                            role="assistant",
+                            content=full_response,
+                            agent_type=agent_type_value
+                        )
+                        db.add(assistant_message)
+                        
+                        # Commit transaction
+                        await db.commit()
+                        
+                    except Exception as e:
+                        logger.error(
+                            "Failed to save assistant response",
+                            extra={
+                                "event": "database_save_failed",
+                                "user_id": user_id,
+                                "message_id": message_id,
+                                "error_type": "assistant_save_failed",
+                                "error_message": str(e)
+                            },
+                            exc_info=True
+                        )
+                        # Mark database save failure in metrics
+                        metrics_tracker.mark_database_save_failed(message_id)
+
                     # Send final event with "done: true", agent_type, and progress info
                     yield f"data: {json.dumps({
                         'done': True,
@@ -632,36 +693,6 @@ async def chat_onboarding_stream(
                     error_occurred = True
                     yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
-                
-                # Save assistant response after streaming completes
-                # (user message was already saved before streaming began)
-                try:
-                    assistant_message = ConversationMessage(
-                        user_id=current_user.id,
-                        role="assistant",
-                        content=full_response,
-                        agent_type=agent_type_value
-                    )
-                    db.add(assistant_message)
-                    
-                    # Commit transaction
-                    await db.commit()
-                    
-                except Exception as e:
-                    logger.error(
-                        "Failed to save assistant response",
-                        extra={
-                            "event": "database_save_failed",
-                            "user_id": user_id,
-                            "message_id": message_id,
-                            "error_type": "assistant_save_failed",
-                            "error_message": str(e)
-                        },
-                        exc_info=True
-                    )
-                    # Mark database save failure in metrics
-                    metrics_tracker.mark_database_save_failed(message_id)
-                    # Don't send error to client since streaming already completed
                 
                 # Calculate response time and metrics
                 elapsed_ms = int((time.time() - start_time) * 1000)
@@ -735,34 +766,37 @@ async def chat_onboarding_stream(
                 # Save the partial assistant response even on client disconnect
                 # This preserves conversation context for subsequent messages
                 if full_response:
-                    try:
+                    async def save_partial(uid, response, a_type):
+                        from app.db.session import AsyncSessionLocal
                         from app.models.conversation import ConversationMessage
-                        assistant_message = ConversationMessage(
-                            user_id=current_user.id,
-                            role="assistant",
-                            content=full_response,
-                            agent_type=agent_type_value
-                        )
-                        db.add(assistant_message)
-                        await db.commit()
-                        logger.info(
-                            "Saved partial assistant response on client disconnect",
-                            extra={
-                                "event": "partial_response_saved",
-                                "user_id": user_id,
-                                "message_id": message_id,
-                                "response_length": len(full_response)
-                            }
-                        )
-                    except Exception as save_err:
-                        logger.error(
-                            f"Failed to save partial response on disconnect: {save_err}",
-                            extra={
-                                "event": "partial_response_save_failed",
-                                "user_id": user_id,
-                                "message_id": message_id
-                            }
-                        )
+                        async with AsyncSessionLocal() as local_session:
+                            try:
+                                msg = ConversationMessage(
+                                    user_id=uid,
+                                    role="assistant",
+                                    content=response,
+                                    agent_type=a_type
+                                )
+                                local_session.add(msg)
+                                await local_session.commit()
+                                logger.info(
+                                    "Saved partial assistant response on client disconnect",
+                                    extra={
+                                        "event": "partial_response_saved",
+                                        "user_id": str(uid),
+                                        "response_length": len(response)
+                                    }
+                                )
+                            except Exception as save_err:
+                                logger.error(
+                                    f"Failed to save partial response on disconnect: {save_err}",
+                                    extra={
+                                        "event": "partial_response_save_failed",
+                                        "user_id": str(uid)
+                                    }
+                                )
+                    import asyncio
+                    asyncio.create_task(asyncio.shield(save_partial(current_user.id, full_response, agent_type_value)))
                 
                 # Complete metrics tracking with cancellation
                 if agent_type_value:
@@ -825,11 +859,11 @@ async def chat_onboarding_stream(
     )
 
 
-@router.post("/stream", status_code=status.HTTP_200_OK)
+@router.get("/stream", status_code=status.HTTP_200_OK)
 async def chat_stream(
-    request: ChatRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    message: str = Query(..., description="Message content to send to the AI assistant"),
+    token: str = Query(..., description="JWT authentication token"),
+    agent_type_query: Optional[str] = Query(None, alias="agent_type", description="Optional explicit agent type")
 ) -> StreamingResponse:
     """
     Send a message to the AI assistant and receive a streaming response.
@@ -841,10 +875,13 @@ async def chat_stream(
     
     The conversation is persisted to the database after streaming completes.
     
+    EventSource API limitation: Cannot send custom headers, so authentication token
+    must be passed as a query parameter instead of Authorization header.
+    
     Args:
-        request: ChatRequest with message and optional agent_type
-        current_user: Authenticated user from JWT token
-        db: Database session from dependency injection
+        message: Message content to send to the AI assistant
+        token: JWT authentication token (query parameter)
+        agent_type_query: Optional explicit agent type
         
     Returns:
         StreamingResponse: SSE stream with response chunks and completion event
@@ -855,27 +892,54 @@ async def chat_stream(
         HTTPException(400): If agent_type is invalid
         Error events in stream: If agent processing fails
     """
+    from app.core.deps import get_current_user_from_token
     import uuid
     
-    user_id = str(current_user.id)
     # Generate unique message ID for tracking
     message_id = str(uuid.uuid4())
+    
+    # Create database session for authentication
+    # This session is only for auth and will be closed before streaming
+    from app.db.session import AsyncSessionLocal
+    async with AsyncSessionLocal() as auth_db:
+        # Authenticate user from token query parameter
+        try:
+            current_user = await get_current_user_from_token(token, auth_db)
+        except HTTPException:
+            # Re-raise authentication errors
+            raise
+            
+    user_id = str(current_user.id)
+    
+    # Check onboarding status - must be completed to access chat
+    if not current_user.onboarding_completed:
+        # Since we cannot return JSON easily via SSE initialization failure without custom headers
+        # We raise a 403 HTTP error which EventSource will catch
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Complete onboarding to access this feature"
+        )
+
     
     async def generate():
         """Async generator function for SSE streaming"""
         import asyncio
         
-        start_time = time.time()
-        full_response = ""
-        agent_type_value = None
-        last_chunk_time = time.time()
-        chunk_count = 0
-        error_occurred = False
-        
-        # Start metrics tracking
-        session_metrics = metrics_tracker.start_session(user_id, message_id)
+        # Create a new database session that will live for the entire streaming operation
+        # This is the official pattern for StreamingResponse with database dependencies
+        db = AsyncSessionLocal()
         
         try:
+            start_time = time.time()
+            full_response = ""
+            agent_type_value = None
+            last_chunk_time = time.time()
+            chunk_count = 0
+            error_occurred = False
+            
+            # Start metrics tracking
+            session_metrics = metrics_tracker.start_session(user_id, message_id)
+            
             # Log stream start with user_id and message_id
             logger.info(
                 "Chat stream started",
@@ -883,16 +947,16 @@ async def chat_stream(
                     "event": "stream_start",
                     "user_id": user_id,
                     "message_id": message_id,
-                    "message_preview": request.message[:100] if len(request.message) > 100 else request.message,
-                    "message_length": len(request.message),
-                    "requested_agent_type": request.agent_type
+                    "message_preview": message[:100] if len(message) > 100 else message,
+                    "message_length": len(message),
+                    "requested_agent_type": agent_type_query
                 }
             )
             # Parse optional agent_type from request
             agent_type = None
-            if request.agent_type:
+            if agent_type_query:
                 try:
-                    agent_type = AgentType(request.agent_type)
+                    agent_type = AgentType(agent_type_query)
                 except ValueError:
                     error_msg = f'Invalid agent_type. Must be one of: workout, diet, supplement, tracker, scheduler, general'
                     logger.error(
@@ -902,7 +966,7 @@ async def chat_stream(
                             "user_id": user_id,
                             "message_id": message_id,
                             "error_type": "invalid_agent_type",
-                            "requested_agent_type": request.agent_type
+                            "requested_agent_type": agent_type_query
                         }
                     )
                     error_occurred = True
@@ -935,26 +999,8 @@ async def chat_stream(
             # Initialize AgentOrchestrator in text mode
             orchestrator = AgentOrchestrator(db_session=db, mode="text")
             
-            # Classify query if agent_type not provided
-            if agent_type is None:
-                try:
-                    agent_type = await orchestrator._classify_query(request.message)
-                except Exception as e:
-                    error_msg = 'Failed to classify query'
-                    logger.error(
-                        "Query classification failed",
-                        extra={
-                            "event": "stream_error",
-                            "user_id": user_id,
-                            "message_id": message_id,
-                            "error_type": "classification_failed",
-                            "error_message": str(e)
-                        }
-                    )
-                    error_occurred = True
-                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                    return
-            
+            # Enforce general agent for all completed users in chat_stream
+            agent_type = AgentType.GENERAL
             agent_type_value = agent_type.value
             
             # Get or create agent instance
@@ -962,7 +1008,7 @@ async def chat_stream(
             
             # Stream response chunks via agent.stream_response()
             try:
-                async for chunk in agent.stream_response(request.message):
+                async for chunk in agent.stream_response(message):
                     full_response += chunk
                     chunk_count += 1
                     last_chunk_time = time.time()
@@ -987,6 +1033,42 @@ async def chat_stream(
                         yield f"data: {json.dumps({'error': error_msg})}\n\n"
                         return
                 
+                # Save user message and complete assistant response before yielding final element
+                try:
+                    user_message = ConversationMessage(
+                        user_id=current_user.id,
+                        role="user",
+                        content=message,
+                        agent_type=None
+                    )
+                    db.add(user_message)
+                    
+                    assistant_message = ConversationMessage(
+                        user_id=current_user.id,
+                        role="assistant",
+                        content=full_response,
+                        agent_type=agent_type_value
+                    )
+                    db.add(assistant_message)
+                    
+                    # Commit transaction
+                    await db.commit()
+                    
+                except Exception as e:
+                    logger.error(
+                        "Failed to save conversation",
+                        extra={
+                            "event": "database_save_failed",
+                            "user_id": user_id,
+                            "message_id": message_id,
+                            "error_type": "conversation_save_failed",
+                            "error_message": str(e)
+                        },
+                        exc_info=True
+                    )
+                    # Mark database save failure in metrics
+                    metrics_tracker.mark_database_save_failed(message_id)
+
                 # Send final event with "done: true" and agent_type
                 yield f"data: {json.dumps({'done': True, 'agent_type': agent_type_value})}\n\n"
                 
@@ -1009,43 +1091,6 @@ async def chat_stream(
                 # Send error event before closing stream
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 return
-            
-            # Save user message and complete assistant response after streaming
-            try:
-                user_message = ConversationMessage(
-                    user_id=current_user.id,
-                    role="user",
-                    content=request.message,
-                    agent_type=None
-                )
-                db.add(user_message)
-                
-                assistant_message = ConversationMessage(
-                    user_id=current_user.id,
-                    role="assistant",
-                    content=full_response,
-                    agent_type=agent_type_value
-                )
-                db.add(assistant_message)
-                
-                # Commit transaction
-                await db.commit()
-                
-            except Exception as e:
-                logger.error(
-                    "Failed to save conversation",
-                    extra={
-                        "event": "database_save_failed",
-                        "user_id": user_id,
-                        "message_id": message_id,
-                        "error_type": "conversation_save_failed",
-                        "error_message": str(e)
-                    },
-                    exc_info=True
-                )
-                # Mark database save failure in metrics
-                metrics_tracker.mark_database_save_failed(message_id)
-                # Don't send error to client since streaming already completed
             
             # Calculate response time and metrics
             elapsed_ms = int((time.time() - start_time) * 1000)
@@ -1126,6 +1171,27 @@ async def chat_stream(
             return
         
         finally:
+            # Always close the database session gracefully
+            # Use asyncio.shield to protect cleanup from cancellation
+            import asyncio
+            try:
+                # Shield the close operation from cancellation
+                await asyncio.shield(db.close())
+            except asyncio.CancelledError:
+                # If shield itself is cancelled (rare), suppress the error
+                # The connection will be cleaned up by the pool
+                pass
+            except Exception as e:
+                # Log other errors but don't raise - cleanup is best-effort
+                logger.warning(
+                    f"Error closing database session: {e}",
+                    extra={
+                        "event": "db_close_error",
+                        "user_id": user_id,
+                        "message_id": message_id
+                    }
+                )
+            
             # Log cleanup event
             if error_occurred:
                 logger.info(

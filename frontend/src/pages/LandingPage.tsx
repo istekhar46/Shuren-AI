@@ -68,8 +68,8 @@ const FEATURES = [
         <defs><linearGradient id="gf6" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse"><stop stopColor="#a78bfa" /><stop offset="1" stopColor="#f472b6" /></linearGradient></defs>
       </svg>
     ),
-    title: 'AI Coach — Chat & Voice',
-    description: 'Talk or type — your coach understands context, adapts in real-time, and keeps you moving.',
+    title: 'AI Coach — Chat',
+    description: 'Your coach understands context, adapts in real-time, and keeps you moving.',
   },
 ] as const;
 

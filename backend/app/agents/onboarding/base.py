@@ -310,7 +310,15 @@ Return format (JSON only, no other text):
         
         # Update agent_context
         agent_context = state.agent_context or {}
-        agent_context[self.agent_type] = agent_data
+        
+        # Merge if existing data is a dict and new data is a dict
+        existing_data = agent_context.get(self.agent_type, {})
+        if isinstance(existing_data, dict) and isinstance(agent_data, dict):
+            # Simple top-level merge is sufficient for our use cases
+            merged_data = {**existing_data, **agent_data}
+            agent_context[self.agent_type] = merged_data
+        else:
+            agent_context[self.agent_type] = agent_data
         
         # Debug logging
         logger.info(

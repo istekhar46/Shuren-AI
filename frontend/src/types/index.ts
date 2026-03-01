@@ -149,40 +149,6 @@ export interface ChatResponse {
   timestamp: string;
 }
 
-// Voice Session Types
-export interface VoiceSessionRequest {
-  agentType: AgentType;
-}
-
-export interface VoiceSessionResponse {
-  roomName: string;
-  token: string;
-  url: string;
-  agentType: AgentType;
-}
-
-export interface VoiceSessionStatus {
-  roomName: string;
-  connected: boolean;
-  participantCount: number;
-  duration: number;
-  agentConnected: boolean;
-}
-
-export interface TranscriptionMessage {
-  id: string;
-  speaker: 'user' | 'agent';
-  text: string;
-  timestamp: Date;
-  isFinal: boolean;
-}
-
-export interface SessionStatus {
-  connected: boolean;
-  participantCount: number;
-  duration: number;
-}
-
 // Meal Types
 export interface Ingredient {
   id: string;

@@ -1,14 +1,14 @@
 import api from './api';
 import type { MealPlanResponse, MealScheduleResponse } from '../types/meal.types';
-import type { TodayMealsResponse, NextMealResponse } from '../types/mealTemplate.types';
+import type { TodayMealsResponse, NextMealResponse, MealTemplateResponse } from '../types/mealTemplate.types';
 
 export const mealService = {
   /**
    * Get user's meal plan
    * @returns User's meal plan with nutritional targets, or null if not configured
    */
-  async getMealPlan(): Promise<MealPlanResponse | null> {
-    const response = await api.get<MealPlanResponse | null>('/meals/plan');
+  async getMealPlan(): Promise<MealTemplateResponse | null> {
+    const response = await api.get<MealTemplateResponse>('/meals/template');
     return response.data;
   },
 

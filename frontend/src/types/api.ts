@@ -34,6 +34,3 @@ export * from './shoppingList.types';
 
 // Workout types
 export * from './workout.types';
-
-// Voice session types
-export * from './voice.types';

@@ -3,43 +3,67 @@ import type { Meal } from '../types';
 import { mealService } from '../services/mealService';
 import { MealPlanView } from '../components/meals/MealPlanView';
 import { MealDetails } from '../components/meals/MealDetails';
-import { DishBrowser } from '../components/meals/DishBrowser';
-import { ShoppingList } from '../components/meals/ShoppingList';
-
-type ViewMode = 'plan' | 'browse' | 'shopping';
 
 export const MealsPage = () => {
-  const [viewMode, setViewMode] = useState<ViewMode>('plan');
   const [meals, setMeals] = useState<Meal[]>([]);
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [startDate, setStartDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState(() => {
-    const today = new Date();
-    const nextWeek = new Date(today);
-    nextWeek.setDate(today.getDate() + 7);
-    return nextWeek.toISOString().split('T')[0];
-  });
-
   useEffect(() => {
-    if (viewMode === 'plan') loadMealPlan();
-  }, [viewMode]);
+    loadMealPlan();
+  }, []);
 
   const loadMealPlan = async () => {
     try {
       setLoading(true);
       setError(null);
-      const mealPlan = await mealService.getMealPlan();
-      if (!mealPlan) {
+      const template = await mealService.getMealPlan();
+      
+      if (!template || !template.days || template.days.length === 0) {
         setMeals([]);
         setError('No meal plan configured yet. Complete onboarding to set up your meal plan.');
       } else {
-        setMeals([]);
+        const flattenedMeals: Meal[] = [];
+        
+        template.days.forEach(day => {
+          // Calculate the date corresponding to this day of the week
+          const today = new Date();
+          const currentWeekday = today.getDay() === 0 ? 6 : today.getDay() - 1; // map 0 (Sun) -> 6, 1 (Mon) -> 0
+          const dayOffset = (day.day_of_week - currentWeekday + 7) % 7;
+          
+          const targetDate = new Date(today);
+          targetDate.setDate(today.getDate() + dayOffset);
+          const dateStr = targetDate.toISOString().split('T')[0];
+          
+          day.meals.forEach((slot, index) => {
+            if (slot.primary_dish) {
+              flattenedMeals.push({
+                id: `${day.day_of_week}-${slot.meal_name}-${index}`,
+                mealType: slot.meal_name.toLowerCase().replace('_', ' ') as any,
+                dish: {
+                  id: slot.primary_dish.id,
+                  name: slot.primary_dish.name,
+                  description: slot.primary_dish.cuisine_type || '', 
+                  ingredients: [],
+                  instructions: [],
+                  macros: {
+                    calories: slot.primary_dish.calories,
+                    protein: slot.primary_dish.protein_g,
+                    carbs: slot.primary_dish.carbs_g,
+                    fats: slot.primary_dish.fats_g
+                  },
+                  prepTime: slot.primary_dish.prep_time_minutes || 0,
+                  cookTime: slot.primary_dish.cook_time_minutes || 0
+                },
+                scheduledTime: slot.scheduled_time.substring(0, 5), // 'HH:MM' format
+                date: dateStr
+              });
+            }
+          });
+        });
+        
+        setMeals(flattenedMeals);
       }
     } catch (err) {
       setError('Failed to load meal plan. Please try again.');
@@ -52,76 +76,21 @@ export const MealsPage = () => {
   const handleMealClick = (meal: Meal) => setSelectedMeal(meal);
   const handleCloseMealDetails = () => setSelectedMeal(null);
 
-  const tabs: { key: ViewMode; label: string }[] = [
-    { key: 'plan', label: 'Meal Plan' },
-    { key: 'browse', label: 'Browse Dishes' },
-    { key: 'shopping', label: 'Shopping List' },
-  ];
-
   return (
     <div style={{ background: 'var(--color-bg-primary)', minHeight: '100vh' }}>
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>Meals</h1>
-          <p style={{ color: 'var(--color-text-muted)' }}>
-            View your meal plan, browse dishes, and generate shopping lists
-          </p>
-        </div>
-
-        {/* View Mode Tabs */}
-        <div className="mb-6" style={{ borderBottom: '1px solid var(--color-border)' }}>
-          <nav className="flex gap-8">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setViewMode(tab.key)}
-                className="pb-4 px-1 font-medium transition-colors"
-                style={{
-                  borderBottom: `2px solid ${viewMode === tab.key ? 'var(--color-violet)' : 'transparent'}`,
-                  color: viewMode === tab.key ? 'var(--color-violet)' : 'var(--color-text-muted)',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Date Range Selector */}
-        {(viewMode === 'plan' || viewMode === 'shopping') && (
-          <div className="ds-card mb-6">
-            <div className="flex flex-wrap items-center gap-4">
-              {[
-                { id: 'startDate', label: 'From:', value: startDate, onChange: setStartDate },
-                { id: 'endDate', label: 'To:', value: endDate, onChange: setEndDate },
-              ].map((picker) => (
-                <div key={picker.id} className="flex items-center gap-2">
-                  <label htmlFor={picker.id} className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                    {picker.label}
-                  </label>
-                  <input
-                    type="date"
-                    id={picker.id}
-                    value={picker.value}
-                    onChange={(e) => picker.onChange(e.target.value)}
-                    className="px-3 py-2 rounded-lg focus:ring-2 focus:ring-[var(--color-violet)] focus:border-transparent"
-                    style={{
-                      background: 'var(--color-bg-surface)',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-primary)',
-                    }}
-                  />
-                </div>
-              ))}
-              {viewMode === 'plan' && (
-                <button onClick={loadMealPlan} className="ds-btn-primary">
-                  Refresh
-                </button>
-              )}
-            </div>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>Meals</h1>
+            <p style={{ color: 'var(--color-text-muted)' }}>
+              View your personalized meal plan
+            </p>
           </div>
-        )}
+          <button onClick={loadMealPlan} className="ds-btn-primary">
+            Refresh Plan
+          </button>
+        </div>
 
         {/* Error */}
         {error && (
@@ -145,11 +114,7 @@ export const MealsPage = () => {
 
         {/* Content */}
         {!loading && (
-          <>
-            {viewMode === 'plan' && <MealPlanView meals={meals} onMealClick={handleMealClick} />}
-            {viewMode === 'browse' && <DishBrowser />}
-            {viewMode === 'shopping' && <ShoppingList startDate={startDate} endDate={endDate} />}
-          </>
+          <MealPlanView meals={meals} onMealClick={handleMealClick} />
         )}
 
         <MealDetails meal={selectedMeal} onClose={handleCloseMealDetails} />

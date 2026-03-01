@@ -53,7 +53,7 @@ class MealPlanSchema(BaseModel):
             protein = info.data.get('protein_percentage', 0)
             carbs = info.data.get('carbs_percentage', 0)
             total = protein + carbs + v
-            if abs(total - 100.0) > 0.01:  # Allow small floating point errors
+            if abs(total - 100.0) > 1.5:  # Allow margin for fractional rounding like 33.3 + 33.3 + 33.3
                 raise ValueError(f'Macronutrient percentages must sum to 100, got {total}')
         return v
     

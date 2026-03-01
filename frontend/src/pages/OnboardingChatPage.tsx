@@ -86,7 +86,7 @@ export const OnboardingChatPage: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden" role="region" aria-label="Chat and progress area">
+      <div className="flex-1 flex overflow-hidden gap-4" role="region" aria-label="Chat and progress area">
         {/* Progress Sidebar (Desktop) / Collapsible (Mobile) */}
         <OnboardingProgressBar
           currentState={currentState}
@@ -99,8 +99,8 @@ export const OnboardingChatPage: React.FC = () => {
         {/* Chat Area */}
         <div className="flex-1 flex flex-col overflow-hidden" role="region" aria-label="Chat messages">
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto" role="log" aria-live="polite" aria-atomic="false">
-            <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto mb-4" role="log" aria-live="polite" aria-atomic="false">
+            <div className="max-w-4xl mx-auto py-6 h-[44vh]">
               <MessageList 
                 messages={messages} 
                 onRetry={() => {
@@ -124,7 +124,7 @@ export const OnboardingChatPage: React.FC = () => {
               {/* Complete Onboarding Button */}
               {canComplete && !isComplete && (
                 <div 
-                  className="mt-6 p-6 rounded-lg"
+                  className="p-6 rounded-lg"
                   role="status"
                   aria-live="polite"
                   style={{ background: 'rgba(52,211,153,0.08)', border: '2px solid rgba(52,211,153,0.3)' }}
@@ -151,7 +151,7 @@ export const OnboardingChatPage: React.FC = () => {
 
           {/* Input Area */}
           <div role="region" aria-label="Message input" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-primary)' }}>
-            <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="max-w-4xl mx-auto">
               <MessageInput 
                 onSend={sendMessage} 
                 disabled={isStreaming}

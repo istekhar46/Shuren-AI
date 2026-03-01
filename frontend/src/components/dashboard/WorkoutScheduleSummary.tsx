@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { UserProfile } from '../../types';
 import '../../pages/DashboardPage.css';
 
@@ -14,6 +15,7 @@ const DAY_ABBREV: Record<string, string> = {
 
 export const WorkoutScheduleSummary: React.FC<WorkoutScheduleSummaryProps> = ({ profile }) => {
   const { workoutSchedule } = profile;
+  const navigate = useNavigate();
 
   const formatTime = (time: string | undefined) => {
     if (!time) return 'Not set';
@@ -27,17 +29,23 @@ export const WorkoutScheduleSummary: React.FC<WorkoutScheduleSummaryProps> = ({ 
     (workoutSchedule?.preferredDays || []).map((d) => DAY_ABBREV[d.toLowerCase()] || d)
   );
 
-  if (!workoutSchedule) {
+  if (!workoutSchedule || workoutSchedule.daysPerWeek === 0) {
     return (
-      <div className="ds-card" style={{ height: '100%' }}>
+      <div className="ds-card flex flex-col" style={{ height: '100%' }}>
         <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>🏋️ Workout Schedule</h2>
-        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No workout schedule configured yet.</p>
+        <p className="text-sm flex-grow" style={{ color: 'var(--color-text-muted)' }}>No workout schedule configured yet.</p>
+        <button 
+          onClick={() => navigate('/workouts')} 
+          className="ds-btn-secondary w-full mt-6"
+        >
+          View Full Workout Plan
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="ds-card" style={{ height: '100%' }}>
+    <div className="ds-card flex flex-col" style={{ height: '100%' }}>
       <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>🏋️ Workout Schedule</h2>
 
       {/* Day Pills */}
@@ -55,7 +63,7 @@ export const WorkoutScheduleSummary: React.FC<WorkoutScheduleSummaryProps> = ({ 
       </div>
 
       {/* Stats */}
-      <div className="space-y-3" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+      <div className="space-y-3 flex-grow" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem', paddingBottom: '1rem' }}>
         {[
           { icon: '🕐', label: 'Preferred Time', value: formatTime(workoutSchedule.preferredTime) },
           { icon: '⏱️', label: 'Session Duration', value: `${workoutSchedule.sessionDuration || 0} minutes` },
@@ -69,6 +77,13 @@ export const WorkoutScheduleSummary: React.FC<WorkoutScheduleSummaryProps> = ({ 
           </div>
         ))}
       </div>
+
+      <button 
+        onClick={() => navigate('/workouts')} 
+        className="ds-btn-secondary w-full mt-auto"
+      >
+        View Full Workout Plan
+      </button>
     </div>
   );
 };

@@ -19,11 +19,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireOnboardingComplete = true 
 }) => {
   const { isAuthenticated, loading: authLoading } = useAuth();
-  const { onboardingCompleted, loading: userLoading } = useUser();
+  const { onboardingCompleted, isInitialized } = useUser();
   const location = useLocation();
 
   // Show loading state while checking authentication or user status
-  if (authLoading || userLoading) {
+  if (authLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner message="Loading..." size="lg" />

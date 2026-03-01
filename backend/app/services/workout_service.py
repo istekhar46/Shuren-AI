@@ -526,7 +526,7 @@ class WorkoutService:
         return workout_schedules
     
     @staticmethod
-    async def get_today_workout(
+    async def get_today_workout_dict(
         user_id: UUID,
         db_session: AsyncSession
     ) -> Optional[dict[str, Any]]:

@@ -138,6 +138,27 @@ class MealPlan(BaseModel):
     # Relationships
     profile = relationship("UserProfile", back_populates="meal_plan")
     
+    @property
+    def protein_percentage(self) -> float:
+        """Calculate protein percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.protein_grams * 4) / self.daily_calorie_target * 100)
+        
+    @property
+    def carbs_percentage(self) -> float:
+        """Calculate carbs percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.carbs_grams * 4) / self.daily_calorie_target * 100)
+        
+    @property
+    def fats_percentage(self) -> float:
+        """Calculate fats percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.fats_grams * 9) / self.daily_calorie_target * 100)
+    
     # Table constraints
     __table_args__ = (
         UniqueConstraint('profile_id', name='unique_profile_meal_plan'),

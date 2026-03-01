@@ -62,6 +62,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
             List containing generate_meal_plan, save_meal_plan, and modify_meal_plan tools
         """
         from pydantic import BaseModel, Field
+        from app.services.meal_plan_generator import MealPlan
         
         # Capture self reference for use in tools
         agent_instance = self
@@ -115,9 +116,9 @@ class DietPlanningAgent(BaseOnboardingAgent):
             """
             try:
                 # Get context from previous agents
-                fitness_level = agent_instance.context.get("fitness_assessment", {}).get("fitness_level", "beginner")
-                primary_goal = agent_instance.context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
-                workout_plan = agent_instance.context.get("workout_planning", {}).get("plan", {})
+                fitness_level = agent_instance.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "beginner")
+                primary_goal = agent_instance.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
+                workout_plan = agent_instance.context.agent_context.get("workout_planning", {}).get("plan", {})
                 
                 logger.info(
                     f"Generating meal plan for user {agent_instance._current_user_id}: "
@@ -154,9 +155,21 @@ class DietPlanningAgent(BaseOnboardingAgent):
                     "message": "Failed to generate meal plan. Please try again."
                 }
         
-        @tool
+        class SaveMealPlanInput(BaseModel):
+            """Input schema for saving meal plan."""
+            plan_data: MealPlan = Field(
+                description="The exact generated meal plan object to save"
+            )
+            meal_times: dict = Field(
+                description="Dict of meal names to times in HH:MM format (e.g., {'breakfast': '07:00'})"
+            )
+            user_approved: bool = Field(
+                description="Must be True to save (safety check)"
+            )
+
+        @tool(args_schema=SaveMealPlanInput)
         async def save_meal_plan(
-            plan_data: dict,
+            plan_data: MealPlan,
             meal_times: dict,
             user_approved: bool
         ) -> dict:
@@ -187,8 +200,21 @@ class DietPlanningAgent(BaseOnboardingAgent):
                     "message": "Cannot save plan without user approval"
                 }
             
+            # Use strictly structured output
+            actual_plan = plan_data.model_dump() if hasattr(plan_data, "model_dump") else plan_data.dict()
+            
+            # Safely parse meal_frequency (LLM might pass float or omit it)
+            try:
+                meal_frequency = int(float(actual_plan.get("meal_frequency", 0)))
+            except (ValueError, TypeError):
+                meal_frequency = 0
+                
+            # Fallback to length of meal_times if missing
+            if meal_frequency <= 0:
+                meal_frequency = len(meal_times)
+                actual_plan["meal_frequency"] = meal_frequency
+            
             # Validate meal times count matches frequency
-            meal_frequency = plan_data.get("meal_frequency", 0)
             if len(meal_times) != meal_frequency:
                 return {
                     "status": "error",
@@ -197,7 +223,8 @@ class DietPlanningAgent(BaseOnboardingAgent):
             
             # Prepare data with metadata and schedule
             diet_data = {
-                "plan": plan_data,
+                "diet_type": agent_instance.context.agent_context.get("diet_type") or actual_plan.get("diet_type", "omnivore"),
+                "plan": actual_plan,
                 "schedule": meal_times,
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat()
@@ -205,17 +232,33 @@ class DietPlanningAgent(BaseOnboardingAgent):
             
             # Save to context and mark step 3 complete, advance to step 4
             try:
-                from sqlalchemy import update
+                from sqlalchemy import select, update
                 from app.models.onboarding import OnboardingState
+                
+                # Fetch existing state to manually deep merge to avoid JSONB op(||) wipeout
+                stmt_select = select(OnboardingState).where(OnboardingState.user_id == agent_instance._current_user_id)
+                result = await agent_instance.db.execute(stmt_select)
+                state = result.scalars().first()
+                if not state:
+                    return {"status": "error", "message": "Onboarding state not found"}
+                    
+                agent_context = state.agent_context or {}
+                existing_diet_planning = agent_context.get("diet_planning", {})
+                
+                # Safely merge
+                if isinstance(existing_diet_planning, dict):
+                    merged_diet_planning = {**existing_diet_planning, **diet_data}
+                else:
+                    merged_diet_planning = diet_data
+                    
+                agent_context["diet_planning"] = merged_diet_planning
                 
                 # Update onboarding state with new data
                 stmt = (
                     update(OnboardingState)
                     .where(OnboardingState.user_id == agent_instance._current_user_id)
                     .values(
-                        agent_context=OnboardingState.agent_context.op('||')(
-                            {"diet_planning": diet_data}
-                        ),
+                        agent_context=agent_context,
                         step_3_complete=True,
                         current_step=4,
                         current_agent="scheduling"

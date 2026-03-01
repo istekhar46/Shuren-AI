@@ -123,14 +123,13 @@ def verify_onboarding_completion(agent_context: dict) -> None:
     else:
         scheduling_data = agent_context.get("scheduling", {})
         
-        # Check for hydration preferences (new structure: direct fields)
-        if "daily_water_target_ml" not in scheduling_data:
-            missing_data.append("scheduling.daily_water_target_ml")
+        # Hydration data is nested under "hydration"
+        hydration_data = scheduling_data.get("hydration", {})
+        if "target_ml" not in hydration_data:
+            missing_data.append("scheduling.hydration.target_ml")
         
-        if "reminder_frequency_minutes" not in scheduling_data:
-            missing_data.append("scheduling.reminder_frequency_minutes")
-    
-    # If any data is missing, raise error
+        if "frequency_hours" not in hydration_data:
+            missing_data.append("scheduling.hydration.frequency_hours")
     if missing_data:
         missing_str = ", ".join(missing_data)
         raise OnboardingIncompleteError(

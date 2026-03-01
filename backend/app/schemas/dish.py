@@ -88,7 +88,7 @@ class DishResponse(DishBase):
     
     # Nutritional information (per serving)
     serving_size_g: float = Field(..., description="Serving size in grams")
-    calories: int = Field(..., description="Calories per serving")
+    calories: float = Field(..., description="Calories per serving")
     protein_g: float = Field(..., description="Protein in grams per serving")
     carbs_g: float = Field(..., description="Carbohydrates in grams per serving")
     fats_g: float = Field(..., description="Fats in grams per serving")
@@ -143,7 +143,7 @@ class DishSummaryResponse(BaseModel):
     cuisine_type: str = Field(..., description="Cuisine type (north_indian, south_indian, continental, fusion)")
     
     # Nutritional information
-    calories: int = Field(..., description="Calories per serving")
+    calories: float = Field(..., description="Calories per serving")
     protein_g: float = Field(..., description="Protein in grams per serving")
     carbs_g: float = Field(..., description="Carbohydrates in grams per serving")
     fats_g: float = Field(..., description="Fats in grams per serving")

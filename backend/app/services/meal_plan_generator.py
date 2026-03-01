@@ -46,21 +46,31 @@ class MealPlan(BaseModel):
     sample_meals: List[SampleMeal]
     meal_timing_suggestions: str
     
-    @field_validator('diet_type')
+    @field_validator('diet_type', mode='before')
     @classmethod
     def validate_diet_type(cls, v: str) -> str:
         valid_types = ["omnivore", "vegetarian", "vegan", "pescatarian"]
-        if v.lower() not in valid_types:
-            raise ValueError(f"diet_type must be one of {valid_types}")
-        return v.lower()
+        if not isinstance(v, str):
+            return "omnivore"
+        val = v.lower()
+        if val == "non-veg" or val == "non-vegetarian":
+            return "omnivore"
+        if val not in valid_types:
+            logger.warning(f"Invalid diet_type {v}, defaulting to omnivore")
+            return "omnivore"
+        return val
     
-    @field_validator('meal_prep_level')
+    @field_validator('meal_prep_level', mode='before')
     @classmethod
     def validate_meal_prep_level(cls, v: str) -> str:
         valid_levels = ["low", "medium", "high"]
-        if v.lower() not in valid_levels:
-            raise ValueError(f"meal_prep_level must be one of {valid_levels}")
-        return v.lower()
+        if not isinstance(v, str):
+            return "medium"
+        val = v.lower()
+        if val not in valid_levels:
+            logger.warning(f"Invalid meal_prep_level {v}, defaulting to medium")
+            return "medium"
+        return val
 
 
 

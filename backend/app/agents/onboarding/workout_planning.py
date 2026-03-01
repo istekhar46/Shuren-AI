@@ -62,6 +62,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             List containing generate_workout_plan, save_workout_plan, and modify_workout_plan tools
         """
         from pydantic import BaseModel, Field
+        from app.services.workout_plan_generator import WorkoutPlan
         
         # Capture self reference for use in tools
         agent_instance = self
@@ -109,9 +110,9 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             """
             try:
                 # Get context from previous agents
-                fitness_level = agent_instance.context.get("fitness_assessment", {}).get("fitness_level", "beginner")
-                primary_goal = agent_instance.context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
-                limitations = agent_instance.context.get("fitness_assessment", {}).get("limitations", [])
+                fitness_level = agent_instance.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "beginner")
+                primary_goal = agent_instance.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
+                limitations = agent_instance.context.agent_context.get("fitness_assessment", {}).get("limitations", [])
                 
                 logger.info(
                     f"Generating workout plan for user {agent_instance._current_user_id}: "
@@ -147,9 +148,24 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                     "message": "Failed to generate workout plan. Please try again."
                 }
         
-        @tool
+        class SaveWorkoutPlanInput(BaseModel):
+            """Input schema for saving workout plan."""
+            plan_data: WorkoutPlan = Field(
+                description="The exact generated workout plan object to save"
+            )
+            workout_days: List[str] = Field(
+                description="List of days (e.g., ['Monday', 'Wednesday', 'Friday'])"
+            )
+            workout_times: List[str] = Field(
+                description="List of times in HH:MM format (e.g., ['06:00', '18:00'])"
+            )
+            user_approved: bool = Field(
+                description="Must be True to save (safety check)"
+            )
+
+        @tool(args_schema=SaveWorkoutPlanInput)
         async def save_workout_plan(
-            plan_data: dict,
+            plan_data: WorkoutPlan,
             workout_days: List[str],
             workout_times: List[str],
             user_approved: bool
@@ -190,9 +206,12 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                     "message": "Workout days and times must have the same length"
                 }
             
+            # Use strictly structured output
+            actual_plan = plan_data.model_dump() if hasattr(plan_data, "model_dump") else plan_data.dict()
+            
             # Prepare data with metadata and schedule
             workout_data = {
-                "plan": plan_data,
+                "plan": actual_plan,
                 "schedule": {
                     "days": workout_days,
                     "times": workout_times
@@ -203,17 +222,33 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             
             # Save to context and mark step 2 complete, advance to step 3
             try:
-                from sqlalchemy import update
+                from sqlalchemy import select, update
                 from app.models.onboarding import OnboardingState
+                
+                # Fetch existing state to manually deep merge to avoid JSONB op(||) wipeout
+                stmt_select = select(OnboardingState).where(OnboardingState.user_id == agent_instance._current_user_id)
+                result = await agent_instance.db.execute(stmt_select)
+                state = result.scalars().first()
+                if not state:
+                    return {"status": "error", "message": "Onboarding state not found"}
+                    
+                agent_context = state.agent_context or {}
+                existing_workout_planning = agent_context.get("workout_planning", {})
+                
+                # Safely merge
+                if isinstance(existing_workout_planning, dict):
+                    merged_workout_planning = {**existing_workout_planning, **workout_data}
+                else:
+                    merged_workout_planning = workout_data
+                    
+                agent_context["workout_planning"] = merged_workout_planning
                 
                 # Update onboarding state with new data
                 stmt = (
                     update(OnboardingState)
                     .where(OnboardingState.user_id == agent_instance._current_user_id)
                     .values(
-                        agent_context=OnboardingState.agent_context.op('||')(
-                            {"workout_planning": workout_data}
-                        ),
+                        agent_context=agent_context,
                         step_2_complete=True,
                         current_step=3,
                         current_agent="diet_planning"

@@ -12,11 +12,159 @@ from app.models.dish import Dish, DishIngredient, Ingredient
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule
 from app.models.profile import UserProfile
+from fastapi import HTTPException
+from app.schemas.meal import (
+    MealPlanResponse,
+    MealPlanUpdate,
+    MealScheduleItemResponse,
+    MealScheduleResponse,
+    MealScheduleItemUpdate
+)
 
 
 class MealService:
     """Service for meal-related database operations."""
     
+    def __init__(self, db: AsyncSession):
+        """Initialize meal service."""
+        self.db_session = db
+
+    async def get_meal_plan(self, user_id: UUID) -> Optional[MealPlanResponse]:
+        """Get the user's meal plan and associated properties."""
+        profile_result = await self.db_session.execute(
+            select(UserProfile)
+            .where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            )
+            .options(
+                selectinload(UserProfile.meal_plan),
+                selectinload(UserProfile.meal_schedules)
+            )
+        )
+        profile = profile_result.scalar_one_or_none()
+        
+        if not profile or not profile.meal_plan:
+            return None
+            
+        mp = profile.meal_plan
+        meals_per_day = len(profile.meal_schedules) if profile.meal_schedules else 0
+        
+        # MealPlanResponse maps directly
+        return MealPlanResponse(
+            id=mp.id,
+            meals_per_day=meals_per_day,
+            daily_calories_target=mp.daily_calorie_target,
+            daily_calories_min=int(mp.daily_calorie_target * 0.9),
+            daily_calories_max=int(mp.daily_calorie_target * 1.1),
+            protein_grams_target=mp.protein_grams,
+            carbs_grams_target=mp.carbs_grams,
+            fats_grams_target=mp.fats_grams,
+            protein_percentage=mp.protein_percentage,
+            carbs_percentage=mp.carbs_percentage,
+            fats_percentage=mp.fats_percentage,
+            plan_rationale="AI-optimized breakdown",
+            is_locked=profile.is_locked,
+            created_at=mp.created_at,
+            updated_at=mp.updated_at
+        )
+
+    async def update_meal_plan(self, user_id: UUID, updates: dict[str, Any]) -> MealPlanResponse:
+        """Update meal plan details."""
+        profile_result = await self.db_session.execute(
+            select(UserProfile)
+            .where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            )
+            .options(selectinload(UserProfile.meal_plan))
+        )
+        profile = profile_result.scalar_one_or_none()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        if profile.is_locked:
+            raise HTTPException(status_code=403, detail="Profile is locked. Unlock profile before making modifications.")
+        if not profile.meal_plan:
+            raise HTTPException(status_code=404, detail="Meal plan not found")
+            
+        mp = profile.meal_plan
+        if "daily_calories_target" in updates:
+            mp.daily_calorie_target = updates["daily_calories_target"]
+        if "protein_grams_target" in updates:
+            mp.protein_grams = updates["protein_grams_target"]
+        if "carbs_grams_target" in updates:
+            mp.carbs_grams = updates["carbs_grams_target"]
+        if "fats_grams_target" in updates:
+            mp.fats_grams = updates["fats_grams_target"]
+            
+        await self.db_session.commit()
+        return await self.get_meal_plan(user_id)
+
+    async def get_meal_schedule(self, user_id: UUID) -> list[MealScheduleItemResponse]:
+        """Get the user's meal schedule execution."""
+        profile_result = await self.db_session.execute(
+            select(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            ).options(selectinload(UserProfile.meal_schedules))
+        )
+        profile = profile_result.scalar_one_or_none()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        schedules = []
+        for i, ms in enumerate(sorted(profile.meal_schedules, key=lambda x: x.scheduled_time)):
+            # Ignore soft-deleted items
+            if ms.deleted_at is not None:
+                continue
+            schedules.append(MealScheduleItemResponse(
+                id=ms.id,
+                meal_number=i + 1,
+                meal_name=ms.meal_name,
+                scheduled_time=ms.scheduled_time,
+                notification_offset_minutes=-30,  # Default fallback
+                earliest_time=ms.scheduled_time,
+                latest_time=ms.scheduled_time,
+                is_active=True
+            ))
+            
+        return schedules
+
+    async def update_meal_schedule(self, user_id: UUID, updates: list[dict[str, Any]]) -> list[MealScheduleItemResponse]:
+        """Update items in the meal schedule block."""
+        profile_result = await self.db_session.execute(
+            select(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            ).options(selectinload(UserProfile.meal_schedules))
+        )
+        profile = profile_result.scalar_one_or_none()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        if profile.is_locked:
+            raise HTTPException(status_code=403, detail="Profile is locked. Unlock profile before making modifications.")
+            
+        # For simplicity in this mock, we map schedule updates by index mapping
+        active_schedules = sorted([m for m in profile.meal_schedules if m.deleted_at is None], key=lambda x: x.scheduled_time)
+        
+        for update_item in updates:
+            idx = update_item.get("meal_number", 1) - 1
+            if 0 <= idx < len(active_schedules):
+                ms = active_schedules[idx]
+                if "scheduled_time" in update_item:
+                    import datetime
+                    if isinstance(update_item["scheduled_time"], str):
+                        ms.scheduled_time = datetime.datetime.strptime(update_item["scheduled_time"], "%H:%M:%S").time()
+                    else:
+                        ms.scheduled_time = update_item["scheduled_time"]
+                if "meal_name" in update_item:
+                    ms.meal_name = update_item["meal_name"]
+                    
+        await self.db_session.commit()
+        return await self.get_meal_schedule(user_id)
+        
     @staticmethod
     async def get_today_meal_plan(
         user_id: UUID,

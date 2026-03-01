@@ -21,7 +21,7 @@ from app.api.v1.endpoints import auth, profiles, workouts
 from app.api import v1
 from app.core.config import settings
 from app.core.exceptions import ProfileLockedException
-from app.schemas.error import ErrorResponse
+# from app.schemas.error import ErrorResponse
 
 
 # Custom logging filter to suppress harmless CancelledError during connection cleanup

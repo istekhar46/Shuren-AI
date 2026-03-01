@@ -19,11 +19,10 @@ export const Header: React.FC<HeaderProps> = ({ onboardingCompleted }) => {
 
   const navItems: NavItem[] = [
     { path: '/dashboard', label: 'Dashboard', requiresOnboarding: true },
-    { path: '/chat', label: 'Chat', requiresOnboarding: true },
-    { path: '/voice', label: 'Voice', requiresOnboarding: true },
+    ...(onboardingCompleted ? [{ path: '/chat', label: 'Chat', requiresOnboarding: true }] : []),
     { path: '/meals', label: 'Meals', requiresOnboarding: true },
     { path: '/workouts', label: 'Workouts', requiresOnboarding: true },
-    { path: '/onboarding', label: 'Onboarding', requiresOnboarding: false },
+    ...(!onboardingCompleted ? [{ path: '/onboarding', label: 'Onboarding', requiresOnboarding: false }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;

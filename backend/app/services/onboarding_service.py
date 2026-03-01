@@ -107,14 +107,15 @@ class OnboardingService:
         """
         self.db = db
     
-    async def get_onboarding_state(self, user_id: UUID) -> OnboardingState | None:
+    async def get_onboarding_state(self, user_id: UUID, auto_create: bool = True) -> OnboardingState | None:
         """Retrieve current onboarding state for a user.
         
         Args:
             user_id: User's unique identifier
+            auto_create: Whether to automatically create a new state if none exists
             
         Returns:
-            OnboardingState if found, None otherwise
+            OnboardingState if found (or created), None otherwise only if auto_create is False
         """
         result = await self.db.execute(
             select(OnboardingState)
@@ -123,7 +124,20 @@ class OnboardingService:
                 OnboardingState.deleted_at.is_(None)
             )
         )
-        return result.scalar_one_or_none()
+        state = result.scalar_one_or_none()
+        
+        if not state and auto_create:
+            state = OnboardingState(
+                user_id=user_id,
+                current_step=1,
+                is_complete=False
+            )
+            self.db.add(state)
+            await self.db.commit()
+            await self.db.refresh(state)
+            logger.info(f"Auto-created onboarding state for user {user_id}")
+            
+        return state
     
     async def get_progress(self, user_id: UUID) -> "OnboardingProgress":
         """Get rich progress metadata for UI.

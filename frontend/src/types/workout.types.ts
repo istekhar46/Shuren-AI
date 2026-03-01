@@ -15,7 +15,7 @@ export interface ExerciseLibrary {
   exercise_slug: string;
   exercise_type: string;
   primary_muscle_group: string;
-  secondary_muscle_groups: string[];
+  secondary_muscle_groups: string[] | null;
   equipment_required: string[];
   difficulty_level: string;
   description: string;
@@ -52,7 +52,7 @@ export interface WorkoutDayResponse {
   id: string;
   day_number: number;
   day_name: string;
-  muscle_groups: string[];
+  muscle_groups: string[] | null;
   workout_type: string;
   description: string | null;
   estimated_duration_minutes: number | null;

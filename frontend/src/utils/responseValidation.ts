@@ -496,52 +496,6 @@ export const WorkoutScheduleResponseSchema = z.object({
 });
 
 // ============================================================================
-// Voice Session Schemas
-// ============================================================================
-
-/**
- * Schema for voice session response
- * Used by POST /voice-sessions/start
- */
-export const VoiceSessionResponseSchema = z.object({
-  room_name: z.string(),
-  token: z.string(),
-  livekit_url: z.string(),
-  agent_type: z.string(),
-  expires_at: z.string(),
-});
-
-/**
- * Schema for voice session status
- * Used by GET /voice-sessions/{room_name}/status
- */
-export const VoiceSessionStatusSchema = z.object({
-  room_name: z.string(),
-  active: z.boolean(),
-  participants: z.number().int().nonnegative(),
-  agent_connected: z.boolean(),
-  created_at: z.string().nullable(),
-});
-
-/**
- * Schema for session summary
- */
-export const SessionSummarySchema = z.object({
-  room_name: z.string(),
-  agent_type: z.string(),
-  participants: z.number().int().nonnegative(),
-  created_at: z.string().nullable(),
-});
-
-/**
- * Schema for active sessions response
- * Used by GET /voice-sessions/active
- */
-export const ActiveSessionsResponseSchema = z.object({
-  sessions: z.array(SessionSummarySchema),
-});
-
-// ============================================================================
 // Validation Helper Functions
 // ============================================================================
 

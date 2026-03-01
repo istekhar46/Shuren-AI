@@ -22,7 +22,7 @@ class ExerciseLibraryBase(BaseModel):
     exercise_slug: str = Field(..., description="URL-friendly slug for the exercise")
     exercise_type: str = Field(..., description="Type of exercise: strength, cardio, flexibility, plyometric, olympic")
     primary_muscle_group: str = Field(..., description="Primary muscle group targeted (e.g., 'chest', 'back', 'legs')")
-    secondary_muscle_groups: List[str] = Field(..., description="Secondary muscle groups engaged during the exercise")
+    secondary_muscle_groups: Optional[List[str]] = Field(default_factory=list, description="Secondary muscle groups engaged during the exercise")
     equipment_required: List[str] = Field(..., description="Equipment needed (e.g., ['barbell', 'bench'])")
     difficulty_level: str = Field(..., description="Difficulty level: beginner, intermediate, advanced")
     description: str = Field(..., description="Brief description of the exercise")

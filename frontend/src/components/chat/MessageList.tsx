@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { ChatMessage } from '../../types';
 
 interface MessageListProps {
@@ -35,7 +36,7 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex-1 overflow-y-auto py-4 space-y-4">
       <div aria-live="polite" aria-atomic="false" className="sr-only">
         {messages[messages.length - 1]?.isStreaming && 'Assistant is responding'}
       </div>
@@ -63,18 +64,43 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
                 {new Date(message.timestamp).toLocaleTimeString()}
               </span>
             </div>
-            <div className="whitespace-pre-wrap break-words">
-              {message.content}
-              {message.isStreaming && (
-                <span
-                  className="inline-block ml-1 w-2 h-4 animate-pulse"
-                  style={{ background: 'var(--color-violet)' }}
-                  aria-label="typing"
-                  role="status"
-                >
-                  ▊
-                </span>
-              )}
+            <div className="text-[15px] leading-relaxed wrap-break-word markdown-content">
+              {message.content ? (
+                <>
+                  <ReactMarkdown
+                     components={{
+                        p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="" {...props} />,
+                        h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-3 mt-5" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-3 mt-4" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-md font-bold mb-2 mt-3" {...props} />,
+                        h4: ({node, ...props}) => <h4 className="font-bold mb-2 mt-2" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
+                        hr: ({node, ...props}) => <hr className="my-4 border-t border-current opacity-20" {...props} />,
+                     }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                  {message.isStreaming && (
+                    <span
+                      className="inline-block ml-1 w-2 h-4 animate-pulse"
+                      style={{ background: 'var(--color-violet)' }}
+                      aria-label="typing"
+                      role="status"
+                    >
+                      ▊
+                    </span>
+                  )}
+                </>
+              ) : message.isStreaming ? (
+                <div className="flex items-center gap-1.5 h-6 px-1 py-1" aria-label="Agent is typing" role="status">
+                  <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '300ms' }} />
+                </div>
+              ) : null}
             </div>
 
             {message.error && (

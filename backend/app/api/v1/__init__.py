@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import chat, dishes, meal_templates, onboarding, shopping_list, voice_sessions
+from app.api.v1.endpoints import chat, dishes, meal_templates, meals, onboarding, shopping_list, voice_sessions
 
 # Create v1 API router
 api_router = APIRouter()
@@ -12,6 +12,13 @@ api_router.include_router(
     meal_templates.router,
     prefix="/meals",
     tags=["Meal Templates"]
+)
+
+# Include core meal plan and schedules router
+api_router.include_router(
+    meals.router,
+    prefix="/meals",
+    tags=["Meals Core"]
 )
 
 # Include shopping list router
