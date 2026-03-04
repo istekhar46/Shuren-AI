@@ -118,6 +118,92 @@ class AgentOrchestrator:
                 temperature=settings.CLASSIFIER_TEMPERATURE,
                 max_tokens=10
             )
+            
+    async def classify_query(self, query: str, context: "AgentContext") -> AgentType:
+        """
+        Classifies the user's query to determine the appropriate specialized agent.
+        Uses a fast LLM for low-latency routing.
+        
+        Args:
+            query: User's query text
+            context: User's agent context
+            
+        Returns:
+            The determined AgentType enum value
+        """
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        # Check cache in voice mode
+        cache_key = query[:50]
+        if self.mode == "voice" and cache_key in self._classification_cache:
+            agent_type = self._classification_cache[cache_key]
+            logger.info(f"Using cached agent classification: {agent_type.value} for query prefix: {cache_key}")
+            return agent_type
+            
+        system_prompt = f"""You are a query classifier for Shuren AI, a personal fitness and health assistant.
+You must return exactly ONE word from the following list that best matches the user's query topic:
+
+- workout: For queries about exercises, form, workout plans, logging sets/reps, or training modifications.
+- diet: For queries about nutrition, calories, meal plans, recipes, or dietary restrictions.
+- supplement: For queries about vitamins, protein powder, creatine, or other supplements.
+- tracker: For queries about logging weight, body fat, or viewing progress over time.
+- scheduler: For queries about planning when to workout, rest days, or schedule changes.
+- general: For casual conversation, motivation, or questions that don't fit the specific categories above.
+
+User Profile: {context.fitness_level} fitness level, goal is {context.primary_goal}.
+
+Analyze the user's message and respond with ONLY the category name. Do not include any other text, explanation, or punctuation."""
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=query)
+        ]
+        
+        try:
+            classifier_llm = self._init_classifier_llm()
+            response = await classifier_llm.ainvoke(messages)
+            
+            # Clean and normalize the response
+            result_text = response.content.strip().lower()
+            
+            import re
+            # Strip punctuation
+            result_text = re.sub(r'[^\w\s]', '', result_text).strip()
+            
+            # Map word to AgentType using substring matching
+            matched_agent_type = None
+            for valid_type in AgentType:
+                # Skip TEST agent as it's not a real routing destination
+                if valid_type == AgentType.TEST:
+                    continue
+                if valid_type.value in result_text:
+                    matched_agent_type = valid_type
+                    break
+            
+            if matched_agent_type:
+                agent_type = matched_agent_type
+            else:
+                # Fallback to general if unrecognized
+                logger.warning(
+                    "Classifier returned unrecognized agent type",
+                    extra={"event": "classification_unrecognized", "returned_text": response.content}
+                )
+                agent_type = AgentType.GENERAL
+                
+            logger.info(
+                f"Query dynamically routed to engine: {agent_type.value}", 
+                extra={"event": "query_classified", "agent_type": agent_type.value, "query_prefix": query[:50]}
+            )
+            
+            # Cache the result for voice mode
+            if self.mode == "voice":
+                self._classification_cache[cache_key] = agent_type
+                
+            return agent_type
+            
+        except Exception as e:
+            logger.error(f"Classification failed: {e}. Falling back to general agent.")
+            return AgentType.GENERAL
     
     async def route_query(
         self,
@@ -183,9 +269,9 @@ class AgentOrchestrator:
                 "Use OnboardingAgentOrchestrator for onboarding interactions."
             )
         
-        # Step 3: Force GENERAL agent for all post-onboarding queries
+        # Step 3: Dynamically classify query to select best specialized agent
         if agent_type is None or agent_type != AgentType.TEST:
-            agent_type = AgentType.GENERAL
+            agent_type = await self.classify_query(query, context)
 
         # Step 4: Get or create agent instance
         agent = self._get_or_create_agent(agent_type, context)

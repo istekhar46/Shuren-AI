@@ -693,6 +693,8 @@ Remember:
 - Every step forward counts
 - Rest and recovery are part of success
 - Consistency beats intensity
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:

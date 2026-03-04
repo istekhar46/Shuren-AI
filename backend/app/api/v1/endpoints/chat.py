@@ -100,20 +100,19 @@ async def chat(
                 }
             )
         
-        # If explicit agent_type provided, reject if not "general"
-        if request.agent_type and request.agent_type != "general":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "message": "Only general agent available after onboarding",
-                    "error_code": "AGENT_NOT_ALLOWED",
-                    "requested_agent": request.agent_type,
-                    "allowed_agent": "general"
-                }
-            )
-        
-        # Force general agent for all completed users
-        agent_type = AgentType.GENERAL
+        # Determine agent type if explicitly requested
+        agent_type = None
+        if request.agent_type:
+            try:
+                agent_type = AgentType(request.agent_type)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "message": f"Invalid agent_type requested: {request.agent_type}",
+                        "error_code": "INVALID_AGENT_TYPE"
+                    }
+                )
         
         # Load user context
         try:
@@ -998,9 +997,15 @@ async def chat_stream(
             # Initialize AgentOrchestrator in text mode
             orchestrator = AgentOrchestrator(db_session=db, mode="text")
             
-            # Enforce general agent for all completed users in chat_stream
-            agent_type = AgentType.GENERAL
+            # Route query dynamically if no explicit agent type was provided
+            if agent_type is None:
+                agent_type = await orchestrator.classify_query(message, context)
+                
             agent_type_value = agent_type.value
+            logger.info(
+                f"Stream mapped to engine: {agent_type_value}",
+                extra={"event": "stream_routed", "user_id": user_id, "agent_type": agent_type_value}
+            )
             
             # Get or create agent instance
             agent = orchestrator._get_or_create_agent(agent_type, context)

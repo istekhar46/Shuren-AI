@@ -21,6 +21,7 @@ from app.agents.context import AgentContext, AgentResponse
 from app.agents.onboarding_tools import call_onboarding_step
 from app.models.workout import WorkoutPlan, WorkoutDay, WorkoutExercise, ExerciseLibrary
 from app.models.preferences import WorkoutSchedule
+from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -137,10 +138,56 @@ class WorkoutPlannerAgent(BaseAgent):
         # Build messages
         messages = self._build_messages(query, voice_mode=False)
         
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
+        # Get tools for this agent
+        tools = self.get_tools()
+        llm_with_tools = self.llm.bind_tools(tools)
+        
+        # First pass to capture the response (might be streaming text or tool calls)
+        response_message = None
+        has_tool_calls = False
+        
+        async for chunk in llm_with_tools.astream(messages):
+            # Accumulate chunk
+            if response_message is None:
+                response_message = chunk
+            else:
+                response_message += chunk
+                
+            # Yield content if it exists
             if hasattr(chunk, 'content') and chunk.content:
                 yield chunk.content
+                
+            # Check if this chunk has tool calls
+            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                has_tool_calls = True
+        
+        # If tools were called, execute them and stream the final answer
+        if has_tool_calls and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+            # We must append the full AIMessage with tool calls to history
+            messages.append(response_message)
+            
+            from langchain_core.messages import ToolMessage
+            for tool_call in response_message.tool_calls:
+                # Find and execute the tool
+                for t in tools:
+                    if t.name == tool_call['name']:
+                        try:
+                            tool_result = await t.ainvoke(tool_call['args'])
+                            messages.append(ToolMessage(
+                                content=str(tool_result),
+                                tool_call_id=tool_call['id']
+                            ))
+                        except Exception as e:
+                            logger.error(f"Tool execution error: {e}")
+                            messages.append(ToolMessage(
+                                content=f"Error executing tool: {e}",
+                                tool_call_id=tool_call['id']
+                            ))
+                            
+            # Now stream the final response based on tool results
+            async for chunk in self.llm.astream(messages):
+                if hasattr(chunk, 'content') and chunk.content:
+                    yield chunk.content
     
     def get_tools(self) -> List:
         """
@@ -191,9 +238,15 @@ class WorkoutPlannerAgent(BaseAgent):
                     })
                 
                 # Get workout plan for user
+                # stmt = select(WorkoutPlan).where(
+                #     WorkoutPlan.user_id == context.user_id,
+                #     WorkoutPlan.deleted_at.is_(None)
+                # )
                 stmt = select(WorkoutPlan).where(
                     WorkoutPlan.user_id == context.user_id,
                     WorkoutPlan.deleted_at.is_(None)
+                ).options(
+                    selectinload(WorkoutPlan.workout_days).selectinload(WorkoutDay.exercises).selectinload(WorkoutExercise.exercise_library)
                 )
                 
                 result = await db_session.execute(stmt)
@@ -451,7 +504,7 @@ class WorkoutPlannerAgent(BaseAgent):
             return json.dumps(result)
         
         @tool
-        async def save_fitness_goals_tool(goals: list[dict]) -> str:
+        async def save_fitness_goals_tool(goals: List[dict]) -> str:
             """Save user's fitness goals during onboarding (State 2).
             
             Args:
@@ -467,9 +520,9 @@ class WorkoutPlannerAgent(BaseAgent):
         
         @tool
         async def save_workout_constraints_tool(
-            equipment: list[str],
-            injuries: list[str],
-            limitations: list[str],
+            equipment: List[str],
+            injuries: List[str],
+            limitations: List[str],
             target_weight_kg: float = None,
             target_body_fat_percentage: float = None
         ) -> str:
@@ -545,6 +598,8 @@ Available Tools:
 - show_exercise_demo: Get exercise demonstration GIFs and instructions
 - log_set_completion: Record completed sets with reps and weight
 - suggest_workout_modification: Generate workout adjustments based on needs
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:
