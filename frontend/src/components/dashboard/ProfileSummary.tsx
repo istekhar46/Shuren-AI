@@ -1,5 +1,6 @@
 import React from 'react';
 import type { UserProfile } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 import '../../pages/DashboardPage.css';
 
 interface ProfileSummaryProps {
@@ -7,6 +8,8 @@ interface ProfileSummaryProps {
 }
 
 export const ProfileSummary: React.FC<ProfileSummaryProps> = ({ profile }) => {
+  const { user } = useAuth();
+  
   const fitnessLevel = profile?.fitnessLevel || 'beginner';
   const levelLabel = fitnessLevel.charAt(0).toUpperCase() + fitnessLevel.slice(1);
 
@@ -26,11 +29,11 @@ export const ProfileSummary: React.FC<ProfileSummaryProps> = ({ profile }) => {
           className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold text-white"
           style={{ background: 'var(--gradient-accent)' }}
         >
-          {(profile.email?.[0] || 'U').toUpperCase()}
+          {((user?.full_name || user?.email || profile?.email || 'U')[0]).toUpperCase()}
         </div>
         <div className="min-w-0">
           <h2 className="text-lg font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {profile.email?.split('@')[0] || 'User'}
+            {user?.full_name || (user?.email || profile?.email || 'User').split('@')[0]}
           </h2>
           <div className="flex items-center gap-2 mt-1">
             <span className={`dash-badge dash-badge--${fitnessLevel}`}>{levelLabel}</span>

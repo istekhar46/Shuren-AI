@@ -31,7 +31,6 @@ from app.schemas.chat import (
     OnboardingChatResponse
 )
 from app.services.agent_orchestrator import AgentOrchestrator, AgentType
-from app.services.chat_service import ChatService
 from app.services.context_loader import load_agent_context
 from app.services.onboarding_service import OnboardingService
 from app.services.onboarding_orchestrator import OnboardingAgentOrchestrator

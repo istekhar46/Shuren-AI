@@ -112,6 +112,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                 # Get context from previous agents
                 fitness_level = agent_instance.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "beginner")
                 primary_goal = agent_instance.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
+                goal_category = agent_instance.context.agent_context.get("fitness_assessment", {}).get("goal_category", "general_fitness")
                 limitations = agent_instance.context.agent_context.get("fitness_assessment", {}).get("limitations", [])
                 
                 logger.info(
@@ -122,7 +123,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                 # Generate plan
                 plan = await agent_instance.workout_generator.generate_plan(
                     fitness_level=fitness_level,
-                    primary_goal=primary_goal,
+                    primary_goal=goal_category, # Use the strict category for math
                     frequency=frequency,
                     location=location,
                     duration_minutes=duration_minutes,
@@ -577,7 +578,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
 
 Context from previous steps:
 - Fitness Level: {fitness_level}
-- Primary Goal: {primary_goal}
+- Primary Goal (User's words): {primary_goal}
 - Limitations: {limitations_str}
 
 Already collected workout preferences:

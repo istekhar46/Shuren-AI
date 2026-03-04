@@ -154,7 +154,7 @@ export const useOnboardingChat = (): UseOnboardingChatReturn => {
           const initialGreeting: ChatMessage = {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: "Welcome to Shuren AI! I'm your onboarding assistant. To get started, I'd love to learn a bit about your current fitness level and your goals. What brings you here today?",
+            content: "Welcome to Shuren AI! I'm your personal fitness coach. To build a highly personalized and mathematically accurate plan for you, I need to learn about your fitness level, goals, exercise experience, and any physical limitations.\n\nTo get started, could you share your age, gender, height, and current weight?",
             agentType: (progress.current_state_info.agent || 'fitness_assessment') as GeneralAgentType,
             timestamp: new Date().toISOString(),
             isStreaming: false,

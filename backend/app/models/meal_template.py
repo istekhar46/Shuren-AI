@@ -23,9 +23,6 @@ class MealTemplate(BaseModel):
         nullable=False
     )
     
-    # Template identification
-    week_number = Column(Integer, nullable=False)
-    
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
     
@@ -51,8 +48,6 @@ class MealTemplate(BaseModel):
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint('week_number BETWEEN 1 AND 4', name='valid_week_number'),
-        UniqueConstraint('profile_id', 'week_number', name='unique_profile_week'),
         Index('idx_meal_templates_profile', 'profile_id', postgresql_where=(
             Column('deleted_at').is_(None)
         )),

@@ -192,47 +192,35 @@ CREATE TABLE onboarding_states (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
-    -- Progress tracking
-    current_step INTEGER NOT NULL DEFAULT 0,
-        -- Maps to step numbers 0-11 from specification
-    completed_steps INTEGER[] DEFAULT ARRAY[]::INTEGER[],
+    -- Progress tracking (4-step flow)
+    current_step INTEGER NOT NULL DEFAULT 1,
+    is_complete BOOLEAN NOT NULL DEFAULT FALSE,
+    step_1_complete BOOLEAN NOT NULL DEFAULT FALSE,
+    step_2_complete BOOLEAN NOT NULL DEFAULT FALSE,
+    step_3_complete BOOLEAN NOT NULL DEFAULT FALSE,
+    step_4_complete BOOLEAN NOT NULL DEFAULT FALSE,
     
-    -- State data (stores intermediate inputs before confirmation)
-    step_data JSONB DEFAULT '{}'::jsonb,
-        -- Key format: "step_1", "step_2", etc.
-        -- Allows recovery if user drops off mid-flow
-    
-    -- Flow metadata
-    flow_version VARCHAR(10) NOT NULL DEFAULT '1.0',
-        -- Tracks which onboarding spec version user experienced
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_activity_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    
-    -- Session tracking
-    session_id VARCHAR(255),
-    device_type VARCHAR(50),
-    user_agent TEXT,
+    -- Agent foundation tracking
+    current_agent VARCHAR(50),
+    agent_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+    agent_context JSONB NOT NULL DEFAULT '{}'::jsonb,
+    conversation_history JSONB NOT NULL DEFAULT '[]'::jsonb,
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     
-    CONSTRAINT valid_current_step CHECK (current_step >= 0 AND current_step <= 11),
+    CONSTRAINT valid_current_step CHECK (current_step >= 0 AND current_step <= 4),
     CONSTRAINT unique_user_onboarding UNIQUE(user_id)
 );
 
 CREATE INDEX idx_onboarding_user_id ON onboarding_states(user_id);
-CREATE INDEX idx_onboarding_incomplete ON onboarding_states(user_id, completed_at) 
-    WHERE completed_at IS NULL;
-CREATE INDEX idx_onboarding_last_activity ON onboarding_states(last_activity_at) 
-    WHERE completed_at IS NULL;
 ```
 
 **Design Notes:**
-- `step_data` JSONB allows flexible storage without schema changes
-- `completed_steps` array enables non-linear navigation if needed in future
-- `session_id` supports analytics for drop-off analysis
-- `flow_version` critical for A/B testing and migration handling
+- `agent_context` JSONB allows flexible storage without schema changes of data gathered incrementally.
+- `step_X_complete` booleans map the core 4 steps explicitly.
+- `conversation_history` saves dialogue continuously across states.
 
 ---
 

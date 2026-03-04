@@ -11,9 +11,6 @@
  * Contains ingredients grouped by category for a specified number of weeks
  */
 export interface ShoppingListResponse {
-  week_number: number;
-  start_date: string;
-  end_date: string;
   categories: IngredientCategory[];
   total_items: number;
 }

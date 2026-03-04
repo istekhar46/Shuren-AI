@@ -342,7 +342,6 @@ export const MealSlotSchema = z.object({
  * Used by GET /meal-templates/today
  */
 export const TodayMealsResponseSchema = z.object({
-  date: z.string(),
   day_of_week: z.number().int().min(0).max(6),
   day_name: z.string(),
   meals: z.array(MealSlotSchema),
@@ -379,7 +378,6 @@ export const DayMealsSchema = z.object({
  */
 export const MealTemplateResponseSchema = z.object({
   id: z.string().uuid(),
-  week_number: z.number().int().positive(),
   is_active: z.boolean(),
   days: z.array(DayMealsSchema),
   created_at: z.string(),
@@ -417,9 +415,6 @@ export const IngredientCategorySchema = z.object({
  * Used by GET /shopping-list/
  */
 export const ShoppingListResponseSchema = z.object({
-  week_number: z.number().int().positive(),
-  start_date: z.string(),
-  end_date: z.string(),
   categories: z.array(IngredientCategorySchema),
   total_items: z.number().int().nonnegative(),
 });

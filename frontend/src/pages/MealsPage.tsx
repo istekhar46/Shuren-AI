@@ -27,15 +27,6 @@ export const MealsPage = () => {
         const flattenedMeals: Meal[] = [];
         
         template.days.forEach(day => {
-          // Calculate the date corresponding to this day of the week
-          const today = new Date();
-          const currentWeekday = today.getDay() === 0 ? 6 : today.getDay() - 1; // map 0 (Sun) -> 6, 1 (Mon) -> 0
-          const dayOffset = (day.day_of_week - currentWeekday + 7) % 7;
-          
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayOffset);
-          const dateStr = targetDate.toISOString().split('T')[0];
-          
           day.meals.forEach((slot, index) => {
             if (slot.primary_dish) {
               flattenedMeals.push({
@@ -57,7 +48,7 @@ export const MealsPage = () => {
                   cookTime: slot.primary_dish.cook_time_minutes || 0
                 },
                 scheduledTime: slot.scheduled_time.substring(0, 5), // 'HH:MM' format
-                date: dateStr
+                dayName: day.day_name
               });
             }
           });

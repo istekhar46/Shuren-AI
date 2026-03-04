@@ -986,10 +986,10 @@ class OnboardingService:
             raise
     
     async def _generate_initial_meal_templates(self, profile_id: UUID) -> None:
-        """Generate initial meal templates for weeks 1-4 during onboarding.
+        """Generate initial meal template during onboarding.
         
-        This method attempts to generate meal templates but does not fail
-        the onboarding process if template generation fails. Errors are
+        This method attempts to generate a single active meal template but does
+        not fail the onboarding process if template generation fails. Errors are
         logged for monitoring.
         
         Args:
@@ -1013,22 +1013,18 @@ class OnboardingService:
             profile.is_locked = False
             await self.db.flush()
             
-            # Generate templates for all 4 weeks
-            for week in [1, 2, 3, 4]:
-                try:
-                    await template_service.generate_template(
-                        profile_id=profile_id,
-                        week_number=week,
-                        preferences="Initial onboarding template"
-                    )
-                    logger.info(f"Generated meal template for week {week}, profile {profile_id}")
-                except Exception as week_error:
-                    logger.error(
-                        f"Failed to generate meal template for week {week}, profile {profile_id}: {week_error}",
-                        exc_info=True
-                    )
-                    # Continue with next week even if one fails
-                    continue
+            # Generate a single active template
+            try:
+                await template_service.generate_template(
+                    profile_id=profile_id,
+                    preferences="Initial onboarding template"
+                )
+                logger.info(f"Generated meal template for profile {profile_id}")
+            except Exception as gen_error:
+                logger.error(
+                    f"Failed to generate meal template for profile {profile_id}: {gen_error}",
+                    exc_info=True
+                )
             
             # Restore original lock state
             profile.is_locked = original_lock_state

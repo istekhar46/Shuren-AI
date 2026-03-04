@@ -110,7 +110,7 @@ export function mapProfileResponseToUserProfile(response: UserProfileResponse): 
     })) || [],
     workoutSchedule: {
       daysPerWeek: response.workout_schedules?.length || 0,
-      preferredDays: response.workout_schedules?.map(s => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][s.day_of_week]) || [],
+      preferredDays: response.workout_schedules?.map(s => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][s.day_of_week]) || [],
       preferredTime: response.workout_schedules?.[0]?.scheduled_time || '07:00:00',
       sessionDuration: 45
     },

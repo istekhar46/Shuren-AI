@@ -8,8 +8,15 @@ export const mealService = {
    * @returns User's meal plan with nutritional targets, or null if not configured
    */
   async getMealPlan(): Promise<MealTemplateResponse | null> {
-    const response = await api.get<MealTemplateResponse>('/meals/template');
-    return response.data;
+    try {
+      const response = await api.get<MealTemplateResponse>('/meals/template');
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   /**

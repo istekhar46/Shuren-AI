@@ -1,7 +1,6 @@
 """Shopping list service for aggregating ingredients from meal templates."""
 
 from collections import defaultdict
-from datetime import date, timedelta
 from decimal import Decimal
 from typing import Dict, List
 from uuid import UUID
@@ -70,16 +69,12 @@ class ShoppingListService:
                 detail="Weeks must be between 1 and 4"
             )
         
-        # Determine current week number (1-4 rotation)
-        week_of_year = date.today().isocalendar()[1]
-        current_week = ((week_of_year - 1) % 4) + 1
-        
         # Get active meal template with all relationships
         result = await self.db.execute(
             select(MealTemplate)
             .where(
                 MealTemplate.profile_id == profile_id,
-                MealTemplate.week_number == current_week,
+                MealTemplate.is_active == True,
                 MealTemplate.deleted_at.is_(None)
             )
             .options(
@@ -103,14 +98,7 @@ class ShoppingListService:
         # Group by category and sort
         categories = self._group_by_category(ingredient_data)
         
-        # Calculate date range
-        today = date.today()
-        end_date = today + timedelta(days=weeks * 7 - 1)
-        
         return ShoppingListResponse(
-            week_number=current_week,
-            start_date=today.isoformat(),
-            end_date=end_date.isoformat(),
             categories=categories,
             total_items=sum(len(cat.ingredients) for cat in categories)
         )

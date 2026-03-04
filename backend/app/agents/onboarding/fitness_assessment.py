@@ -62,8 +62,23 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             limitations: List[str] = Field(
                 description="List of physical limitations (equipment, injuries - non-medical)"
             )
+            weight_kg: float = Field(
+                description="User's current weight in kilograms"
+            )
+            height_cm: float = Field(
+                description="User's current height in centimeters"
+            )
+            age: int = Field(
+                description="User's age in years"
+            )
+            gender: str = Field(
+                description="User's biological sex/gender for metabolic formulas: 'male' or 'female'"
+            )
             primary_goal: str = Field(
-                description="Primary fitness goal: fat_loss, muscle_gain, or general_fitness"
+                description="The user's primary fitness goal in their own words (e.g. 'Run a marathon under 4 hours')"
+            )
+            goal_category: str = Field(
+                description="Categorization of their goal for metabolic math: 'fat_loss', 'muscle_gain', or 'general_fitness'"
             )
             secondary_goal: str | None = Field(
                 default=None,
@@ -79,7 +94,12 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             fitness_level: str,
             experience_details: dict,
             limitations: List[str],
+            weight_kg: float,
+            height_cm: float,
+            age: int,
+            gender: str,
             primary_goal: str,
+            goal_category: str,
             secondary_goal: str | None = None,
             goal_priority: str | None = None
         ) -> dict:
@@ -90,14 +110,21 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             - Fitness level (beginner/intermediate/advanced)
             - Exercise experience details (frequency, duration, types)
             - Physical limitations (equipment, injuries - non-medical)
-            - Primary fitness goal (fat_loss/muscle_gain/general_fitness)
+            - Biometrics (weight, height, age, gender)
+            - Primary fitness goal (the exact goal in the user's words)
+            - Goal category (fat_loss/muscle_gain/general_fitness)
             - Optional: Secondary goal and goal priority
             
             Args:
                 fitness_level: User's fitness level (beginner/intermediate/advanced)
                 experience_details: Dict with keys: frequency, duration, types
                 limitations: List of limitation strings
-                primary_goal: Primary fitness goal (fat_loss/muscle_gain/general_fitness)
+                weight_kg: User's weight in kilograms
+                height_cm: User's height in centimeters
+                age: User's age in years
+                gender: Biological sex ('male' or 'female')
+                primary_goal: The exact goal in the user's words (e.g., 'Run a 5k without stopping')
+                goal_category: One of: 'fat_loss', 'muscle_gain', or 'general_fitness'
                 secondary_goal: Optional secondary goal
                 goal_priority: Optional priority description
                 
@@ -114,20 +141,19 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
                     "message": f"Invalid fitness_level. Must be one of: {valid_levels}"
                 }
             
-            # Validate primary_goal
-            valid_goals = ["fat_loss", "muscle_gain", "general_fitness"]
-            primary_goal_lower = primary_goal.lower().strip().replace(" ", "_")
-            
-            if primary_goal_lower not in valid_goals:
+            # Validate goal_category
+            goal_category_lower = goal_category.lower().strip()
+            valid_categories = ["fat_loss", "muscle_gain", "general_fitness"]
+            if goal_category_lower not in valid_categories:
                 return {
                     "status": "error",
-                    "message": f"Invalid primary_goal. Must be one of: {valid_goals}"
+                    "message": f"Invalid goal_category. Must be one of: {valid_categories}"
                 }
             
             # Validate secondary_goal if provided
             if secondary_goal:
                 secondary_goal_lower = secondary_goal.lower().strip().replace(" ", "_")
-                if secondary_goal_lower not in valid_goals:
+                if secondary_goal_lower not in valid_categories: # Use valid_categories for secondary goal too
                     return {
                         "status": "error",
                         "message": f"Invalid secondary_goal. Must be one of: {valid_goals}"
@@ -140,7 +166,12 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
                 "fitness_level": fitness_level_lower,
                 "experience_details": experience_details,
                 "limitations": [lim.strip() for lim in limitations],
-                "primary_goal": primary_goal_lower,
+                "weight_kg": weight_kg,
+                "height_cm": height_cm,
+                "age": age,
+                "gender": gender.lower().strip(),
+                "primary_goal": primary_goal,
+                "goal_category": goal_category_lower,
                 "secondary_goal": secondary_goal_lower,
                 "goal_priority": goal_priority,
                 "completed_at": datetime.utcnow().isoformat()
@@ -374,6 +405,7 @@ Your role (Step 1 - Fitness Assessment & Goal Setting):
 - Ask friendly questions about their exercise experience
 - Assess their fitness level (beginner/intermediate/advanced)
 - Identify any physical limitations (equipment, injuries - non-medical)
+- Collect baseline biometrics (age, gender, height, current weight)
 - Help them define clear fitness goals
 - Be encouraging and non-judgmental
 
@@ -385,8 +417,8 @@ Guidelines:
 - Don't overwhelm with too many questions at once
 - Never provide medical advice
 - If medical topics are mentioned, acknowledge but redirect to fitness questions
-- Collect BOTH fitness assessment AND goals in this step
-- When you have collected fitness level, experience details, limitations, AND goals, call save_fitness_assessment tool
+- Collect ALL the details (assessment, biometrics, AND goals) in this step
+- When you have collected fitness level, experience details, limitations, biometrics (weight/height/age/gender), AND goals, call save_fitness_assessment tool
 - After saving successfully, let the user know we'll move to workout planning
 
 Fitness Level Definitions:
@@ -403,9 +435,11 @@ Information to Collect:
 1. Fitness Level (REQUIRED): beginner/intermediate/advanced
 2. Experience Details (REQUIRED): How long they've been training, frequency, types of exercise
 3. Limitations (REQUIRED): Equipment access, injuries, physical constraints
-4. Primary Goal (REQUIRED): fat_loss/muscle_gain/general_fitness
-5. Secondary Goal (OPTIONAL): Another goal if they have one
-6. Goal Priority (OPTIONAL): Which goal is more important if they have both
+4. Biometrics (REQUIRED): Age, biological sex/gender, current height, current weight. Try to get these naturally.
+5. Primary Goal (REQUIRED): The user's goal in their own words (e.g., "Run a marathon", "Lose 10 pounds for my wedding")
+6. Goal Category (REQUIRED): You must secretly classify their goal as one of: fat_loss, muscle_gain, or general_fitness
+7. Secondary Goal (OPTIONAL): Another goal if they have one
+8. Goal Priority (OPTIONAL): Which goal is more important if they have both
 
 Realistic Expectations by Fitness Level:
 - Beginner: Focus on building habits and foundational strength
@@ -416,6 +450,7 @@ When to call save_fitness_assessment:
 - User has clearly indicated their fitness level
 - You understand their exercise experience (frequency, duration, types)
 - You know their limitations (equipment, injuries, etc.)
-- User has stated their primary fitness goal
+- You know their age, gender, current weight, and height
+- User has stated their primary fitness goal in their own words
 - User confirms the information is correct or says they're ready to move on
 """

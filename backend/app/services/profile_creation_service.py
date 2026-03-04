@@ -241,38 +241,30 @@ class ProfileCreationService:
             ValueError: If required workout data is missing
         """
         workout_planning = agent_context.get("workout_planning", {})
+        plan_data = workout_planning.get("plan", {})
         
-        # In the new structure, the plan is stored directly in workout_planning
-        # Check for both old structure (proposed_plan) and new structure (plan)
-        plan_data = workout_planning.get("plan") or workout_planning.get("proposed_plan", {})
-        
-        frequency = plan_data.get("frequency") or plan_data.get("days_per_week") or workout_planning.get("frequency")
+        frequency = plan_data.get("frequency")
         if not frequency:
-            raise ValueError("Missing required field: workout_planning.plan.frequency or days_per_week")
+            raise ValueError("Missing required field: workout_planning.plan.frequency")
         
-        duration_minutes = plan_data.get("duration_minutes") or plan_data.get("minutes_per_session") or workout_planning.get("duration_minutes")
+        duration_minutes = plan_data.get("duration_minutes")
         if not duration_minutes:
-            raise ValueError("Missing required field: workout_planning.plan.duration_minutes or minutes_per_session")
+            raise ValueError("Missing required field: workout_planning.plan.duration_minutes")
         
-        training_split = plan_data.get("training_split") or plan_data.get("days", [])
+        training_split = plan_data.get("training_split")
         if not training_split:
-            # The LLM sometimes puts days directly as keys in plan_data
-            day_keys = [k for k in plan_data.keys() if k not in ["frequency", "days_per_week", "duration_minutes", "minutes_per_session", "rationale", "duration_weeks"]]
-            if day_keys:
-                training_split = {k: plan_data[k] for k in day_keys}
-            else:
-                training_split = workout_planning.get("schedule", {}).get("days", [])
-                
-        if not training_split:
-            raise ValueError("Missing required field: workout_planning.plan.training_split or days")
+            raise ValueError("Missing required field: workout_planning.plan.training_split")
+            
+        workout_days = plan_data.get("workout_days")
+        if not workout_days:
+            raise ValueError("Missing required field: workout_planning.plan.workout_days")
         
         return {
             "frequency": frequency,
             "duration_minutes": duration_minutes,
-            "duration_weeks": plan_data.get("duration_weeks", 12),
             "training_split": training_split,
-            "workout_days": plan_data.get("workout_days", []),
-            "rationale": plan_data.get("rationale", "") or plan_data.get("progression_strategy", "")
+            "workout_days": workout_days,
+            "rationale": plan_data.get("progression_strategy", "Standard progression")
         }
     
     def _extract_diet_data(self, agent_context: dict) -> dict:
@@ -290,46 +282,20 @@ class ProfileCreationService:
         """
         diet_planning = agent_context.get("diet_planning", {})
         
-        # Extract dietary preferences (stored directly in diet_planning)
+        # Extract dietary preferences
         diet_type = diet_planning.get("diet_type")
         if not diet_type:
             raise ValueError("Missing required field: diet_planning.diet_type")
         
-        # Extract meal plan data (check both new structure "plan" and old structure "proposed_plan")
-        plan_data = diet_planning.get("plan") or diet_planning.get("proposed_plan", {})
+        # Extract meal plan data 
+        plan_data = diet_planning.get("plan", {})
         
-        daily_calories_raw = plan_data.get("daily_calories") or plan_data.get("daily_calorie_target")
-        if not daily_calories_raw:
-            raise ValueError("Missing required field: diet_planning.plan.daily_calories")
+        daily_calories = plan_data.get("daily_calories")
+        protein_g = plan_data.get("protein_g")
+        carbs_g = plan_data.get("carbs_g")
+        fats_g = plan_data.get("fats_g")
         
-        def _parse_numeric(val) -> int:
-            if val is None:
-                return None
-            if isinstance(val, (int, float)):
-                return int(val)
-            if isinstance(val, str):
-                import re
-                nums = re.findall(r'\d*\.?\d+', val)
-                if nums:
-                    return int(float(nums[0]))
-            return None
-            
-        daily_calories = _parse_numeric(daily_calories_raw)
-        if not daily_calories:
-            raise ValueError("Invalid format for daily_calories")
-        
-        # Sometimes keys are nested under macronutrient_breakdown from the LLM
-        macros = plan_data.get("macronutrient_breakdown") or plan_data.get("macro_breakdown") or plan_data.get("macros") or {}
-        
-        protein_raw = plan_data.get("protein_g") or plan_data.get("protein_grams") or macros.get("protein") or macros.get("protein_g")
-        carbs_raw = plan_data.get("carbs_g") or plan_data.get("carbs_grams") or macros.get("carbohydrates") or macros.get("carbs") or macros.get("carbs_g")
-        fats_raw = plan_data.get("fats_g") or plan_data.get("fats_grams") or macros.get("fats") or macros.get("fats_g")
-        
-        protein_g = _parse_numeric(protein_raw)
-        carbs_g = _parse_numeric(carbs_raw)
-        fats_g = _parse_numeric(fats_raw)
-        
-        if protein_g is None or carbs_g is None or fats_g is None:
+        if any(x is None for x in [daily_calories, protein_g, carbs_g, fats_g]):
             raise ValueError("Missing required macronutrient data in diet_planning.plan")
         
         return {
@@ -338,10 +304,10 @@ class ProfileCreationService:
             "intolerances": diet_planning.get("intolerances", []),
             "dislikes": diet_planning.get("dislikes", []),
             "meal_plan": {
-                "daily_calories": daily_calories,
-                "protein_g": protein_g,
-                "carbs_g": carbs_g,
-                "fats_g": fats_g,
+                "daily_calories": int(daily_calories),
+                "protein_g": int(protein_g),
+                "carbs_g": int(carbs_g),
+                "fats_g": int(fats_g),
                 "meal_frequency": plan_data.get("meal_frequency", 3)
             },
             "sample_meals": plan_data.get("sample_meals", [])
@@ -524,29 +490,45 @@ class ProfileCreationService:
     def _create_meal_schedules(
         self,
         profile_id: UUID,
-        meal_schedule_data: dict
+        meal_schedule_data: dict | list
     ) -> List[MealSchedule]:
         """
         Create MealSchedule entities from meal schedule data.
         
         Args:
             profile_id: Profile ID
-            meal_schedule_data: Dictionary mapping meal names to times
-                              (e.g., {"breakfast": "08:00", "lunch": "13:00"})
+            meal_schedule_data: Dictionary mapping meal names to times, or list of Dicts.
         
         Returns:
             List of MealSchedule entities
         """
         schedules = []
         
-        for meal_name, time_str in meal_schedule_data.items():
-            schedule = MealSchedule(
-                profile_id=profile_id,
-                meal_name=meal_name,
-                scheduled_time=time_str_to_time(time_str),
-                enable_notifications=True
-            )
-            schedules.append(schedule)
+        # Support old dict schema format
+        if isinstance(meal_schedule_data, dict):
+            for meal_name, time_str in meal_schedule_data.items():
+                schedule = MealSchedule(
+                    profile_id=profile_id,
+                    meal_name=meal_name,
+                    scheduled_time=time_str_to_time(time_str),
+                    enable_notifications=True
+                )
+                schedules.append(schedule)
+                
+        # Support new robust list schema format
+        elif isinstance(meal_schedule_data, list):
+            for item in meal_schedule_data:
+                meal_type = item.get("meal_type", "snack")
+                time_str = item.get("time")
+                if not time_str:
+                    continue
+                schedule = MealSchedule(
+                    profile_id=profile_id,
+                    meal_name=meal_type,
+                    scheduled_time=time_str_to_time(time_str),
+                    enable_notifications=True
+                )
+                schedules.append(schedule)
         
         return schedules
     
@@ -575,47 +557,13 @@ class ProfileCreationService:
         )
         
         # Create workout days from training split
-        training_split_data = workout_data.get("workout_days", [])
-        if not training_split_data:
-            # Fallback to older schema just in case
-            training_split_data = workout_data.get("training_split", [])
-        
-        # If it's a dict like {"Day 1: Push": {...}}, convert to list
-        if isinstance(training_split_data, dict):
-            training_split = []
-            for k, v in training_split_data.items():
-                if isinstance(v, dict):
-                    v["name"] = k
-                    training_split.append(v)
-                elif isinstance(v, list):
-                    # Format: {"Day 1: Push": [{"exercise": "Bench Press", ...}]}
-                    training_split.append({
-                        "name": k,
-                        "description": "",
-                        "type": "strength",
-                        "exercises": v
-                    })
-                else:
-                    training_split.append({"name": k, "description": str(v)})
-        else:
-            training_split = training_split_data
+        workout_days_data = workout_data.get("workout_days", [])
 
-        for day_num, day_data in enumerate(training_split, start=1):
-            if isinstance(day_data, str):
-                day_name = day_data
-                day_desc = f"Workout session {day_num}"
-                workout_type = "strength"
-                exercises_data = []
-            elif isinstance(day_data, dict):
-                day_name = day_data.get("day_name", day_data.get("name", f"Day {day_num}"))
-                day_desc = day_data.get("description", str(day_data.get("description", "")))
-                workout_type = day_data.get("type", "strength")
-                exercises_data = day_data.get("exercises", [])
-            else:
-                day_name = f"Day {day_num}"
-                day_desc = str(day_data)
-                workout_type = "strength"
-                exercises_data = []
+        for day_num, day_data in enumerate(workout_days_data, start=1):
+            day_name = day_data.get("day_name", f"Day {day_num}")
+            day_desc = f"{day_name} ({workout_data.get('training_split', '')})"
+            workout_type = "strength"
+            exercises_data = day_data.get("exercises", [])
 
             workout_day = WorkoutDay(
                 workout_plan=workout_plan,
@@ -711,7 +659,7 @@ class ProfileCreationService:
         
         # Store complete training split in plan_data for reference
         workout_plan.plan_data = {
-            "training_split": training_split_data,
+            "training_split": workout_data.get("training_split", ""),
             "frequency": workout_data.get("frequency", 3),
             "duration_minutes": workout_data.get("duration_minutes", 60)
         }
@@ -803,7 +751,6 @@ class ProfileCreationService:
         # Create the weekly template
         template = MealTemplate(
             profile_id=profile_id,
-            week_number=1,
             is_active=True,
             plan_name="Getting Started Protocol",
             daily_calorie_target=plan_data.get("daily_calories", 2000),
@@ -817,29 +764,6 @@ class ProfileCreationService:
         await self.db.flush()
         
         # Valid meal_type values per DB constraint
-        VALID_MEAL_TYPES = {'breakfast', 'lunch', 'dinner', 'snack', 'pre_workout', 'post_workout'}
-        
-        # Normalize meal_type: map common variants to valid DB values
-        def _normalize_meal_type(raw: str) -> str:
-            normalized = raw.lower().strip().replace(" ", "_")
-            if normalized in VALID_MEAL_TYPES:
-                return normalized
-            # Map known variants
-            if "snack" in normalized:
-                return "snack"
-            if "pre" in normalized and "workout" in normalized:
-                return "pre_workout"
-            if "post" in normalized and "workout" in normalized:
-                return "post_workout"
-            # Default to snack for unknown types
-            return "snack"
-        
-        # Build a schedule lookup: meal_type keyword -> MealSchedule
-        schedule_lookup: Dict[str, MealSchedule] = {}
-        for sched in meal_schedules:
-            key = sched.meal_name.lower().replace(" ", "_")
-            schedule_lookup[key] = sched
-        
         # Group sample meals by meal_type
         from collections import defaultdict
         meals_by_type: Dict[str, list] = defaultdict(list)
@@ -849,30 +773,31 @@ class ProfileCreationService:
                 raw_type = meal.get("meal_type", "snack")
             else:
                 continue
-            meal_type = _normalize_meal_type(raw_type)
-            meals_by_type[meal_type].append(meal)
-        
+            
+            # Use raw_type since MealPlan generator uses strictly typed Enums
+            meal_type_key = raw_type.lower().strip()
+            if hasattr(raw_type, "value"):
+                meal_type_key = raw_type.value
+                
+            meals_by_type[meal_type_key].append(meal)
+            
         try:
             # Create Dish entities and TemplateMeals for each day
             for day_index in range(7):
-                for meal_type, type_meals in meals_by_type.items():
+                # Iterate by schedule slots, not by meal types! This correctly handles duplicates (like 2 snacks)
+                for idx, target_schedule in enumerate(meal_schedules):
+                    meal_type = target_schedule.meal_name.lower().strip()
+                    type_meals = meals_by_type.get(meal_type)
+                    
                     if not type_meals:
-                        continue
+                        # Fallback if no matching sample meals exist for this type
+                        if meal_type in ["pre_workout", "post_workout"]:
+                            type_meals = meals_by_type.get("snack")
+                        if not type_meals:
+                            continue
                     
-                    # Find matching schedule slot
-                    target_schedule = schedule_lookup.get(meal_type)
-                    if not target_schedule:
-                        # Try partial match (e.g., "snack_1" matches "snack")
-                        for sched_key, sched in schedule_lookup.items():
-                            if meal_type in sched_key or sched_key in meal_type:
-                                target_schedule = sched
-                                break
-                    if not target_schedule:
-                        # Skip if no matching schedule slot
-                        continue
-                    
-                    # Rotate meals: pick a different dish each day
-                    meal_data = type_meals[day_index % len(type_meals)]
+                    # Rotate meals deterministically: day plus idx varies it across multiple same-day slots
+                    meal_data = type_meals[(day_index + idx) % len(type_meals)]
                     
                     meal_name = meal_data.get("name", "Unknown Dish")
                     

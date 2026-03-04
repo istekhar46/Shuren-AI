@@ -303,3 +303,6 @@ Thumbs.db
 
 # Project-specific
 # Add any project-specific files or directories to ignore below
+
+# Alembic migrations
+/alembic/versions/

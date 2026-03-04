@@ -19,12 +19,12 @@ export const MealPlanSummary: React.FC<MealPlanSummaryProps> = ({ profile }) => 
   }
 
   const { protein = 0, carbs = 0, fats = 0 } = mealPlan.macros;
-  const totalMacros = protein + carbs + fats || 1;
+  const totalMacroCals = (protein * 4) + (carbs * 4) + (fats * 9) || 1;
 
   const macros = [
-    { label: 'Protein', grams: protein, pct: Math.round((protein / totalMacros) * 100), variant: 'protein' },
-    { label: 'Carbs', grams: carbs, pct: Math.round((carbs / totalMacros) * 100), variant: 'carbs' },
-    { label: 'Fats', grams: fats, pct: Math.round((fats / totalMacros) * 100), variant: 'fats' },
+    { label: 'Protein', grams: protein, pct: Math.round(((protein * 4) / totalMacroCals) * 100), variant: 'protein' },
+    { label: 'Carbs', grams: carbs, pct: Math.round(((carbs * 4) / totalMacroCals) * 100), variant: 'carbs' },
+    { label: 'Fats', grams: fats, pct: Math.round(((fats * 9) / totalMacroCals) * 100), variant: 'fats' },
   ];
 
   return (

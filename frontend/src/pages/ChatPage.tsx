@@ -8,7 +8,7 @@ export const ChatPage = () => {
   const location = useLocation();
   const state = location.state as { prefillMessage?: string } | null;
   
-  const { messages, error, sendMessage, clearMessages, isStreaming, retryLastMessage } = useChat(false);
+  const { messages, error, sendMessage, isStreaming, retryLastMessage } = useChat(false); //clearMessages is commented
   const [dismissedError, setDismissedError] = useState(false);
   const [initialMessage, setInitialMessage] = useState<string | null>(
     state?.prefillMessage || null
@@ -33,8 +33,8 @@ export const ChatPage = () => {
   return (
     <div className="h-screen flex flex-col" style={{ background: 'var(--color-bg-primary)' }}>
       {/* Header */}
-      <div
-        className="p-4 shadow-sm"
+      {/* <div
+        className="py-4 pt-0 shadow-sm"
         style={{ background: 'var(--color-bg-primary)', borderBottom: '1px solid var(--color-border)' }}
       >
         <div className="max-w-4xl mx-auto">
@@ -49,7 +49,7 @@ export const ChatPage = () => {
             </button>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Messages Area */}
       <div className="flex-1 max-w-4xl w-full mx-auto flex flex-col overflow-hidden">

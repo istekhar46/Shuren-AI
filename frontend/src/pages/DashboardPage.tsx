@@ -91,7 +91,7 @@ export const DashboardPage: React.FC = () => {
         <div className="relative z-10">
           <p className="text-sm mb-1" style={{ color: 'var(--color-text-faint)' }}>{today}</p>
           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>
-            {greeting()}, <span className="ds-gradient-text">{user?.email?.split('@')[0] || 'there'}</span>
+            {greeting()}, <span className="ds-gradient-text">{user?.full_name || user?.email?.split('@')[0] || 'there'}</span>
           </h1>
           <p style={{ color: 'var(--color-text-muted)' }}>Here's your fitness snapshot for today</p>
         </div>

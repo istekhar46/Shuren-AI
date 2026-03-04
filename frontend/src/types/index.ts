@@ -179,7 +179,7 @@ export interface Meal {
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   dish: Dish;
   scheduledTime: string;
-  date: string;
+  dayName: string;
 }
 
 export interface ShoppingListItem {

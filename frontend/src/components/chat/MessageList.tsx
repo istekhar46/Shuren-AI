@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage } from '../../types';
 
 interface MessageListProps {
@@ -68,6 +69,7 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
               {message.content ? (
                 <>
                   <ReactMarkdown
+                     remarkPlugins={[remarkGfm]}
                      components={{
                         p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
                         ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
@@ -79,6 +81,9 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
                         h4: ({node, ...props}) => <h4 className="font-bold mb-2 mt-2" {...props} />,
                         strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
                         hr: ({node, ...props}) => <hr className="my-4 border-t border-current opacity-20" {...props} />,
+                        table: ({node, ...props}) => <div className="overflow-x-auto mb-3"><table className="w-full text-left text-sm border-collapse" {...props} /></div>,
+                        th: ({node, ...props}) => <th className="border-b-2 border-current opacity-70 p-2" {...props} />,
+                        td: ({node, ...props}) => <td className="border-b border-current opacity-50 p-2" {...props} />,
                      }}
                   >
                     {message.content}

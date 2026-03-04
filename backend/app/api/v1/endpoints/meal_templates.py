@@ -203,70 +203,49 @@ async def get_next_meal(
 
 @router.get(
     "/template",
-    response_model=MealTemplateResponse,
+    response_model=MealTemplateResponse | None,
     status_code=status.HTTP_200_OK,
     summary="Get meal template",
     responses={
         200: {
-            "description": "Meal template retrieved successfully"
-        },
-        404: {
-            "description": "Meal template not found",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Meal template not found"
-                    }
-                }
-            }
+            "description": "Meal template retrieved successfully or null if not configured"
         }
     }
 )
 async def get_meal_template(
     current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    week_number: Annotated[int | None, Query(ge=1, le=4, description="Week number (1-4) to retrieve. If not provided, returns currently active template")] = None
-) -> MealTemplateResponse:
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> MealTemplateResponse | None:
     """
-    Get meal template for specified week.
+    Get the user's active meal template.
     
     Returns a complete 7-day meal template with all meals and dishes.
-    If week_number is not provided, returns the currently active template
-    based on the 4-week rotation.
     
     The response includes:
-    - Template metadata (id, week number, active status)
+    - Template metadata (id, active status)
     - All 7 days with complete meal plans
     - Primary and alternative dishes for each meal
     - Daily nutritional totals
     
     Args:
-        week_number: Optional week number (1-4). If None, returns active template
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
     Returns:
-        MealTemplateResponse with complete weekly meal plan
+        MealTemplateResponse with complete weekly meal plan or None if not configured
         
     Raises:
-        HTTPException(404): If meal template not found
         HTTPException(401): If authentication fails (handled by dependency)
     """
     # Initialize meal template service
     service = MealTemplateService(db)
     profile = current_user.profile
     
-    # Get template by week or active template
-    if week_number:
-        template = await service.get_template_by_week(profile.id, week_number)
-    else:
-        template = await service.get_active_template(profile.id)
+    # Get active template
+    template = await service.get_active_template(profile.id)
     
     if not template:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meal template not found"
-        )
+        return None
     
     # Transform template to response format
     # Group template meals by day
@@ -316,12 +295,9 @@ async def get_meal_template(
         # Sort meals by scheduled time
         meal_slots.sort(key=lambda m: m['scheduled_time'])
         
-        # Get day name
-        from datetime import date, timedelta
-        today = date.today()
-        day_offset = (day - today.weekday()) % 7
-        target_date = today + timedelta(days=day_offset)
-        day_name = target_date.strftime('%A')
+        # Get day name from day index (0=Monday ... 6=Sunday)
+        DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name = DAY_NAMES[day]
         
         days_data[day] = {
             'day_of_week': day,
@@ -336,7 +312,6 @@ async def get_meal_template(
     # Build response
     return MealTemplateResponse(
         id=template.id,
-        week_number=template.week_number,
         is_active=template.is_active,
         days=[days_data[day] for day in range(7)],
         created_at=template.created_at,
@@ -356,7 +331,6 @@ async def get_meal_template(
                 "application/json": {
                     "example": {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
-                        "week_number": 1,
                         "is_active": True,
                         "days": [
                             {
@@ -422,17 +396,16 @@ async def regenerate_meal_template(
     
     The regeneration process:
     1. Validates that the profile is unlocked
-    2. Determines which week to regenerate (current week if not specified)
-    3. Deletes the existing template for that week (if any)
-    4. Generates a new template with different dishes
-    5. Maintains the same calorie and macro targets
-    6. Respects dietary preferences and restrictions
+    2. Deactivates the existing template
+    3. Generates a new template with different dishes
+    4. Maintains the same calorie and macro targets
+    5. Respects dietary preferences and restrictions
     
     Users can optionally provide preferences to guide dish selection,
     such as "more chicken dishes" or "quick prep meals only".
     
     Args:
-        request: Template regeneration request with optional preferences and week number
+        request: Template regeneration request with optional preferences
         current_user: Authenticated user from get_current_user dependency
         db: Database session from dependency injection
         
@@ -449,8 +422,7 @@ async def regenerate_meal_template(
         Request body:
         ```json
         {
-            "preferences": "More chicken dishes, less spicy food",
-            "week_number": 1
+            "preferences": "More chicken dishes, less spicy food"
         }
         ```
         
@@ -458,7 +430,6 @@ async def regenerate_meal_template(
         ```json
         {
             "id": "123e4567-e89b-12d3-a456-426614174000",
-            "week_number": 1,
             "is_active": true,
             "days": [...],
             "created_at": "2026-01-30T10:00:00Z",
@@ -466,32 +437,16 @@ async def regenerate_meal_template(
         }
         ```
     """
-    from datetime import date
     from app.core.exceptions import ProfileLockedException
     
     # Initialize meal template service
     service = MealTemplateService(db)
     profile = current_user.profile
     
-    # Determine week number to regenerate
-    if request.week_number:
-        week_number = request.week_number
-    else:
-        # Use current week in 4-week rotation
-        week_of_year = date.today().isocalendar()[1]
-        week_number = ((week_of_year - 1) % 4) + 1
-    
-    # Delete existing template for this week (soft delete)
-    existing_template = await service.get_template_by_week(profile.id, week_number)
-    if existing_template:
-        existing_template.deleted_at = datetime.now()
-        await db.commit()
-    
-    # Generate new template
+    # Generate new template (service handles deactivating old one)
     try:
         template = await service.generate_template(
             profile_id=profile.id,
-            week_number=week_number,
             preferences=request.preferences
         )
     except ProfileLockedException:
@@ -549,11 +504,9 @@ async def regenerate_meal_template(
         # Sort meals by scheduled time
         meal_slots.sort(key=lambda m: m['scheduled_time'])
         
-        # Get day name
-        today = date.today()
-        day_offset = (day - today.weekday()) % 7
-        target_date = today + timedelta(days=day_offset)
-        day_name = target_date.strftime('%A')
+        # Get day name from day index
+        DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name = DAY_NAMES[day]
         
         days_data[day] = {
             'day_of_week': day,
@@ -568,7 +521,6 @@ async def regenerate_meal_template(
     # Build response
     return MealTemplateResponse(
         id=template.id,
-        week_number=template.week_number,
         is_active=template.is_active,
         days=[days_data[day] for day in range(7)],
         created_at=template.created_at,

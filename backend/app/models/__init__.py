@@ -20,10 +20,6 @@ from app.models.workout import (
     ExerciseLibrary,
 )
 from app.models.workout_log import WorkoutLog
-from app.models.chat import (
-    ChatSession,
-    ChatMessage,
-)
 from app.models.conversation import ConversationMessage
 from app.models.dish import (
     Dish,
@@ -53,8 +49,6 @@ __all__ = [
     "WorkoutExercise",
     "ExerciseLibrary",
     "WorkoutLog",
-    "ChatSession",
-    "ChatMessage",
     "ConversationMessage",
     "Dish",
     "Ingredient",

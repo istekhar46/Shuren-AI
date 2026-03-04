@@ -23,8 +23,7 @@ class FitnessGoal(BaseModel):
         nullable=False
     )
     
-    # Goal details
-    goal_type = Column(String(50), nullable=False)  # 'fat_loss', 'muscle_gain', 'general_fitness'
+    goal_type = Column(Text, nullable=False)  # User's freeform dynamic goal
     target_weight_kg = Column(Numeric(5, 2), nullable=True)
     target_body_fat_percentage = Column(Numeric(4, 2), nullable=True)
     priority = Column(Integer, default=1, nullable=False)

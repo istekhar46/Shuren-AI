@@ -1,21 +1,26 @@
 import type { Meal } from '../../types';
 
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 interface MealPlanViewProps {
   meals: Meal[];
   onMealClick: (meal: Meal) => void;
 }
 
 export const MealPlanView = ({ meals, onMealClick }: MealPlanViewProps) => {
-  // Group meals by date
-  const mealsByDate = meals.reduce((acc, meal) => {
-    if (!acc[meal.date]) {
-      acc[meal.date] = [];
+  // Group meals by day name
+  const mealsByDay = meals.reduce((acc, meal) => {
+    if (!acc[meal.dayName]) {
+      acc[meal.dayName] = [];
     }
-    acc[meal.date].push(meal);
+    acc[meal.dayName].push(meal);
     return acc;
   }, {} as Record<string, Meal[]>);
 
-  const dates = Object.keys(mealsByDate).sort();
+  // Sort days in week order
+  const days = Object.keys(mealsByDay).sort(
+    (a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+  );
 
   if (meals.length === 0) {
     return (
@@ -30,21 +35,17 @@ export const MealPlanView = ({ meals, onMealClick }: MealPlanViewProps) => {
       <h2 className="ds-heading-lg mb-4">Weekly Meal Plan</h2>
       
       <div className="grid gap-4">
-        {dates.map((date) => {
-          const dateMeals = mealsByDate[date];
-          const dateObj = new Date(date);
-          const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-          const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        {days.map((dayName) => {
+          const dayMeals = mealsByDay[dayName];
 
           return (
-            <div key={date} className="ds-card" style={{ padding: '1.5rem' }}>
+            <div key={dayName} className="ds-card" style={{ padding: '1.5rem' }}>
               <div className="mb-4">
                 <h3 className="ds-heading-sm m-0">{dayName}</h3>
-                <p className="ds-body-text text-sm">{dateStr}</p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {dateMeals.map((meal) => (
+                {dayMeals.map((meal) => (
                   <button
                     key={meal.id}
                     onClick={() => onMealClick(meal)}

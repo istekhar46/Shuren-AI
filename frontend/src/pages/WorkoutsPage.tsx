@@ -66,10 +66,15 @@ export const WorkoutsPage = () => {
     }`;
 
   return (
-    <div style={{ background: 'var(--color-bg-primary)', minHeight: '100vh', width: '100%' }}>
-      <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Workouts</h1>
+    <div style={{ background: 'var(--color-bg-primary)', minHeight: '100vh' }}>
+      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>Workouts</h1>
+          <p style={{ color: 'var(--color-text-muted)' }}>
+            View your personalized workout routine
+          </p>
+        </div>
 
         <div className="flex gap-2">
           {(['today', 'schedule', 'plan'] as ViewMode[]).map((mode) => (
