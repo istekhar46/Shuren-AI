@@ -23,9 +23,9 @@ export const RootRedirect = () => {
     );
   }
 
-  // Not authenticated -> login
+  // Not authenticated -> landing page
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/landing" replace />;
   }
 
   // Authenticated but onboarding incomplete -> onboarding

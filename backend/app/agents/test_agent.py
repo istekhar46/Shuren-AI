@@ -103,14 +103,12 @@ class TestAgent(BaseAgent):
             if hasattr(chunk, 'content') and chunk.content:
                 yield chunk.content
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
-        Get the list of tools available to this agent.
-        
-        The test agent has no tools - it's purely for validating the framework.
+        Get test tools.
         
         Returns:
-            List: Empty list (no tools for test agent)
+            List: List of test tools
         """
         return []
     

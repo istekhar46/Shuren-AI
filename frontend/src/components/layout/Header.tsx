@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import logo from '../../assets/logo.png';
 
 interface HeaderProps {
   onboardingCompleted: boolean;
@@ -18,75 +19,58 @@ export const Header: React.FC<HeaderProps> = ({ onboardingCompleted }) => {
 
   const navItems: NavItem[] = [
     { path: '/dashboard', label: 'Dashboard', requiresOnboarding: true },
-    { path: '/chat', label: 'Chat', requiresOnboarding: true },
-    { path: '/voice', label: 'Voice', requiresOnboarding: true },
+    ...(onboardingCompleted ? [{ path: '/chat', label: 'Chat', requiresOnboarding: true }] : []),
     { path: '/meals', label: 'Meals', requiresOnboarding: true },
     { path: '/workouts', label: 'Workouts', requiresOnboarding: true },
-    { path: '/onboarding', label: 'Onboarding', requiresOnboarding: false },
+    ...(!onboardingCompleted ? [{ path: '/onboarding', label: 'Onboarding', requiresOnboarding: false }] : []),
   ];
 
-  const isActive = (path: string) => {
-    return location.pathname === path;
-  };
-
-  const isDisabled = (item: NavItem) => {
-    return item.requiresOnboarding && !onboardingCompleted;
-  };
+  const isActive = (path: string) => location.pathname === path;
+  const isDisabled = (item: NavItem) => item.requiresOnboarding && !onboardingCompleted;
 
   const navLinkClass = (item: NavItem) => {
-    const baseClass = 'px-3 py-2 rounded-md text-sm font-medium transition-colors';
-    const disabled = isDisabled(item);
-    
-    if (disabled) {
-      return `${baseClass} text-gray-400 cursor-not-allowed opacity-60`;
+    const base = 'px-3 py-2 rounded-md text-sm font-medium transition-colors';
+    if (isDisabled(item)) {
+      return `${base} opacity-40 cursor-not-allowed` ;
     }
-    
     return isActive(item.path)
-      ? `${baseClass} bg-blue-700 text-white`
-      : `${baseClass} text-blue-100 hover:bg-blue-600 hover:text-white`;
+      ? `${base} bg-[rgba(167,139,250,0.15)] text-[var(--color-violet)]`
+      : `${base} text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[rgba(255,255,255,0.05)]`;
   };
 
   return (
-    <header className="bg-blue-600 shadow-md">
+    <header
+      className="border-b shadow-sm"
+      style={{ background: 'var(--color-bg-primary)', borderColor: 'var(--color-border)' }}
+    >
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo/Brand */}
+          {/* Logo */}
           <div className="flex items-center">
-            <Link to="/dashboard" className="text-white text-xl font-bold">
-              Shuren AI
+            <Link to="/dashboard" className="flex items-center no-underline">
+              <img src={logo} alt="Shuren" className="h-8 object-contain" />
             </Link>
           </div>
 
-          {/* Navigation Links */}
+          {/* Desktop Nav */}
           {isAuthenticated && (
-            <div className="hidden md:flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-1">
               {navItems.map((item) => {
-                const disabled = isDisabled(item);
-                
-                if (disabled) {
+                if (isDisabled(item)) {
                   return (
-                    <div
-                      key={item.path}
-                      className="relative group"
-                      title="Complete onboarding to unlock"
-                    >
-                      <span className={navLinkClass(item)}>
-                        {item.label}
-                      </span>
-                      <div className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-900 rounded-md whitespace-nowrap z-10">
+                    <div key={item.path} className="relative group" title="Complete onboarding to unlock">
+                      <span className={navLinkClass(item)}>{item.label}</span>
+                      <div
+                        className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white rounded-md whitespace-nowrap z-10"
+                        style={{ background: 'var(--color-bg-elevated)' }}
+                      >
                         Complete onboarding to unlock
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
                       </div>
                     </div>
                   );
                 }
-                
                 return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={navLinkClass(item)}
-                  >
+                  <Link key={item.path} to={item.path} className={navLinkClass(item)}>
                     {item.label}
                   </Link>
                 );
@@ -97,12 +81,12 @@ export const Header: React.FC<HeaderProps> = ({ onboardingCompleted }) => {
           {/* User Menu */}
           {isAuthenticated && (
             <div className="flex items-center space-x-4">
-              <span className="text-blue-100 text-sm hidden sm:block">
+              <span className="text-sm hidden sm:block" style={{ color: 'var(--color-text-muted)' }}>
                 {user?.email}
               </span>
               <button
                 onClick={logout}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-white"
+                className="ds-btn-ghost text-sm"
               >
                 Logout
               </button>
@@ -110,36 +94,19 @@ export const Header: React.FC<HeaderProps> = ({ onboardingCompleted }) => {
           )}
         </div>
 
-        {/* Mobile Navigation */}
+        {/* Mobile Nav */}
         {isAuthenticated && (
           <div className="md:hidden pb-3 space-y-1">
             {navItems.map((item) => {
-              const disabled = isDisabled(item);
-              
-              if (disabled) {
+              if (isDisabled(item)) {
                 return (
-                  <div
-                    key={item.path}
-                    className="relative group"
-                    title="Complete onboarding to unlock"
-                  >
-                    <span className={`block ${navLinkClass(item)}`}>
-                      {item.label}
-                    </span>
-                    <div className="absolute hidden group-hover:block left-full top-0 ml-2 px-3 py-2 text-xs text-white bg-gray-900 rounded-md whitespace-nowrap z-10">
-                      Complete onboarding to unlock
-                      <div className="absolute top-1/2 right-full transform -translate-y-1/2 mr-1 border-4 border-transparent border-r-gray-900"></div>
-                    </div>
+                  <div key={item.path} className="relative group" title="Complete onboarding to unlock">
+                    <span className={`block ${navLinkClass(item)}`}>{item.label}</span>
                   </div>
                 );
               }
-              
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`block ${navLinkClass(item)}`}
-                >
+                <Link key={item.path} to={item.path} className={`block ${navLinkClass(item)}`}>
                   {item.label}
                 </Link>
               );

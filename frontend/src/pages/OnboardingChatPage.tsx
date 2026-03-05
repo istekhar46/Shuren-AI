@@ -63,17 +63,17 @@ export const OnboardingChatPage: React.FC = () => {
   // Show loading state during initial fetch
   if (!initialLoadComplete) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
+      <div className="h-screen flex items-center justify-center" style={{ background: 'var(--color-bg-primary)' }}>
         <div className="text-center">
           <LoadingSpinner size="lg" />
-          <p className="text-gray-600 mt-4">Loading your onboarding progress...</p>
+          <p className="mt-4" style={{ color: 'var(--color-text-muted)' }}>Loading your onboarding progress...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50" role="main" aria-label="Onboarding chat interface">
+    <div className="min-h-full flex flex-col gap-2" role="main" aria-label="Onboarding chat interface" style={{ background: 'var(--color-bg-primary)' }}>
       {/* Agent Header - Sticky at top */}
       {currentAgent && stateMetadata && (
         <AgentHeader
@@ -86,7 +86,7 @@ export const OnboardingChatPage: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden" role="region" aria-label="Chat and progress area">
+      <div className="flex-1 flex overflow-hidden gap-4" role="region" aria-label="Chat and progress area">
         {/* Progress Sidebar (Desktop) / Collapsible (Mobile) */}
         <OnboardingProgressBar
           currentState={currentState}
@@ -99,8 +99,8 @@ export const OnboardingChatPage: React.FC = () => {
         {/* Chat Area */}
         <div className="flex-1 flex flex-col overflow-hidden" role="region" aria-label="Chat messages">
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto" role="log" aria-live="polite" aria-atomic="false">
-            <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto mb-4" role="log" aria-live="polite" aria-atomic="false">
+            <div className="max-w-4xl mx-auto py-6 h-[44vh]">
               <MessageList 
                 messages={messages} 
                 onRetry={() => {
@@ -124,20 +124,21 @@ export const OnboardingChatPage: React.FC = () => {
               {/* Complete Onboarding Button */}
               {canComplete && !isComplete && (
                 <div 
-                  className="mt-6 p-6 bg-green-50 border-2 border-green-300 rounded-lg"
+                  className="p-6 rounded-lg"
                   role="status"
                   aria-live="polite"
+                  style={{ background: 'rgba(52,211,153,0.08)', border: '2px solid rgba(52,211,153,0.3)' }}
                 >
                   <div className="text-center">
-                    <h3 className="text-xl font-bold text-green-900 mb-2">
+                    <h3 className="text-xl font-bold mb-2" style={{ color: '#34d399' }}>
                       <span role="img" aria-label="celebration">🎉</span> Onboarding Complete!
                     </h3>
-                    <p className="text-green-800 mb-4">
+                    <p className="mb-4" style={{ color: 'var(--color-text-muted)' }}>
                       You've completed all 4 onboarding steps. Click below to finalize your profile and start your fitness journey!
                     </p>
                     <button
                       onClick={completeOnboarding}
-                      className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                      className="ds-btn-primary font-bold py-3 px-8"
                       aria-label="Complete onboarding and go to dashboard"
                     >
                       Complete Onboarding & Go to Dashboard
@@ -149,8 +150,8 @@ export const OnboardingChatPage: React.FC = () => {
           </div>
 
           {/* Input Area */}
-          <div className="border-t border-gray-200 bg-white" role="region" aria-label="Message input">
-            <div className="max-w-4xl mx-auto px-4 py-4">
+          <div role="region" aria-label="Message input" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-primary)' }}>
+            <div className="max-w-4xl mx-auto">
               <MessageInput 
                 onSend={sendMessage} 
                 disabled={isStreaming}

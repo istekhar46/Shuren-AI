@@ -342,7 +342,6 @@ export const MealSlotSchema = z.object({
  * Used by GET /meal-templates/today
  */
 export const TodayMealsResponseSchema = z.object({
-  date: z.string(),
   day_of_week: z.number().int().min(0).max(6),
   day_name: z.string(),
   meals: z.array(MealSlotSchema),
@@ -379,7 +378,6 @@ export const DayMealsSchema = z.object({
  */
 export const MealTemplateResponseSchema = z.object({
   id: z.string().uuid(),
-  week_number: z.number().int().positive(),
   is_active: z.boolean(),
   days: z.array(DayMealsSchema),
   created_at: z.string(),
@@ -417,9 +415,6 @@ export const IngredientCategorySchema = z.object({
  * Used by GET /shopping-list/
  */
 export const ShoppingListResponseSchema = z.object({
-  week_number: z.number().int().positive(),
-  start_date: z.string(),
-  end_date: z.string(),
   categories: z.array(IngredientCategorySchema),
   total_items: z.number().int().nonnegative(),
 });
@@ -493,52 +488,6 @@ export const WorkoutScheduleResponseSchema = z.object({
   day_of_week: z.number().int().min(0).max(6),
   scheduled_time: z.string(),
   enable_notifications: z.boolean(),
-});
-
-// ============================================================================
-// Voice Session Schemas
-// ============================================================================
-
-/**
- * Schema for voice session response
- * Used by POST /voice-sessions/start
- */
-export const VoiceSessionResponseSchema = z.object({
-  room_name: z.string(),
-  token: z.string(),
-  livekit_url: z.string(),
-  agent_type: z.string(),
-  expires_at: z.string(),
-});
-
-/**
- * Schema for voice session status
- * Used by GET /voice-sessions/{room_name}/status
- */
-export const VoiceSessionStatusSchema = z.object({
-  room_name: z.string(),
-  active: z.boolean(),
-  participants: z.number().int().nonnegative(),
-  agent_connected: z.boolean(),
-  created_at: z.string().nullable(),
-});
-
-/**
- * Schema for session summary
- */
-export const SessionSummarySchema = z.object({
-  room_name: z.string(),
-  agent_type: z.string(),
-  participants: z.number().int().nonnegative(),
-  created_at: z.string().nullable(),
-});
-
-/**
- * Schema for active sessions response
- * Used by GET /voice-sessions/active
- */
-export const ActiveSessionsResponseSchema = z.object({
-  sessions: z.array(SessionSummarySchema),
 });
 
 // ============================================================================

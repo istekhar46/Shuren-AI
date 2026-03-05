@@ -72,20 +72,14 @@ class ShoppingListResponse(BaseModel):
     Schema for complete shopping list response.
     
     Provides a comprehensive shopping list with ingredients organized
-    by category, covering the specified time period.
+    by category.
     """
-    week_number: int = Field(..., description="Week number for this shopping list (1-4)")
-    start_date: str = Field(..., description="Start date of the shopping period (YYYY-MM-DD)")
-    end_date: str = Field(..., description="End date of the shopping period (YYYY-MM-DD)")
     categories: List[ShoppingListCategory] = Field(..., description="Ingredients grouped by category")
     total_items: int = Field(..., description="Total number of unique ingredients in the list")
     
     class Config:
         json_schema_extra = {
             "example": {
-                "week_number": 1,
-                "start_date": "2026-02-01",
-                "end_date": "2026-02-07",
                 "categories": [
                     {
                         "category": "protein",

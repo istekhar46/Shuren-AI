@@ -95,7 +95,8 @@ async def get_current_user(
         User.id == user_id,
         User.deleted_at.is_(None)
     ).options(
-        selectinload(User.onboarding_state)  # Eagerly load onboarding_state to avoid lazy loading issues
+        selectinload(User.onboarding_state),  # Eagerly load onboarding_state to avoid lazy loading issues
+        selectinload(User.profile)            # Eagerly load user_profile to resolve MissingGreenlet errors downstream
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -168,7 +169,8 @@ async def get_current_user_from_token(
         User.id == user_id,
         User.deleted_at.is_(None)
     ).options(
-        selectinload(User.onboarding_state)
+        selectinload(User.onboarding_state),
+        selectinload(User.profile)
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

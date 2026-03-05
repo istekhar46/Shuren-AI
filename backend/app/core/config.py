@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     """Google API key (required if LLM_PROVIDER is google)."""
     
+    TAVILY_API_KEY: Optional[str] = None
+    """Tavily API key for web search research tool."""
+    
+    PPLX_API_KEY: Optional[str] = None
+    """Perplexity API key for AI-powered research tool."""
+    
     # Classifier Configuration (for fast query routing)
     CLASSIFIER_MODEL: str = "claude-haiku-4-5-20251001"
     """Fast classifier model for query routing (default: Claude Haiku)."""

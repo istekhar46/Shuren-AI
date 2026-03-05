@@ -43,10 +43,6 @@ from app.models.workout import (
     WorkoutExercise,
     ExerciseLibrary
 )
-from app.models.chat import (
-    ChatSession,
-    ChatMessage
-)
 from app.models.conversation import ConversationMessage
 from app.models.workout_log import WorkoutLog
 

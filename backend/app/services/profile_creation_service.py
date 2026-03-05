@@ -25,6 +25,8 @@ from app.models.preferences import (
     HydrationPreference,
 )
 from app.models.workout import WorkoutPlan, WorkoutDay, WorkoutExercise
+from app.models.meal_template import MealTemplate, TemplateMeal
+from app.models.dish import Dish, DishIngredient
 from app.services.onboarding_completion import verify_onboarding_completion, OnboardingIncompleteError
 from app.utils.schedule_validation import day_name_to_number, time_str_to_time
 
@@ -121,6 +123,11 @@ class ProfileCreationService:
             )
             for schedule in meal_schedules:
                 self.db.add(schedule)
+            await self.db.flush() # Need schedule IDs immediately
+            
+            meal_template = await self._create_meal_template(profile.id, diet_data, meal_schedules)
+            if meal_template:
+                self.db.add(meal_template)
             
             workout_plan = await self._create_workout_plan(user_id, workout_data)
             self.db.add(workout_plan)
@@ -234,29 +241,30 @@ class ProfileCreationService:
             ValueError: If required workout data is missing
         """
         workout_planning = agent_context.get("workout_planning", {})
+        plan_data = workout_planning.get("plan", {})
         
-        # In the new structure, the plan is stored directly in workout_planning
-        # Check for both old structure (proposed_plan) and new structure (plan)
-        plan_data = workout_planning.get("plan") or workout_planning.get("proposed_plan", {})
-        
-        frequency = plan_data.get("frequency") or plan_data.get("days_per_week")
+        frequency = plan_data.get("frequency")
         if not frequency:
-            raise ValueError("Missing required field: workout_planning.plan.frequency or days_per_week")
+            raise ValueError("Missing required field: workout_planning.plan.frequency")
         
-        duration_minutes = plan_data.get("duration_minutes") or plan_data.get("minutes_per_session")
+        duration_minutes = plan_data.get("duration_minutes")
         if not duration_minutes:
-            raise ValueError("Missing required field: workout_planning.plan.duration_minutes or minutes_per_session")
+            raise ValueError("Missing required field: workout_planning.plan.duration_minutes")
         
-        training_split = plan_data.get("training_split") or plan_data.get("days", [])
+        training_split = plan_data.get("training_split")
         if not training_split:
-            raise ValueError("Missing required field: workout_planning.plan.training_split or days")
+            raise ValueError("Missing required field: workout_planning.plan.training_split")
+            
+        workout_days = plan_data.get("workout_days")
+        if not workout_days:
+            raise ValueError("Missing required field: workout_planning.plan.workout_days")
         
         return {
             "frequency": frequency,
             "duration_minutes": duration_minutes,
-            "duration_weeks": plan_data.get("duration_weeks", 12),
             "training_split": training_split,
-            "rationale": plan_data.get("rationale", "")
+            "workout_days": workout_days,
+            "rationale": plan_data.get("progression_strategy", "Standard progression")
         }
     
     def _extract_diet_data(self, agent_context: dict) -> dict:
@@ -274,23 +282,20 @@ class ProfileCreationService:
         """
         diet_planning = agent_context.get("diet_planning", {})
         
-        # Extract dietary preferences (stored directly in diet_planning)
+        # Extract dietary preferences
         diet_type = diet_planning.get("diet_type")
         if not diet_type:
             raise ValueError("Missing required field: diet_planning.diet_type")
         
-        # Extract meal plan data (check both new structure "plan" and old structure "proposed_plan")
-        plan_data = diet_planning.get("plan") or diet_planning.get("proposed_plan", {})
+        # Extract meal plan data 
+        plan_data = diet_planning.get("plan", {})
         
-        daily_calories = plan_data.get("daily_calories") or plan_data.get("daily_calorie_target")
-        if not daily_calories:
-            raise ValueError("Missing required field: diet_planning.plan.daily_calories")
+        daily_calories = plan_data.get("daily_calories")
+        protein_g = plan_data.get("protein_g")
+        carbs_g = plan_data.get("carbs_g")
+        fats_g = plan_data.get("fats_g")
         
-        protein_g = plan_data.get("protein_g") or plan_data.get("protein_grams")
-        carbs_g = plan_data.get("carbs_g") or plan_data.get("carbs_grams")
-        fats_g = plan_data.get("fats_g") or plan_data.get("fats_grams")
-        
-        if protein_g is None or carbs_g is None or fats_g is None:
+        if any(x is None for x in [daily_calories, protein_g, carbs_g, fats_g]):
             raise ValueError("Missing required macronutrient data in diet_planning.plan")
         
         return {
@@ -299,12 +304,13 @@ class ProfileCreationService:
             "intolerances": diet_planning.get("intolerances", []),
             "dislikes": diet_planning.get("dislikes", []),
             "meal_plan": {
-                "daily_calories": daily_calories,
-                "protein_g": protein_g,
-                "carbs_g": carbs_g,
-                "fats_g": fats_g,
+                "daily_calories": int(daily_calories),
+                "protein_g": int(protein_g),
+                "carbs_g": int(carbs_g),
+                "fats_g": int(fats_g),
                 "meal_frequency": plan_data.get("meal_frequency", 3)
-            }
+            },
+            "sample_meals": plan_data.get("sample_meals", [])
         }
     
     def _extract_schedule_data(self, agent_context: dict) -> dict:
@@ -341,16 +347,17 @@ class ProfileCreationService:
             raise ValueError("Missing required field: diet_planning.schedule")
         
         # Hydration preferences from Step 4
-        # Check for both new structure (direct fields) and old structure (nested)
-        daily_water_target_ml = scheduling.get("daily_water_target_ml")
-        reminder_frequency_minutes = scheduling.get("reminder_frequency_minutes")
+        # New structure uses nested "hydration" dict
+        hydration_data = scheduling.get("hydration", {})
+        target_ml = hydration_data.get("target_ml")
+        frequency_hours = hydration_data.get("frequency_hours")
         
-        if not daily_water_target_ml or not reminder_frequency_minutes:
-            raise ValueError("Missing required fields: scheduling.daily_water_target_ml or reminder_frequency_minutes")
+        if not target_ml or not frequency_hours:
+            raise ValueError("Missing required fields: scheduling.hydration.target_ml or frequency_hours")
         
         hydration_preferences = {
-            "target_ml": daily_water_target_ml,
-            "frequency_hours": reminder_frequency_minutes / 60
+            "target_ml": target_ml,
+            "frequency_hours": frequency_hours
         }
         
         return {
@@ -483,29 +490,45 @@ class ProfileCreationService:
     def _create_meal_schedules(
         self,
         profile_id: UUID,
-        meal_schedule_data: dict
+        meal_schedule_data: dict | list
     ) -> List[MealSchedule]:
         """
         Create MealSchedule entities from meal schedule data.
         
         Args:
             profile_id: Profile ID
-            meal_schedule_data: Dictionary mapping meal names to times
-                              (e.g., {"breakfast": "08:00", "lunch": "13:00"})
+            meal_schedule_data: Dictionary mapping meal names to times, or list of Dicts.
         
         Returns:
             List of MealSchedule entities
         """
         schedules = []
         
-        for meal_name, time_str in meal_schedule_data.items():
-            schedule = MealSchedule(
-                profile_id=profile_id,
-                meal_name=meal_name,
-                scheduled_time=time_str_to_time(time_str),
-                enable_notifications=True
-            )
-            schedules.append(schedule)
+        # Support old dict schema format
+        if isinstance(meal_schedule_data, dict):
+            for meal_name, time_str in meal_schedule_data.items():
+                schedule = MealSchedule(
+                    profile_id=profile_id,
+                    meal_name=meal_name,
+                    scheduled_time=time_str_to_time(time_str),
+                    enable_notifications=True
+                )
+                schedules.append(schedule)
+                
+        # Support new robust list schema format
+        elif isinstance(meal_schedule_data, list):
+            for item in meal_schedule_data:
+                meal_type = item.get("meal_type", "snack")
+                time_str = item.get("time")
+                if not time_str:
+                    continue
+                schedule = MealSchedule(
+                    profile_id=profile_id,
+                    meal_name=meal_type,
+                    scheduled_time=time_str_to_time(time_str),
+                    enable_notifications=True
+                )
+                schedules.append(schedule)
         
         return schedules
     
@@ -534,26 +557,111 @@ class ProfileCreationService:
         )
         
         # Create workout days from training split
-        for day_num, day_data in enumerate(workout_data["training_split"], start=1):
+        workout_days_data = workout_data.get("workout_days", [])
+
+        for day_num, day_data in enumerate(workout_days_data, start=1):
+            day_name = day_data.get("day_name", f"Day {day_num}")
+            day_desc = f"{day_name} ({workout_data.get('training_split', '')})"
+            workout_type = "strength"
+            exercises_data = day_data.get("exercises", [])
+
             workout_day = WorkoutDay(
                 workout_plan=workout_plan,
                 day_number=day_num,
-                day_name=day_data.get("name", f"Day {day_num}"),
-                muscle_groups=day_data.get("muscle_groups", []),
-                workout_type=day_data.get("type", "strength"),
-                description=day_data.get("description"),
-                estimated_duration_minutes=workout_data["duration_minutes"]
+                day_name=day_name[:100],  # safety trim length
+                muscle_groups=[], # Safely skip deep parsing for now
+                workout_type=workout_type,
+                description=day_desc,
+                estimated_duration_minutes=workout_data.get("duration_minutes", 60)
             )
+            self.db.add(workout_day)
             
-            # Note: WorkoutExercise creation would require exercise_library_id lookups
-            # For now, we store the exercise data in plan_data JSONB field
-            # This can be expanded later when exercise library is populated
+            # Map exercises and query library
+            from sqlalchemy import select
+            from app.models.workout import ExerciseLibrary, WorkoutExercise
+            
+            for index, ex_data in enumerate(exercises_data, start=1):
+                if not isinstance(ex_data, dict):
+                    continue
+                    
+                ex_name = ex_data.get("name") or ex_data.get("exercise") or "Unknown Exercise"
+                
+                # Try to find exactly matching or closely matching exercise in library
+                stmt = select(ExerciseLibrary).where(ExerciseLibrary.exercise_name.ilike(f"%{ex_name}%"))
+                result = await self.db.execute(stmt)
+                ex_lib = result.scalars().first()
+                
+                if not ex_lib:
+                    # Create a default stub so the user doesn't lose data on LLM hallucinations
+                    import re
+                    ex_slug = re.sub(r'[^a-z0-9]+', '-', ex_name.lower()).strip('-')
+                    
+                    # Map workout generator exercise types to valid DB exercise_type values
+                    # DB allows: 'strength', 'cardio', 'flexibility', 'plyometric', 'olympic'
+                    # Generator produces: 'compound', 'isolation', 'cardio', 'flexibility'
+                    raw_type = ex_data.get("type", "strength").lower()
+                    exercise_type_map = {
+                        "compound": "strength",
+                        "isolation": "strength",
+                        "cardio": "cardio",
+                        "flexibility": "flexibility",
+                        "plyometric": "plyometric",
+                        "olympic": "olympic",
+                    }
+                    mapped_exercise_type = exercise_type_map.get(raw_type, "strength")
+                    
+                    ex_lib = ExerciseLibrary(
+                        exercise_name=ex_name[:255],
+                        exercise_slug=ex_slug[:255],
+                        exercise_type=mapped_exercise_type,
+                        primary_muscle_group="full_body",
+                        difficulty_level="intermediate",
+                        description=f"AI-generated exercise: {ex_name}",
+                        instructions="Follow standard form.",
+                    )
+                    self.db.add(ex_lib)
+                    await self.db.flush() # Need the ID immediately
+                
+                # Parse Reps String (e.g. "8-12", "to failure", "AMRAP", "12-15 per arm")
+                reps_str = str(ex_data.get("reps", ""))
+                reps_min = reps_max = reps_target = None
+                try:
+                    import re as _re
+                    # Extract all numeric values from the string
+                    all_nums = _re.findall(r'\d+', reps_str)
+                    
+                    if "-" in reps_str and len(all_nums) >= 2:
+                        # Range format: "8-12", "12-15 per arm"
+                        reps_min = int(all_nums[0])
+                        reps_max = int(all_nums[1])
+                    elif all_nums:
+                        # Single number: "10", "15 reps"
+                        reps_target = int(all_nums[0])
+                    else:
+                        # Non-numeric: "to failure", "AMRAP" → default to 1
+                        reps_target = 1
+                except Exception:
+                    # Absolute safety net: constraint requires at least reps_target
+                    reps_target = 1
+                
+                we = WorkoutExercise(
+                    workout_day=workout_day,
+                    exercise_library_id=ex_lib.id,
+                    exercise_order=index,
+                    sets=int(ex_data.get("sets", 3)),
+                    reps_min=reps_min,
+                    reps_max=reps_max,
+                    reps_target=reps_target,
+                    rest_seconds=int(ex_data.get("rest_seconds", 60)),
+                    notes=ex_data.get("notes", "")
+                )
+                self.db.add(we)
         
         # Store complete training split in plan_data for reference
         workout_plan.plan_data = {
-            "training_split": workout_data["training_split"],
-            "frequency": workout_data["frequency"],
-            "duration_minutes": workout_data["duration_minutes"]
+            "training_split": workout_data.get("training_split", ""),
+            "frequency": workout_data.get("frequency", 3),
+            "duration_minutes": workout_data.get("duration_minutes", 60)
         }
         
         return workout_plan
@@ -611,3 +719,132 @@ class ProfileCreationService:
             reminder_frequency_minutes=hydration_data["frequency_hours"] * 60,
             enable_notifications=True
         )
+
+    async def _create_meal_template(
+        self,
+        profile_id: UUID,
+        diet_data: dict,
+        meal_schedules: List[MealSchedule]
+    ) -> Optional[MealTemplate]:
+        """
+        Create MealTemplate with Dish entities from onboarding sample_meals.
+        
+        Reads the sample_meals list (each entry has name, meal_type, ingredients,
+        approximate_calories, etc.) from the MealPlan structured output and creates
+        real Dish + TemplateMeal rows for a 7-day weekly template.
+        
+        Args:
+            profile_id: Profile identifier
+            diet_data: Diet data dict containing sample_meals list
+            meal_schedules: Saved MealSchedule list for cross-referencing timeslots
+            
+        Returns:
+            MealTemplate entity, or None if no sample meals available
+        """
+        sample_meals = diet_data.get("sample_meals", [])
+        if not sample_meals:
+            logger.warning("No sample_meals found in diet_data, skipping meal template creation")
+            return None
+            
+        plan_data = diet_data.get("meal_plan", {})
+        
+        # Create the weekly template
+        template = MealTemplate(
+            profile_id=profile_id,
+            is_active=True,
+            plan_name="Getting Started Protocol",
+            daily_calorie_target=plan_data.get("daily_calories", 2000),
+            protein_grams=plan_data.get("protein_g", 150),
+            carbs_grams=plan_data.get("carbs_g", 200),
+            fats_grams=plan_data.get("fats_g", 50),
+            generated_by='onboarding_agent',
+            generation_reason="Initial meal plan from onboarding"
+        )
+        self.db.add(template)
+        await self.db.flush()
+        
+        # Valid meal_type values per DB constraint
+        # Group sample meals by meal_type
+        from collections import defaultdict
+        meals_by_type: Dict[str, list] = defaultdict(list)
+        
+        for meal in sample_meals:
+            if isinstance(meal, dict):
+                raw_type = meal.get("meal_type", "snack")
+            else:
+                continue
+            
+            # Use raw_type since MealPlan generator uses strictly typed Enums
+            meal_type_key = raw_type.lower().strip()
+            if hasattr(raw_type, "value"):
+                meal_type_key = raw_type.value
+                
+            meals_by_type[meal_type_key].append(meal)
+            
+        try:
+            # Create Dish entities and TemplateMeals for each day
+            for day_index in range(7):
+                # Iterate by schedule slots, not by meal types! This correctly handles duplicates (like 2 snacks)
+                for idx, target_schedule in enumerate(meal_schedules):
+                    meal_type = target_schedule.meal_name.lower().strip()
+                    type_meals = meals_by_type.get(meal_type)
+                    
+                    if not type_meals:
+                        # Fallback if no matching sample meals exist for this type
+                        if meal_type in ["pre_workout", "post_workout"]:
+                            type_meals = meals_by_type.get("snack")
+                        if not type_meals:
+                            continue
+                    
+                    # Rotate meals deterministically: day plus idx varies it across multiple same-day slots
+                    meal_data = type_meals[(day_index + idx) % len(type_meals)]
+                    
+                    meal_name = meal_data.get("name", "Unknown Dish")
+                    
+                    # Check if dish already exists (may have been created for a previous day)
+                    from sqlalchemy import select
+                    stmt = select(Dish).where(
+                        Dish.name == meal_name[:199]
+                    ).filter(Dish.deleted_at.is_(None))
+                    result = await self.db.execute(stmt)
+                    target_dish = result.scalars().first()
+                    
+                    if not target_dish:
+                        # Clamp calories to valid range (DB constraint: > 0 AND < 2000)
+                        raw_cal = meal_data.get("approximate_calories", 500)
+                        calories = max(1, min(1999, int(raw_cal)))
+                        
+                        target_dish = Dish(
+                            name=meal_name[:199],
+                            cuisine_type="Global",
+                            meal_type=meal_type,
+                            serving_size_g=250,
+                            calories=calories,
+                            protein_g=max(0, int(meal_data.get("approximate_protein_g", 20))),
+                            carbs_g=max(0, int(meal_data.get("approximate_carbs_g", 30))),
+                            fats_g=max(0, int(meal_data.get("approximate_fats_g", 10))),
+                            prep_time_minutes=min(180, max(0, int(meal_data.get("prep_time_minutes", 15)))),
+                            cook_time_minutes=0,
+                            difficulty_level="medium",
+                            is_vegetarian=(diet_data.get("diet_type", "") in ("vegetarian", "vegan")),
+                            is_vegan=(diet_data.get("diet_type", "") == "vegan"),
+                        )
+                        self.db.add(target_dish)
+                        await self.db.flush()
+                    
+                    # Create TemplateMeal linking template → schedule → dish
+                    tm = TemplateMeal(
+                        template_id=template.id,
+                        meal_schedule_id=target_schedule.id,
+                        dish_id=target_dish.id,
+                        day_of_week=day_index,
+                        is_primary=True,
+                        alternative_order=1
+                    )
+                    self.db.add(tm)
+                    
+        except Exception as e:
+            logger.error(f"Failed to assemble meal template: {e}", exc_info=True)
+            
+        return template
+

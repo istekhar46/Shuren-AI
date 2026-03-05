@@ -1,0 +1,293 @@
+/* ═══════════════════════════════════════════════════════
+   DashboardPage.css — Premium Bento Grid Dashboard
+   ══════════════════════════════════════════════════════= */
+
+/* ── Bento Grid ── */
+.dash-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+    .dash-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .dash-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.dash-span-2 {
+    grid-column: span 1;
+}
+
+@media (min-width: 768px) {
+    .dash-span-2 {
+        grid-column: span 2;
+    }
+}
+
+.dash-span-4 {
+    grid-column: span 1;
+}
+
+@media (min-width: 1024px) {
+    .dash-span-4 {
+        grid-column: span 4;
+    }
+}
+
+/* ── Hero Welcome Card ── */
+.dash-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 2rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+    backdrop-filter: blur(16px);
+}
+
+.dash-hero::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--gradient-accent);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.dash-hero::after {
+    content: '';
+    position: absolute;
+    top: -60%;
+    right: -10%;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(167, 139, 250, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+/* ── Stat Metric Card ── */
+.dash-stat {
+    position: relative;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+    backdrop-filter: blur(16px);
+    transition: transform 0.2s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.dash-stat:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-border-hover);
+    box-shadow: 0 8px 32px rgba(167, 139, 250, 0.08);
+}
+
+.dash-stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.dash-stat-icon--violet {
+    background: rgba(167, 139, 250, 0.12);
+}
+
+.dash-stat-icon--pink {
+    background: rgba(244, 114, 182, 0.12);
+}
+
+.dash-stat-icon--coral {
+    background: rgba(251, 146, 60, 0.12);
+}
+
+.dash-stat-icon--emerald {
+    background: rgba(52, 211, 153, 0.12);
+}
+
+.dash-stat-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--color-text-primary);
+}
+
+.dash-stat-unit {
+    font-size: 0.813rem;
+    font-weight: 500;
+    color: var(--color-text-faint);
+    margin-left: 4px;
+}
+
+.dash-stat-label {
+    font-size: 0.813rem;
+    color: var(--color-text-muted);
+    margin-top: 0.25rem;
+}
+
+/* ── Macro Progress Bars ── */
+.dash-macro-bar-track {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.dash-macro-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dash-macro-bar-fill--protein {
+    background: linear-gradient(90deg, #a78bfa, #c084fc);
+}
+
+.dash-macro-bar-fill--carbs {
+    background: linear-gradient(90deg, #60a5fa, #38bdf8);
+}
+
+.dash-macro-bar-fill--fats {
+    background: linear-gradient(90deg, #fb923c, #f472b6);
+}
+
+/* ── Day Pills ── */
+.dash-day-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.dash-day-pill--inactive {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--color-text-faint);
+    border-color: var(--color-border);
+}
+
+.dash-day-pill--active {
+    background: var(--gradient-accent);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(167, 139, 250, 0.3);
+}
+
+/* ── Quick Action Cards ── */
+.dash-action {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+    backdrop-filter: blur(16px);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.25s ease;
+}
+
+.dash-action:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.dash-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.dash-action--violet:hover {
+    border-color: rgba(167, 139, 250, 0.4);
+    box-shadow: 0 12px 40px rgba(167, 139, 250, 0.1);
+}
+
+.dash-action--pink:hover {
+    border-color: rgba(244, 114, 182, 0.4);
+    box-shadow: 0 12px 40px rgba(244, 114, 182, 0.1);
+}
+
+.dash-action--coral:hover {
+    border-color: rgba(251, 146, 60, 0.4);
+    box-shadow: 0 12px 40px rgba(251, 146, 60, 0.1);
+}
+
+.dash-action--emerald:hover {
+    border-color: rgba(52, 211, 153, 0.4);
+    box-shadow: 0 12px 40px rgba(52, 211, 153, 0.1);
+}
+
+/* ── Fitness Badge ── */
+.dash-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.dash-badge--beginner {
+    background: rgba(52, 211, 153, 0.12);
+    color: #34d399;
+}
+
+.dash-badge--intermediate {
+    background: rgba(96, 165, 250, 0.12);
+    color: #60a5fa;
+}
+
+.dash-badge--advanced {
+    background: rgba(244, 114, 182, 0.12);
+    color: #f472b6;
+}
+
+/* ── Goal Chips ── */
+.dash-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.688rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+}
+
+/* ── Section Header ── */
+.dash-section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+    margin-bottom: 0.75rem;
+}

@@ -93,6 +93,8 @@ def create_scheduling_tools(db: AsyncSession, user_id: UUID) -> List:
         
         # Load OnboardingState
         try:
+            from sqlalchemy import select, update
+            
             stmt = select(OnboardingState).where(OnboardingState.user_id == user_id)
             result = await db.execute(stmt)
             state = result.scalars().first()
@@ -104,25 +106,30 @@ def create_scheduling_tools(db: AsyncSession, user_id: UUID) -> List:
                 }
             
             # Initialize agent_context if needed
-            if not state.agent_context:
-                state.agent_context = {}
+            agent_context = state.agent_context or {}
             
             # Initialize scheduling section if needed
-            if "scheduling" not in state.agent_context:
-                state.agent_context["scheduling"] = {}
+            scheduling_data = agent_context.get("scheduling", {})
+            if not isinstance(scheduling_data, dict):
+                scheduling_data = {}
             
             # Save hydration preferences
-            state.agent_context["scheduling"]["hydration"] = {
+            scheduling_data["hydration"] = {
                 "frequency_hours": frequency_hours,
                 "target_ml": target_ml,
                 "completed_at": datetime.utcnow().isoformat()
             }
             
-            # Mark as modified for SQLAlchemy to detect change
-            state.agent_context = dict(state.agent_context)
+            agent_context["scheduling"] = scheduling_data
             
+            # Update in database explicitly to bypass JSON tracking issues
+            stmt_update = (
+                update(OnboardingState)
+                .where(OnboardingState.user_id == user_id)
+                .values(agent_context=agent_context)
+            )
+            await db.execute(stmt_update)
             await db.commit()
-            await db.refresh(state)
             
             logger.info(
                 f"Saved hydration preferences for user {user_id}: {target_ml}ml every {frequency_hours}h",
@@ -196,8 +203,15 @@ def create_scheduling_tools(db: AsyncSession, user_id: UUID) -> List:
         
         # Load OnboardingState
         try:
-            from sqlalchemy import update
+            from sqlalchemy import select, update
             
+            # Fetch existing state 
+            stmt_select = select(OnboardingState).where(OnboardingState.user_id == user_id)
+            result = await db.execute(stmt_select)
+            state = result.scalars().first()
+            if not state:
+                return {"status": "error", "message": "Onboarding state not found"}
+                
             # Prepare supplement data
             supplement_data = {
                 "interested": interested,
@@ -205,18 +219,25 @@ def create_scheduling_tools(db: AsyncSession, user_id: UUID) -> List:
                 "completed_at": datetime.utcnow().isoformat()
             }
             
-            # Update onboarding state with supplement preferences and mark step 4 complete
-            stmt = (
+            # Update onboarding state safely
+            agent_context = state.agent_context or {}
+            scheduling_data = agent_context.get("scheduling", {})
+            if not isinstance(scheduling_data, dict):
+                scheduling_data = {}
+                
+            scheduling_data["supplements"] = supplement_data
+            agent_context["scheduling"] = scheduling_data
+            
+            # Update in database explicitly
+            stmt_update = (
                 update(OnboardingState)
                 .where(OnboardingState.user_id == user_id)
                 .values(
-                    agent_context=OnboardingState.agent_context.op('||')(
-                        {"scheduling": {"supplements": supplement_data}}
-                    ),
+                    agent_context=agent_context,
                     step_4_complete=True
                 )
             )
-            await db.execute(stmt)
+            await db.execute(stmt_update)
             await db.commit()
             
             logger.info(

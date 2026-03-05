@@ -21,37 +21,32 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({
     if (autoDismiss && dismissTimeout > 0) {
       const timer = setTimeout(() => {
         setIsVisible(false);
-        if (onDismiss) {
-          onDismiss();
-        }
+        if (onDismiss) onDismiss();
       }, dismissTimeout);
-
       return () => clearTimeout(timer);
     }
   }, [autoDismiss, dismissTimeout, onDismiss]);
 
   const handleDismiss = () => {
     setIsVisible(false);
-    if (onDismiss) {
-      onDismiss();
-    }
+    if (onDismiss) onDismiss();
   };
 
-  if (!isVisible) {
-    return null;
-  }
+  if (!isVisible) return null;
 
   return (
     <div
-      className={`bg-red-50 border border-red-200 rounded-lg p-4 flex items-start justify-between ${className}`}
+      className={`rounded-lg p-4 flex items-start justify-between ${className}`}
       role="alert"
+      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}
     >
       <div className="flex items-start">
         <svg
-          className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0"
+          className="w-5 h-5 mt-0.5 mr-3 flex-shrink-0"
           fill="currentColor"
           viewBox="0 0 20 20"
           aria-hidden="true"
+          style={{ color: '#f87171' }}
         >
           <path
             fillRule="evenodd"
@@ -59,19 +54,16 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({
             clipRule="evenodd"
           />
         </svg>
-        <p className="text-sm text-red-800">{message}</p>
+        <p className="text-sm" style={{ color: '#f87171' }}>{message}</p>
       </div>
       {onDismiss && (
         <button
           onClick={handleDismiss}
-          className="ml-4 text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 rounded"
+          className="ml-4 focus:outline-none focus:ring-2 focus:ring-red-500 rounded"
+          style={{ color: '#f87171' }}
           aria-label="Dismiss error"
         >
-          <svg
-            className="w-5 h-5"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
               d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"

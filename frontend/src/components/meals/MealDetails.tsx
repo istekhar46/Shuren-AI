@@ -15,7 +15,7 @@ export const MealDetails = ({ meal, onClose }: MealDetailsProps) => {
 
   const handleRequestSubstitution = () => {
     // Navigate to chat with pre-filled message
-    const message = `I would like to request a substitution for my ${meal.mealType} on ${meal.date}. The current dish is "${dish.name}". Can you suggest an alternative that fits my meal plan?`;
+    const message = `I would like to request a substitution for my ${meal.mealType} on ${meal.dayName}. The current dish is "${dish.name}". Can you suggest an alternative that fits my meal plan?`;
     navigate('/chat', { state: { prefillMessage: message, agentType: 'diet_planning' } });
   };
 

@@ -133,6 +133,7 @@ export interface ChatMessage {
   agentType: AgentType;
   timestamp: string;
   isStreaming?: boolean;
+  status?: string;
   error?: string;
 }
 
@@ -147,40 +148,6 @@ export interface ChatResponse {
   agentType: AgentType;
   conversationId: string;
   timestamp: string;
-}
-
-// Voice Session Types
-export interface VoiceSessionRequest {
-  agentType: AgentType;
-}
-
-export interface VoiceSessionResponse {
-  roomName: string;
-  token: string;
-  url: string;
-  agentType: AgentType;
-}
-
-export interface VoiceSessionStatus {
-  roomName: string;
-  connected: boolean;
-  participantCount: number;
-  duration: number;
-  agentConnected: boolean;
-}
-
-export interface TranscriptionMessage {
-  id: string;
-  speaker: 'user' | 'agent';
-  text: string;
-  timestamp: Date;
-  isFinal: boolean;
-}
-
-export interface SessionStatus {
-  connected: boolean;
-  participantCount: number;
-  duration: number;
 }
 
 // Meal Types
@@ -213,7 +180,7 @@ export interface Meal {
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   dish: Dish;
   scheduledTime: string;
-  date: string;
+  dayName: string;
 }
 
 export interface ShoppingListItem {

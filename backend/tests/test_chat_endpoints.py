@@ -188,12 +188,13 @@ class TestChatStreamEndpoint:
                 yield "there!"
             
             mock_agent.stream_response = mock_stream
-            mock_orchestrator._classify_query = AsyncMock(return_value=MagicMock(value="general"))
             mock_orchestrator._get_or_create_agent = MagicMock(return_value=mock_agent)
             
-            response = client.post(
-                "/api/v1/chat/stream",
-                json={"message": "Hello"}
+            # Set onboarding_completed back to True for this test to pass
+            mock_user.onboarding_completed = True
+            
+            response = client.get(
+                "/api/v1/chat/stream?message=Hello&token=fake_token"
             )
             
             assert response.status_code == 200
@@ -312,9 +313,8 @@ class TestChatStreamingEndpoints:
         
         client = TestClient(test_app)
         
-        response = client.post(
-            "/api/v1/chat/stream",
-            json={"message": "Hello"}
+        response = client.get(
+            "/api/v1/chat/stream?message=Hello&token=invalid_token"
         )
         
         assert response.status_code == 401
@@ -369,12 +369,12 @@ class TestChatStreamingEndpoints:
                 # Simulate long delay - timeout check will trigger
             
             mock_agent.stream_response = mock_stream
-            mock_orchestrator._classify_query = AsyncMock(return_value=MagicMock(value="general"))
             mock_orchestrator._get_or_create_agent = MagicMock(return_value=mock_agent)
             
-            response = client.post(
-                "/api/v1/chat/stream",
-                json={"message": "Hello"}
+            mock_user.onboarding_completed = True
+            
+            response = client.get(
+                "/api/v1/chat/stream?message=Hello&token=fake_token"
             )
             
             assert response.status_code == 200
@@ -396,12 +396,12 @@ class TestChatStreamingEndpoints:
                 raise Exception("LLM service unavailable")
             
             mock_agent.stream_response = mock_stream
-            mock_orchestrator._classify_query = AsyncMock(return_value=MagicMock(value="general"))
             mock_orchestrator._get_or_create_agent = MagicMock(return_value=mock_agent)
             
-            response = client.post(
-                "/api/v1/chat/stream",
-                json={"message": "Hello"}
+            mock_user.onboarding_completed = True
+            
+            response = client.get(
+                "/api/v1/chat/stream?message=Hello&token=fake_token"
             )
             
             assert response.status_code == 200

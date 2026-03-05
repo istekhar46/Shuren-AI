@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
-from app.agents.onboarding_tools import call_onboarding_step
+from app.agents.tools.onboarding_tools import call_onboarding_step
 from app.models.preferences import WorkoutSchedule, MealSchedule, HydrationPreference
 from app.models.profile import UserProfile
 
@@ -97,51 +97,8 @@ class SchedulerAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the scheduler agent.
         
@@ -477,7 +434,7 @@ class SchedulerAgent(BaseAgent):
         
         # Create onboarding tools using @tool decorator
         @tool
-        async def save_meal_schedule_tool(meals: list) -> str:
+        async def save_meal_schedule_tool(meals: List[dict]) -> str:
             """Save meal timing schedule during onboarding (State 6).
             
             Args:
@@ -495,7 +452,7 @@ class SchedulerAgent(BaseAgent):
             return json.dumps(result)
         
         @tool
-        async def save_workout_schedule_tool(workouts: list) -> str:
+        async def save_workout_schedule_tool(workouts: List[dict]) -> str:
             """Save workout schedule during onboarding (State 7).
             
             Args:
@@ -580,6 +537,8 @@ Available Tools:
 - get_upcoming_schedule: Retrieve upcoming workouts and meals
 - reschedule_workout: Move a workout to a different day or time
 - update_reminder_preferences: Enable or disable notifications for workouts, meals, or hydration
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:

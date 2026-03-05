@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import AsyncIterator, List
 
 from langchain_core.tools import tool
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
@@ -82,12 +82,23 @@ class GeneralAssistantAgent(BaseAgent):
                         try:
                             tool_result = await t.ainvoke(tool_call['args'])
                             # Add tool result to messages and get final response
-                            messages.append(response)
-                            messages.append(HumanMessage(content=f"Tool result: {tool_result}"))
-                            response = await self.llm.ainvoke(messages)
+                            if response not in messages:
+                                messages.append(response)
+                            messages.append(ToolMessage(
+                                content=str(tool_result),
+                                tool_call_id=tool_call['id']
+                            ))
                         except Exception as e:
                             logger.error(f"Tool execution error: {e}")
-                            response.content = f"I encountered an error while processing your request. Please try again."
+                            if response not in messages:
+                                messages.append(response)
+                            messages.append(ToolMessage(
+                                content=f"Error executing tool: {e}",
+                                tool_call_id=tool_call['id']
+                            ))
+            
+            # Get final response after tools
+            response = await self.llm.ainvoke(messages)
         
         # Return structured response
         return AgentResponse(
@@ -102,51 +113,8 @@ class GeneralAssistantAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise, conversational response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise, conversational response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the general assistant agent.
         
@@ -334,17 +302,21 @@ class GeneralAssistantAgent(BaseAgent):
                 })
         
         @tool
-        async def get_workout_info() -> str:
-            """Get today's workout plan for the user.
+        async def get_workout_info(target_date: str = None) -> str:
+            """Get the workout plan for the user for a specific date.
+            
+            Args:
+                target_date: Optional ISO format date string (e.g., '2023-12-25'). If not provided, returns today's plan.
             
             Returns:
                 JSON string with workout details including exercises, sets, reps, and rest periods.
                 If no workout scheduled, returns a rest day message.
             """
             try:
-                result = await WorkoutService.get_today_workout(
+                result = await WorkoutService.get_workout_dict_for_date(
                     user_id=context.user_id,
-                    db_session=db_session
+                    db_session=db_session,
+                    target_date=target_date
                 )
                 
                 if result is None:
@@ -383,17 +355,21 @@ class GeneralAssistantAgent(BaseAgent):
                 })
         
         @tool
-        async def get_meal_info() -> str:
-            """Get today's meal plan for the user.
+        async def get_meal_info(target_date: str = None) -> str:
+            """Get the meal plan for the user for a specific date.
+            
+            Args:
+                target_date: Optional ISO format date string (e.g., '2023-12-25'). If not provided, returns today's plan.
             
             Returns:
                 JSON string with meal details including dishes, timing, and nutritional information.
                 If no meal plan configured, returns a helpful message.
             """
             try:
-                result = await MealService.get_today_meal_plan(
+                result = await MealService.get_meal_plan_for_date(
                     user_id=context.user_id,
-                    db_session=db_session
+                    db_session=db_session,
+                    target_date=target_date
                 )
                 
                 if result is None:
@@ -615,15 +591,18 @@ Guidelines:
 Available Tools:
 - get_user_stats: Retrieve general user statistics and profile information
 - provide_motivation: Generate personalized motivational messages
-- get_workout_info: Get today's workout plan with exercises, sets, reps, and rest periods
-- get_meal_info: Get today's meal plan with dishes, timing, and nutritional information
+- research: Search for evidence-based fitness and nutrition information using web search.
+- get_workout_info: Get the workout plan for any given date with exercises, sets, reps, and rest periods
+- get_meal_info: Get the meal plan for any given date with dishes, timing, and nutritional information
 - get_schedule_info: Get upcoming workout and meal schedules with days and times
 - get_exercise_demo: Get exercise demonstration details (GIF, video, instructions) by exercise name
 - get_recipe_details: Get recipe details with ingredients and cooking instructions by dish name
+- get_current_datetime: Get the current date and time (use this to determine relative dates)
 
 When to Use Tools:
-- Use get_workout_info when users ask about today's workout, exercises, or training plan
-- Use get_meal_info when users ask about today's meals, nutrition, or eating plan
+- Use research when users ask health, fitness, or nutrition questions that require current evidence-based information.
+- Use get_workout_info when users ask about a specific day's workout, exercises, or training plan
+- Use get_meal_info when users ask about a specific day's meals, nutrition, or eating plan
 - Use get_schedule_info when users ask about upcoming workouts, meal times, or their schedule
 - Use get_exercise_demo when users ask how to perform a specific exercise or need form guidance
 - Use get_recipe_details when users ask about cooking instructions, ingredients, or recipe preparation
@@ -636,6 +615,8 @@ Remember:
 - Every step forward counts
 - Rest and recovery are part of success
 - Consistency beats intensity
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:

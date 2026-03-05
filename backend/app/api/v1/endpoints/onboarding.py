@@ -193,6 +193,7 @@ async def complete_onboarding(
         
         # Create profile from agent_context
         profile_service = ProfileCreationService(db)
+        user_id_str = str(current_user.id)
         
         try:
             profile = await profile_service.create_profile_from_agent_context(
@@ -201,21 +202,21 @@ async def complete_onboarding(
             )
         except OnboardingIncompleteError as e:
             # Agent data is missing or incomplete
-            logger.error(f"Onboarding incomplete for user {current_user.id}: {e}")
+            logger.error(f"Onboarding incomplete for user {user_id_str}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Onboarding data incomplete: {str(e)}"
             )
         except ValueError as e:
             # Data validation failed
-            logger.error(f"Validation error for user {current_user.id}: {e}")
+            logger.error(f"Validation error for user {user_id_str}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Data validation failed: {str(e)}"
             )
         except SQLAlchemyError as e:
             # Database error
-            logger.error(f"Database error for user {current_user.id}: {e}", exc_info=True)
+            logger.error(f"Database error for user {user_id_str}: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An error occurred while creating your profile. Please try again."
@@ -249,11 +250,12 @@ async def complete_onboarding(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Catch-all for unexpected errors
-        logger.error(f"Unexpected error completing onboarding for user {current_user.id}: {e}", exc_info=True)
+        # Log unexpected errors but default to standard user ID if current object is unbound
+        user_id_log = getattr(current_user, "id", "unknown") if 'current_user' in locals() else "unknown"
+        logger.error(f"Unexpected error completing onboarding for user {user_id_log}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred. Please try again."
+            detail="An unexpected error occurred while processing your request."
         )
 
 

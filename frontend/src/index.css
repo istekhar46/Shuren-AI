@@ -1,26 +1,363 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════
+   SHUREN — Global Design System
+   ═══════════════════════════════════════════════════════════
+   This file defines the design tokens and reusable utility
+   classes shared across the entire app. Page-specific layout
+   lives in each page's own CSS file.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ────────────────────────────────
+   1. DESIGN TOKENS (CSS Custom Properties)
+   ──────────────────────────────── */
 :root {
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  /* ── Colors: Background ── */
+  --color-bg-primary: #0a0a12;
+  --color-bg-surface: rgba(255 255 255 / 0.04);
+  --color-bg-surface-hover: rgba(255 255 255 / 0.08);
+  --color-bg-elevated: rgba(255 255 255 / 0.06);
+
+  /* ── Colors: Border ── */
+  --color-border: rgba(255 255 255 / 0.07);
+  --color-border-hover: rgba(167 139 250 / 0.35);
+
+  /* ── Colors: Text ── */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #e4e2f0;
+  --color-text-muted: #8b89a6;
+  --color-text-faint: rgba(139 137 166 / 0.6);
+
+  /* ── Colors: Brand Palette ── */
+  --color-violet: #a78bfa;
+  --color-pink: #f472b6;
+  --color-coral: #fb7185;
+  --color-indigo: #8b5cf6;
+
+  /* ── Gradients ── */
+  --gradient-accent: linear-gradient(135deg, var(--color-violet), var(--color-pink), var(--color-coral));
+  --gradient-accent-reverse: linear-gradient(315deg, var(--color-violet), var(--color-pink), var(--color-coral));
+
+  /* ── Shadows ── */
+  --shadow-glow-sm: 0 0 20px -4px rgba(167 139 250 / 0.35), 0 0 50px -8px rgba(244 114 182 / 0.2);
+  --shadow-glow-md: 0 0 30px -4px rgba(167 139 250 / 0.5), 0 0 70px -8px rgba(244 114 182 / 0.3);
+
+  /* ── Border Radius ── */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.7rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 999px;
+
+  /* ── Spacing Scale ── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* ── Typography ── */
+  --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-size-xs: 0.7rem;
+  --font-size-sm: 0.75rem;
+  --font-size-base: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.05rem;
+  --font-size-xl: 1.35rem;
+  --font-size-2xl: clamp(1.8rem, 4vw, 2.8rem);
+  --font-size-3xl: clamp(2.2rem, 5.5vw, 4rem);
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --font-weight-black: 900;
+  --line-height-tight: 1.1;
+  --line-height-snug: 1.15;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.65;
+  --line-height-loose: 1.7;
+
+  /* ── Transitions ── */
+  --transition-fast: 0.2s ease;
+  --transition-base: 0.35s ease;
+  --transition-smooth: 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Apply base font */
+  font-family: var(--font-family);
+  line-height: var(--line-height-normal);
+  font-weight: var(--font-weight-normal);
 }
 
+
+/* ────────────────────────────────
+   2. RESET & BASE
+   ──────────────────────────────── */
 body {
   margin: 0;
   min-height: 100vh;
+  background-color: #0a0a12;
 }
 
-/* Screen reader only utility for accessibility */
+
+/* ────────────────────────────────
+   3. REUSABLE COMPONENT CLASSES
+   ──────────────────────────────── */
+
+/* ── Gradient text ── */
+.ds-gradient-text {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Buttons ── */
+.ds-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.4rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  background: var(--gradient-accent);
+  background-size: 200% auto;
+  box-shadow: var(--shadow-glow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-position 0.4s;
+}
+
+.ds-btn-primary:hover {
+  transform: translateY(-1px) scale(1.03);
+  background-position: right center;
+  box-shadow: var(--shadow-glow-md);
+}
+
+.ds-btn-primary--lg {
+  padding: 0.85rem 2rem;
+  font-size: var(--font-size-md);
+  border-radius: 0.85rem;
+}
+
+.ds-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.ds-btn-ghost:hover {
+  color: var(--color-text-primary);
+}
+
+.ds-btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: var(--space-2) 0;
+  border: none;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.ds-btn-link:hover {
+  color: var(--color-text-primary);
+}
+
+/* ── Card ── */
+.ds-card {
+  position: relative;
+  padding: 1.75rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+  transition: border-color var(--transition-base), background var(--transition-base), transform 0.25s;
+}
+
+.ds-card:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-bg-surface-hover);
+  transform: translateY(-3px);
+}
+
+/* Card glow effect (place an empty div.ds-card-glow inside the card) */
+.ds-card-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.4s;
+  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(167 139 250 / 0.08), transparent 60%);
+  pointer-events: none;
+}
+
+.ds-card:hover .ds-card-glow {
+  opacity: 1;
+}
+
+/* ── Badge ── */
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.4rem var(--space-4);
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(167 139 250 / 0.2);
+  background: rgba(167 139 250 / 0.08);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--color-violet);
+  text-transform: uppercase;
+}
+
+.ds-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-violet);
+  box-shadow: 0 0 8px var(--color-violet);
+  animation: ds-pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes ds-pulse-dot {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(1.4);
+  }
+}
+
+/* ── Glass panel (final CTA, modals, etc.) ── */
+.ds-glass-panel {
+  text-align: center;
+  padding: 3.5rem 2rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  backdrop-filter: blur(20px);
+  position: relative;
+  overflow: hidden;
+}
+
+.ds-glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--gradient-accent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+/* ── Icon container ── */
+.ds-icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(167 139 250 / 0.08);
+  border: 1px solid rgba(167 139 250 / 0.15);
+}
+
+/* ── Section heading ── */
+.ds-heading-xl {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-extrabold);
+  line-height: var(--line-height-tight);
+  letter-spacing: -0.03em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.ds-heading-lg {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-extrabold);
+  line-height: var(--line-height-snug);
+  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-4);
+}
+
+.ds-heading-sm {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.ds-body-text {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.ds-section-sub {
+  max-width: 28rem;
+  margin: 0 auto var(--space-12);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-loose);
+  color: var(--color-text-muted);
+}
+
+/* ── Reveal animation ── */
+.ds-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity var(--transition-smooth), transform var(--transition-smooth);
+}
+
+.ds-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+
+/* ────────────────────────────────
+   4. UTILITIES
+   ──────────────────────────────── */
+
+/* Screen reader only */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -33,16 +370,20 @@ body {
   border-width: 0;
 }
 
-/* Typing cursor animation for streaming messages */
+/* Typing cursor for chat streaming */
 .typing-cursor {
   animation: blink 1s step-end infinite;
 }
 
 @keyframes blink {
-  0%, 50% {
+
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+
+  51%,
+  100% {
     opacity: 0;
   }
 }

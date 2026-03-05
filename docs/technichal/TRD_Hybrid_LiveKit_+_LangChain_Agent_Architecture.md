@@ -11,55 +11,43 @@
 
 ## Executive Summary
 
-This document specifies a production-ready hybrid architecture that combines **LiveKit Agents** for voice interaction handling with **LangChain** for agent orchestration and complex reasoning. The architecture separates concerns: LiveKit manages the real-time voice pipeline (STT→TTS), while LangChain handles business logic, specialized agent routing, and database interactions.
+This document specifies the current implemented architecture of the Shuren-AI system, which revolves around a **Dual-Orchestrator LangChain** setup and a **FastAPI React Frontend** integration. The architecture separates concerns primarily between general Post-Onboarding chat and the complex, stateful Onboarding flow.
+
+While originally designed as a hybrid **LiveKit + LangChain** architecture, the current implementation has shifted focus to robust **Text-Based Streaming (SSE)** for onboarding and general interactions, with the Voice Path currently in a simplified test mode (`SimpleTestAgent`).
 
 ### Architecture Philosophy
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    CLIENT APPLICATION                        │
-│              (iOS/Android/Web with LiveKit SDK)              │
+│           (React SPA with chat and dashboard views)          │
 └────────────────────┬────────────────────────────────────────┘
                      │
-         ┌───────────┼───────────┐
-         │           │           │
-    WebRTC       FastAPI      WebRTC
-    (Voice)       (Text)      (Data)
-         │           │           │
-         ▼           ▼           ▼
+          ┌───────────┼───────────┐
+          │ (Voice)   │ (SSE)     │ (REST)
+     LiveKit WebRTC FastAPI     FastAPI Endpoints
+          │         /chat/stream  /profiles, /meals, etc
+          ▼           ▼           ▼
 ┌────────────────────────────────────────────────────────────┐
-│              LIVEKIT SERVER                                 │
-│  (WebRTC SFU - Handles Media Routing)                      │
+│              FASTAPI BACKEND & ORCHESTRATION               │
 └────────────────────┬───────────────────────────────────────┘
                      │
-                     ├─── Job Dispatch
-                     │
          ┌───────────┴───────────┐
-         │                       │
          ▼                       ▼
-┌─────────────────┐    ┌─────────────────────┐
-│ LIVEKIT AGENT  │    │   FASTAPI BACKEND   │
-│    WORKERS      │    │  (Text Endpoints)   │
-│ (Voice Path)    │    │   (Text Path)       │
-└────────┬────────┘    └──────────┬──────────┘
-         │                        │
-         │                        │
-         └────────┬───────────────┘
-                  │
-         ┌────────▼────────┐
-         │  LANGCHAIN      │
-         │  ORCHESTRATOR   │
-         │  (Shared Core)  │
-         └────────┬────────┘
-                  │
-      ┌───────────┼────────────┐
-      │           │            │
-      ▼           ▼            ▼
-   [Agent     [Agent       [Agent
-   Workout]   Diet]        General]
+┌─────────────────┐    ┌─────────────────────────────────┐
+│ Voice Worker    │    │      LangChain Orchestrators    │
+│ (Test Mode)     │    │                                 │
+└─────────────────┘    │ 1. OnboardingAgentOrchestrator  │
+                       │ 2. AgentOrchestrator (General)  │
+                       └───────────┬─────────────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+                 [Agent         [Agent         [Agent
+                 Workout]       Diet]          General]
 ```
 
-**Key Principle:** LiveKit handles "how to communicate" (voice/STT/TTS), LangChain handles "what to say and do" (reasoning/tools/database).
+**Key Principle:** The system manages complex stateful flows (like the 4-step/9-state Onboarding process) through an autonomous LangChain-driven texting interface over Server-Sent Events (SSE). The LiveKit voice path is isolated and currently runs in an experimental/test capacity.
 
 ---
 
@@ -111,31 +99,29 @@ This document specifies a production-ready hybrid architecture that combines **L
 
 ### Requirement 2.1: LiveKit Agent Worker Architecture
 
-**Requirement:** THE System SHALL implement LiveKit Agent workers that delegate reasoning to LangChain while handling voice I/O locally.
+**Requirement:** THE System currently implements LiveKit Agent workers primarily in an experimental state. The main complex feature set is reserved for the text path, while the voice path uses a `SimpleTestAgent`.
+
+*Note: The `FitnessVoiceAgent` is currently commented out in the implementation to isolate the text path as the primary development focus.*
 
 #### LiveKit Agent Worker Structure
 
 ```python
 # livekit_agents/voice_agent_worker.py
 from livekit import agents
-from livekit.agents import JobContext, WorkerOptions, Agent, function_tool, RunContext
+from livekit.agents import JobContext, WorkerOptions, Agent, RunContext
 from livekit.plugins import deepgram, openai, cartesia
 import asyncio
 
+class SimpleTestAgent(Agent):
+    """Simple test agent to verify LiveKit voice pipeline works correctly."""
+    pass
+
+# The complex agent is disabled by default via:
+# if False: 
 class FitnessVoiceAgent(Agent):
-    """Voice agent that delegates to LangChain for reasoning"""
-    
-    def __init__(self, user_id: str, agent_type: str):
-        # Voice-specific configuration
-        super().__init__(
-            instructions=self._get_base_instructions(agent_type)
-        )
-        self.user_id = user_id
-        self.agent_type = agent_type
-        
-        # LangChain orchestrator (initialized later)
-        self.orchestrator = None
-        self.user_context = None
+    """Voice agent that delegates to LangChain for reasoning (Currently Disabled)"""
+    pass
+
     
     async def initialize_orchestrator(self):
         """Pre-load LangChain orchestrator with user context"""
@@ -601,14 +587,13 @@ async def end_session(
 4. THE System SHALL limit room lifetime with `empty_timeout` parameter
 5. THE System SHALL support querying room status via LiveKit API
 6. THE System SHALL support graceful session termination
-
 ---
 
 ## 3. Text Path Implementation (FastAPI + LangChain)
 
-### Requirement 3.1: FastAPI Text Endpoints
+### Requirement 3.1: FastAPI Text and Onboarding Endpoints
 
-**Requirement:** THE System SHALL provide REST API endpoints for text-based interactions that use the same LangChain orchestrator.
+**Requirement:** THE System SHALL provide REST API endpoints for text-based interactions, uniquely dividing Onboarding and General post-onboarding chat.
 
 ```python
 # api/v1/endpoints/chat.py
@@ -619,116 +604,35 @@ import asyncio
 
 router = APIRouter()
 
-class ChatRequest(BaseModel):
-    message: str
-    agent_type: str | None = None  # Optional explicit routing
-
-class ChatResponse(BaseModel):
-    response: str
-    agent_type: str
-    conversation_id: str
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+@router.post("/chat/onboarding/stream")
+async def chat_onboarding_stream(
+    message: str,
+    token: str
 ):
-    """Send a text message to the agent
-    
-    This endpoint:
-    1. Loads user context
-    2. Routes to appropriate LangChain agent
-    3. Returns response
-    4. Saves conversation history
+    """Streaming endpoint tailored specifically for the 4-step onboarding flow.
+    Uses Server-Sent Events (SSE) to deliver chunks and state update events.
+    Driven by OnboardingAgentOrchestrator.
     """
-    
-    # Load user context
-    context = await load_agent_context(db, current_user.id)
-    
-    # Initialize orchestrator
-    orchestrator = AgentOrchestrator(
-        user_context=context,
-        mode="text"
-    )
-    
-    # Route query
-    response = await orchestrator.route_query(
-        query=request.message,
-        agent_type=AgentType(request.agent_type) if request.agent_type else None,
-        voice_mode=False
-    )
-    
-    # Save conversation
-    await save_conversation_message(
-        db=db,
-        user_id=current_user.id,
-        role="user",
-        content=request.message
-    )
-    await save_conversation_message(
-        db=db,
-        user_id=current_user.id,
-        role="assistant",
-        content=response
-    )
-    
-    return ChatResponse(
-        response=response,
-        agent_type=orchestrator.last_agent_type.value,
-        conversation_id=str(current_user.id)
-    )
+    pass
 
 @router.post("/chat/stream")
 async def chat_stream(
-    request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    message: str,
+    token: str
 ):
-    """Streaming chat endpoint for real-time text responses"""
-    
-    async def generate():
-        # Load context
-        context = await load_agent_context(db, current_user.id)
-        
-        # Initialize orchestrator
-        orchestrator = AgentOrchestrator(
-            user_context=context,
-            mode="text"
-        )
-        
-        # Get agent
-        agent_type = await orchestrator._classify_query(request.message)
-        agent = orchestrator._get_or_create_agent(agent_type)
-        
-        # Stream response
-        async for chunk in agent.stream_response(
-            query=request.message,
-            context=context
-        ):
-            yield f"data: {json.dumps({'chunk': chunk})}
-
-"
-        
-        yield f"data: {json.dumps({'done': True})}
-
-"
-    
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream"
-    )
+    """Streaming chat endpoint for real-time text responses post-onboarding.
+    Uses AgentOrchestrator for routing to generalized agents.
+    """
+    pass
 ```
 
 #### Acceptance Criteria
 
-1. THE System SHALL provide both synchronous and streaming chat endpoints
-2. THE Text Path SHALL use the same `AgentOrchestrator` as the Voice Path
-3. THE System SHALL save conversation history to database after each interaction
-4. THE System SHALL support explicit agent type routing via `agent_type` parameter
-5. THE System SHALL return the actual agent type that handled the request
-6. WHEN streaming, THE System SHALL use Server-Sent Events (SSE) format
-7. THE Text Path SHALL load fresh context from database on each request
+1. THE System SHALL provide separate synchronous and streaming chat endpoints for both Onboarding and General contexts.
+2. THE Text Path SHALL utilize `OnboardingAgentOrchestrator` for onboarding flows, iterating through state updates dynamically.
+3. THE System SHALL save conversation history to database after each interaction.
+4. WHEN streaming, THE System SHALL use Server-Sent Events (SSE) format emitting JSON payloads chunk-by-chunk.
+5. THE UI SHALL integrate tightly with endpoints relying on explicit state triggers to preview/modify plans like Workout Plans and Diet Plans.
 
 ---
 
@@ -1094,37 +998,33 @@ Total Latency: 1.1-1.9 seconds for cached queries
                1.5-2.5 seconds for LangChain queries
 ```
 
-#### Text Interaction Flow
+#### Text Interaction Flow (Onboarding Example)
 
 ```
+[User signs up and lands on OnboardingChatPage]
+      ↓
 [User types message in app]
       ↓
-[POST /api/v1/chat with message]
+[POST /api/v1/chat/onboarding/stream with message]
       ↓
-[FastAPI receives request]
+[FastAPI receives request via chat.py]
       ↓
-[Load AgentContext from PostgreSQL + Redis]
+[OnboardingAgentOrchestrator._load_onboarding_state() checks step]
       ↓
-[Create AgentOrchestrator(mode="text")]
+[Orchestrator maps current step to specific OnboardingAgent]
       ↓
-[AgentOrchestrator.route_query(voice_mode=False)]
+[OnboardingAgent processes the message using LangChain and Tools]
       ↓
-[LangChain classifier determines agent type]
+[Tools may attempt to validate/save state via OnboardingService]
       ↓
-[Specialized Agent.process_text()]
+[Claude/GPT generates response continuously in chunks]
       ↓
-[LangChain AgentExecutor with tools]
+[FastAPI emits SSE events back to the React UI]
       ↓
-[Tools may query PostgreSQL]
-      ↓
-[Claude Sonnet generates detailed response]
-      ↓
-[Save conversation to PostgreSQL]
-      ↓
-[Return response to client]
-
-Total Latency: 2.0-3.0 seconds
+[UI displays streaming text, updates Progress Bar, shows Plan Previews if triggered]
 ```
+
+Total Latency: Streams begin within 0.5-1.5 seconds.
 
 #### Acceptance Criteria
 

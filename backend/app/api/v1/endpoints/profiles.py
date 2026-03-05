@@ -83,9 +83,9 @@ async def get_profile(
         } if profile.dietary_preferences else None,
         meal_plan={
             "daily_calorie_target": profile.meal_plan.daily_calorie_target,
-            "protein_percentage": float(profile.meal_plan.protein_percentage),
-            "carbs_percentage": float(profile.meal_plan.carbs_percentage),
-            "fats_percentage": float(profile.meal_plan.fats_percentage)
+            "protein_percentage": round(float(profile.meal_plan.protein_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "carbs_percentage": round(float(profile.meal_plan.carbs_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "fats_percentage": round(float(profile.meal_plan.fats_grams) * 9 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0
         } if profile.meal_plan else None,
         meal_schedules=[
             {
@@ -185,9 +185,9 @@ async def update_profile(
         } if profile.dietary_preferences else None,
         meal_plan={
             "daily_calorie_target": profile.meal_plan.daily_calorie_target,
-            "protein_percentage": float(profile.meal_plan.protein_percentage),
-            "carbs_percentage": float(profile.meal_plan.carbs_percentage),
-            "fats_percentage": float(profile.meal_plan.fats_percentage)
+            "protein_percentage": round(float(profile.meal_plan.protein_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "carbs_percentage": round(float(profile.meal_plan.carbs_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "fats_percentage": round(float(profile.meal_plan.fats_grams) * 9 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0
         } if profile.meal_plan else None,
         meal_schedules=[
             {
@@ -278,9 +278,9 @@ async def lock_profile(
         } if profile.dietary_preferences else None,
         meal_plan={
             "daily_calorie_target": profile.meal_plan.daily_calorie_target,
-            "protein_percentage": float(profile.meal_plan.protein_percentage),
-            "carbs_percentage": float(profile.meal_plan.carbs_percentage),
-            "fats_percentage": float(profile.meal_plan.fats_percentage)
+            "protein_percentage": round(float(profile.meal_plan.protein_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "carbs_percentage": round(float(profile.meal_plan.carbs_grams) * 4 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0,
+            "fats_percentage": round(float(profile.meal_plan.fats_grams) * 9 / profile.meal_plan.daily_calorie_target * 100, 1) if profile.meal_plan.daily_calorie_target else 0
         } if profile.meal_plan else None,
         meal_schedules=[
             {

@@ -1,5 +1,6 @@
 import api from './api';
 import type { UserProfileResponse, ProfileUpdateRequest } from '../types/api';
+import type { UserProfile } from '../types';
 
 /**
  * Profile Service
@@ -21,9 +22,9 @@ export const profileService = {
    * const profile = await profileService.getProfile();
    * console.log(profile.fitness_level); // 'intermediate'
    */
-  async getProfile(): Promise<UserProfileResponse> {
+  async getProfile(): Promise<UserProfile> {
     const response = await api.get('/profiles/me');
-    return response.data;
+    return mapProfileResponseToUserProfile(response.data);
   },
 
   /**
@@ -46,10 +47,10 @@ export const profileService = {
   async updateProfile(
     updates: Record<string, any>,
     reason: string = 'User requested update'
-  ): Promise<UserProfileResponse> {
+  ): Promise<UserProfile> {
     const payload: ProfileUpdateRequest = { updates, reason };
     const response = await api.patch('/profiles/me', payload);
-    return response.data;
+    return mapProfileResponseToUserProfile(response.data);
   },
 
   /**
@@ -66,8 +67,70 @@ export const profileService = {
    * const locked = await profileService.lockProfile();
    * console.log(locked.is_locked); // true
    */
-  async lockProfile(): Promise<UserProfileResponse> {
+  async lockProfile(): Promise<UserProfile> {
     const response = await api.post('/profiles/me/lock');
-    return response.data;
+    return mapProfileResponseToUserProfile(response.data);
   },
 };
+
+/**
+ * Maps the backend UserProfileResponse to the frontend UserProfile format
+ */
+export function mapProfileResponseToUserProfile(response: UserProfileResponse): UserProfile {
+  return {
+    id: response.id,
+    email: '', // Not provided in profile response
+    fitnessLevel: response.fitness_level as any,
+    goals: response.fitness_goals?.map(g => ({
+      type: g.goal_type as any,
+      targetWeight: g.target_value || undefined,
+      targetDate: g.target_date || undefined
+    })) || [],
+    physicalConstraints: response.physical_constraints?.map(c => ({
+      type: c.constraint_type as any,
+      description: c.description
+    })) || [],
+    dietaryPreferences: response.dietary_preferences ? {
+      dietType: response.dietary_preferences.diet_type as any,
+      allergies: response.dietary_preferences.allergies || [],
+      dislikes: response.dietary_preferences.dislikes || []
+    } : { dietType: 'omnivore', allergies: [], dislikes: [] },
+    mealPlan: response.meal_plan ? {
+      dailyCalories: (response.meal_plan as any).daily_calorie_target || response.meal_plan.daily_calories_target || 0,
+      macros: {
+        protein: Math.round((((response.meal_plan as any).daily_calorie_target || response.meal_plan.daily_calories_target || 0) * (response.meal_plan.protein_percentage / 100)) / 4),
+        carbs: Math.round((((response.meal_plan as any).daily_calorie_target || response.meal_plan.daily_calories_target || 0) * (response.meal_plan.carbs_percentage / 100)) / 4),
+        fats: Math.round((((response.meal_plan as any).daily_calorie_target || response.meal_plan.daily_calories_target || 0) * (response.meal_plan.fats_percentage / 100)) / 9),
+      },
+      mealsPerDay: response.meal_schedules?.length || 3
+    } : { dailyCalories: 0, macros: { protein: 0, carbs: 0, fats: 0 }, mealsPerDay: 3 },
+    mealSchedule: response.meal_schedules?.map(s => ({
+      mealType: s.meal_name as any,
+      time: s.scheduled_time
+    })) || [],
+    workoutSchedule: {
+      daysPerWeek: response.workout_schedules?.length || 0,
+      preferredDays: response.workout_schedules?.map(s => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][s.day_of_week]) || [],
+      preferredTime: response.workout_schedules?.[0]?.scheduled_time || '07:00:00',
+      sessionDuration: 45
+    },
+    hydrationPreferences: response.hydration_preferences ? {
+      dailyGoal: response.hydration_preferences.daily_water_target_ml / 1000,
+      reminderInterval: response.hydration_preferences.reminder_interval_minutes || 60
+    } : { dailyGoal: 2.5, reminderInterval: 60 },
+    lifestyleBaseline: response.lifestyle_baseline ? {
+      energyLevel: response.lifestyle_baseline.energy_level > 7 ? 'high' : response.lifestyle_baseline.energy_level > 4 ? 'medium' : 'low',
+      stressLevel: response.lifestyle_baseline.stress_level > 7 ? 'high' : response.lifestyle_baseline.stress_level > 4 ? 'medium' : 'low',
+      sleepQuality: response.lifestyle_baseline.sleep_hours > 8 ? 'excellent' : response.lifestyle_baseline.sleep_hours > 6 ? 'good' : response.lifestyle_baseline.sleep_hours > 4 ? 'fair' : 'poor'
+    } : { energyLevel: 'high', stressLevel: 'low', sleepQuality: 'excellent' },
+    notificationPreferences: {
+      workoutReminders: true,
+      mealReminders: true,
+      hydrationReminders: true,
+      motivationalMessages: true
+    },
+    isLocked: response.is_locked,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}

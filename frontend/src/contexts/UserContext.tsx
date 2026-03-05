@@ -11,6 +11,7 @@ interface UserContextType {
   refreshOnboardingStatus: () => Promise<void>;
   unlockProfile: () => Promise<void>;
   loading: boolean;
+  isInitialized: boolean;
   error: string | null;
 }
 
@@ -24,6 +25,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -100,6 +102,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
           console.error('Failed to fetch initial onboarding status:', err);
         }
       }
+      setIsInitialized(true);
     };
 
     initializeOnboardingStatus();
@@ -112,6 +115,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     refreshOnboardingStatus,
     unlockProfile,
     loading,
+    isInitialized,
     error,
   };
 

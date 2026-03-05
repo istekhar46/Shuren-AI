@@ -1,15 +1,22 @@
 import api from './api';
 import type { MealPlanResponse, MealScheduleResponse } from '../types/meal.types';
-import type { TodayMealsResponse, NextMealResponse } from '../types/mealTemplate.types';
+import type { TodayMealsResponse, NextMealResponse, MealTemplateResponse } from '../types/mealTemplate.types';
 
 export const mealService = {
   /**
    * Get user's meal plan
    * @returns User's meal plan with nutritional targets, or null if not configured
    */
-  async getMealPlan(): Promise<MealPlanResponse | null> {
-    const response = await api.get<MealPlanResponse | null>('/meals/plan');
-    return response.data;
+  async getMealPlan(): Promise<MealTemplateResponse | null> {
+    try {
+      const response = await api.get<MealTemplateResponse>('/meals/template');
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   /**

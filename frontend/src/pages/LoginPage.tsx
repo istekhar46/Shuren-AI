@@ -1,13 +1,24 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import logo from '../assets/logo.png';
 import { handleApiError } from '../utils/errorHandling';
 import { GoogleSignInButton } from '../components/auth/GoogleSignInButton';
 import type { TokenResponse } from '../types/auth.types';
 
+/* ── Shared input style helper ── */
+const inputClass = (hasError: boolean) =>
+  `mt-1 appearance-none relative block w-full px-3 py-2.5 rounded-md sm:text-sm transition-colors
+   focus:outline-none focus:ring-2 focus:ring-[var(--color-violet)] focus:border-transparent
+   ${hasError
+      ? 'border border-red-500/60'
+      : 'border border-[var(--color-border)]'
+   }`.replace(/\n\s+/g, ' ')
+  + ' bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] placeholder-[var(--color-text-faint)]';
+
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login, googleLogin } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,19 +32,9 @@ export const LoginPage: React.FC = () => {
 
   const validateForm = (): boolean => {
     const errors: { email?: string; password?: string } = {};
-
-    // Email validation
-    if (!email) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = 'Invalid email format';
-    }
-
-    // Password validation
-    if (!password) {
-      errors.password = 'Password is required';
-    }
-
+    if (!email) errors.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Invalid email format';
+    if (!password) errors.password = 'Password is required';
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -42,13 +43,8 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setError('');
     setValidationErrors({});
-
-    if (!validateForm()) {
-      return;
-    }
-
+    if (!validateForm()) return;
     setLoading(true);
-
     try {
       await login(email, password);
       navigate('/dashboard');
@@ -63,32 +59,13 @@ export const LoginPage: React.FC = () => {
   const handleGoogleSuccess = async (response: TokenResponse) => {
     try {
       setGoogleError('');
-      console.log('Google authentication successful, processing...');
-      
-      // The GoogleSignInButton already called the backend and got the token
-      // We just need to store it and update AuthContext
       localStorage.setItem('auth_token', response.access_token);
-      console.log('Token stored in localStorage');
-      
-      // Import authService to fetch user data
       const { authService } = await import('../services/authService');
-      
-      // Fetch user data to check onboarding status
-      console.log('Fetching user data...');
       const userData = await authService.getCurrentUser();
-      console.log('User data received:', userData);
-      
-      // Store user data in localStorage
       localStorage.setItem('auth_user', JSON.stringify(userData));
-      console.log('User data stored in localStorage');
-      
-      // Force a page reload to update AuthContext
-      // This ensures the AuthContext picks up the new token and user data
       const destination = userData.onboarding_completed ? '/dashboard' : '/onboarding';
-      console.log('Redirecting to:', destination);
       window.location.href = destination;
     } catch (err) {
-      console.error('Error in handleGoogleSuccess:', err);
       const appError = handleApiError(err);
       setGoogleError(appError.message);
     }
@@ -99,124 +76,88 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div
+      className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"
+      style={{ background: 'var(--color-bg-primary)' }}
+    >
       <div className="max-w-md w-full space-y-8">
+        {/* Header */}
         <div>
-          <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
+          <div className="flex justify-center mb-4">
+            <img src={logo} alt="Shuren" className="h-12 object-contain" />
+          </div>
+          <h2 className="text-center text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
             Sign in to your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
             Or{' '}
-            <Link
-              to="/register"
-              className="font-medium text-blue-600 hover:text-blue-500"
-            >
+            <Link to="/register" style={{ color: 'var(--color-violet)' }} className="font-medium hover:underline">
               create a new account
             </Link>
           </p>
         </div>
 
+        {/* Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">{error}</h3>
-                </div>
-              </div>
+            <div className="rounded-md p-4" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <h3 className="text-sm font-medium" style={{ color: '#f87171' }}>{error}</h3>
             </div>
           )}
 
-          <div className="rounded-md shadow-sm -space-y-px">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">
-                Email address
-              </label>
+              <label htmlFor="email" className="sr-only">Email address</label>
               <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                  validationErrors.email
-                    ? 'border-red-300'
-                    : 'border-gray-300'
-                } placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm`}
+                id="email" name="email" type="email" autoComplete="email" required
+                value={email} onChange={(e) => setEmail(e.target.value)}
+                className={inputClass(!!validationErrors.email)}
                 placeholder="Email address"
               />
               {validationErrors.email && (
-                <p className="mt-1 text-sm text-red-600">
-                  {validationErrors.email}
-                </p>
+                <p className="mt-1 text-sm" style={{ color: '#f87171' }}>{validationErrors.email}</p>
               )}
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
+              <label htmlFor="password" className="sr-only">Password</label>
               <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                  validationErrors.password
-                    ? 'border-red-300'
-                    : 'border-gray-300'
-                } placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm`}
+                id="password" name="password" type="password" autoComplete="current-password" required
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                className={inputClass(!!validationErrors.password)}
                 placeholder="Password"
               />
               {validationErrors.password && (
-                <p className="mt-1 text-sm text-red-600">
-                  {validationErrors.password}
-                </p>
+                <p className="mt-1 text-sm" style={{ color: '#f87171' }}>{validationErrors.password}</p>
               )}
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                loading
-                  ? 'bg-blue-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className={`ds-btn-primary w-full justify-center py-2.5 ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
         </form>
 
         {/* OR Divider */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300"></div>
+            <div className="w-full" style={{ borderTop: '1px solid var(--color-border)' }} />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-gray-50 text-gray-500">OR</span>
+            <span className="px-2" style={{ background: 'var(--color-bg-primary)', color: 'var(--color-text-muted)' }}>OR</span>
           </div>
         </div>
 
         {/* Google Sign-In */}
         <div className="mt-6">
           {googleError && (
-            <div className="rounded-md bg-red-50 p-4 mb-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">{googleError}</h3>
-                </div>
-              </div>
+            <div className="rounded-md p-4 mb-4" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <h3 className="text-sm font-medium" style={{ color: '#f87171' }}>{googleError}</h3>
             </div>
           )}
-          
           <div className="flex justify-center">
             <GoogleSignInButton
               onSuccess={handleGoogleSuccess}

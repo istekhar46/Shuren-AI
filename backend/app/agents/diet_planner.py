@@ -18,10 +18,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
-from app.agents.onboarding_tools import call_onboarding_step
+from app.agents.tools.onboarding_tools import call_onboarding_step
 from app.models.dish import Dish, DishIngredient, Ingredient
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule, DietaryPreference
+from app.services.meal_service import MealService
 
 logger = logging.getLogger(__name__)
 
@@ -99,51 +100,8 @@ class DietPlannerAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the diet planner agent.
         
@@ -155,156 +113,52 @@ class DietPlannerAgent(BaseAgent):
         db_session = self.db_session
         
         @tool
-        async def get_current_meal_plan() -> str:
-            """Get today's meal plan for the user.
+        async def get_meal_plan(target_date: str = None) -> str:
+            """Get the meal plan for the user for a specific date.
+            
+            Args:
+                target_date: Optional ISO format date string (e.g., '2023-12-25'). If not provided, returns today's plan.
             
             Returns:
                 JSON string with meal details including dishes, timing, and nutritional information
             """
             try:
-                if not db_session:
-                    return json.dumps({
-                        "success": False,
-                        "error": "Database session not available"
-                    })
-                
-                # Get today's day of week (0=Monday, 6=Sunday)
-                today = date.today().weekday()
-                
-                # Get user's profile to access meal templates
-                from app.models.profile import UserProfile
-                
-                stmt = select(UserProfile).where(
-                    UserProfile.user_id == context.user_id,
-                    UserProfile.deleted_at.is_(None)
+                result = await MealService.get_meal_plan_for_date(
+                    user_id=context.user_id,
+                    db_session=db_session,
+                    target_date=target_date
                 )
                 
-                result = await db_session.execute(stmt)
-                profile = result.scalar_one_or_none()
-                
-                if not profile:
-                    return json.dumps({
-                        "success": False,
-                        "error": "User profile not found"
-                    })
-                
-                # Get active meal template
-                stmt = select(MealTemplate).where(
-                    MealTemplate.profile_id == profile.id,
-                    MealTemplate.is_active == True,
-                    MealTemplate.deleted_at.is_(None)
-                )
-                
-                result = await db_session.execute(stmt)
-                meal_template = result.scalar_one_or_none()
-                
-                if not meal_template:
+                if result is None:
                     return json.dumps({
                         "success": True,
                         "data": {
-                            "message": "No meal plan configured yet. Please complete your meal planning setup."
+                            "message": f"No meal plan configured for {target_date or 'today'}. Please complete your meal planning setup."
                         }
                     })
-                
-                # Get today's meals from template
-                stmt = select(TemplateMeal).where(
-                    TemplateMeal.template_id == meal_template.id,
-                    TemplateMeal.day_of_week == today,
-                    TemplateMeal.is_primary == True,
-                    TemplateMeal.deleted_at.is_(None)
-                ).join(TemplateMeal.dish).join(TemplateMeal.meal_schedule)
-                
-                result = await db_session.execute(stmt)
-                template_meals = result.scalars().all()
-                
-                if not template_meals:
-                    return json.dumps({
-                        "success": True,
-                        "data": {
-                            "message": "No meals scheduled for today"
-                        }
-                    })
-                
-                # Build meal list with details
-                meals = []
-                total_calories = 0
-                total_protein = 0
-                total_carbs = 0
-                total_fats = 0
-                
-                for template_meal in template_meals:
-                    dish = template_meal.dish
-                    meal_schedule = template_meal.meal_schedule
-                    
-                    meal_data = {
-                        "meal_name": meal_schedule.meal_name,
-                        "scheduled_time": meal_schedule.scheduled_time.strftime("%H:%M"),
-                        "dish_name": dish.name,
-                        "dish_name_hindi": dish.name_hindi,
-                        "calories": float(dish.calories),
-                        "protein_g": float(dish.protein_g),
-                        "carbs_g": float(dish.carbs_g),
-                        "fats_g": float(dish.fats_g),
-                        "serving_size_g": float(dish.serving_size_g),
-                        "prep_time_minutes": dish.prep_time_minutes,
-                        "cook_time_minutes": dish.cook_time_minutes,
-                        "is_vegetarian": dish.is_vegetarian,
-                        "is_vegan": dish.is_vegan
-                    }
-                    
-                    meals.append(meal_data)
-                    
-                    # Accumulate totals
-                    total_calories += float(dish.calories)
-                    total_protein += float(dish.protein_g)
-                    total_carbs += float(dish.carbs_g)
-                    total_fats += float(dish.fats_g)
-                
-                # Get meal plan targets
-                stmt = select(MealPlan).where(
-                    MealPlan.profile_id == profile.id,
-                    MealPlan.deleted_at.is_(None)
-                )
-                
-                result = await db_session.execute(stmt)
-                meal_plan = result.scalar_one_or_none()
-                
-                targets = {}
-                if meal_plan:
-                    targets = {
-                        "daily_calorie_target": meal_plan.daily_calorie_target,
-                        "protein_percentage": float(meal_plan.protein_percentage),
-                        "carbs_percentage": float(meal_plan.carbs_percentage),
-                        "fats_percentage": float(meal_plan.fats_percentage)
-                    }
                 
                 return json.dumps({
                     "success": True,
-                    "data": {
-                        "day_of_week": today,
-                        "meals": meals,
-                        "daily_totals": {
-                            "calories": round(total_calories, 2),
-                            "protein_g": round(total_protein, 2),
-                            "carbs_g": round(total_carbs, 2),
-                            "fats_g": round(total_fats, 2)
-                        },
-                        "targets": targets
-                    },
+                    "data": result,
                     "metadata": {
                         "timestamp": datetime.utcnow().isoformat(),
                         "source": "diet_planner_agent"
                     }
                 })
                 
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
             except SQLAlchemyError as e:
-                logger.error(f"Database error in get_current_meal_plan: {e}")
+                logger.error(f"Database error in get_meal_plan: {e}")
                 return json.dumps({
                     "success": False,
                     "error": "Unable to retrieve meal plan. Please try again."
                 })
             except Exception as e:
-                logger.error(f"Unexpected error in get_current_meal_plan: {e}")
+                logger.error(f"Unexpected error in get_meal_plan: {e}")
                 return json.dumps({
                     "success": False,
                     "error": "An unexpected error occurred. Please try again."
@@ -664,9 +518,9 @@ class DietPlannerAgent(BaseAgent):
         @tool
         async def save_dietary_preferences_tool(
             diet_type: str,
-            allergies: list,
-            intolerances: list,
-            dislikes: list
+            allergies: List[str],
+            intolerances: List[str],
+            dislikes: List[str]
         ) -> str:
             """Save dietary preferences and restrictions during onboarding (State 4).
             
@@ -716,7 +570,7 @@ class DietPlannerAgent(BaseAgent):
             return json.dumps(result)
         
         return [
-            get_current_meal_plan,
+            get_meal_plan,
             suggest_meal_substitution,
             get_recipe_details,
             calculate_nutrition,
@@ -750,6 +604,20 @@ Dietary Preferences:
         
         base_prompt = f"""You are a professional nutrition and meal planning assistant for the Shuren fitness coaching system.
 
+- get_meal_plan: Retrieve the meal plan for any given date with dishes, timing, and nutritional information
+- research: Search for evidence-based nutritional information, calorie data, and dietary research. Always use this BEFORE suggesting substitutions or new dishes.
+- suggest_meal_substitution: Suggest meal substitution based on dietary preferences and restrictions
+- get_recipe_details: Get recipe details including ingredients and cooking instructions
+- calculate_nutrition: Calculate nutritional information for a dish
+- get_current_datetime: Get the current date and time (use this to determine the date for future/past requests)
+
+When to Use Tools:
+- Use research when you need to verify nutritional facts, search for healthy recipes, or find evidence-based answers to dietary questions.
+- Use get_meal_plan when users ask about a specific day's meals, nutrition, or eating plan. Always use get_current_datetime first if the user refers to "tomorrow", "yesterday", or a specific day of the week to calculate the correct target_date.
+- Use suggest_meal_substitution when users want variety or need to change a dish in their plan
+- Use get_recipe_details when users ask for cooking instructions or ingredients for a specific dish
+- Use calculate_nutrition when users ask for macro breakdowns of specific dishes
+
 User Profile:
 - Fitness Level: {self.context.fitness_level}
 - Primary Goal: {self.context.primary_goal}
@@ -776,6 +644,8 @@ Available Tools:
 - suggest_meal_substitution: Generate alternative meal suggestions
 - get_recipe_details: Get recipe ingredients and cooking instructions
 - calculate_nutrition: Calculate macros and calories for dishes
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:

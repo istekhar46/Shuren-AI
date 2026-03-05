@@ -172,7 +172,6 @@ class MealTemplateResponse(BaseModel):
     including metadata about the template.
     """
     id: UUID = Field(..., description="Unique identifier for this template")
-    week_number: int = Field(..., ge=1, le=4, description="Week number in 4-week rotation (1-4)")
     is_active: bool = Field(..., description="Whether this is the currently active template")
     days: List[DayMealsResponse] = Field(..., description="Meals for each day of the week (7 days)")
     created_at: datetime = Field(..., description="Timestamp when the template was created")
@@ -183,7 +182,6 @@ class MealTemplateResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
-                "week_number": 1,
                 "is_active": True,
                 "days": [
                     {
@@ -209,7 +207,6 @@ class TodayMealsResponse(BaseModel):
     Provides a focused view of today's meal plan with all
     scheduled meals and daily nutritional totals.
     """
-    date: str = Field(..., description="Today's date in ISO format (YYYY-MM-DD)")
     day_of_week: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
     day_name: str = Field(..., description="Day name (Monday, Tuesday, etc.)")
     meals: List[MealSlotResponse] = Field(..., description="Today's meals with dish options")
@@ -221,7 +218,6 @@ class TodayMealsResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "date": "2026-01-30",
                 "day_of_week": 4,
                 "day_name": "Friday",
                 "meals": [
@@ -305,18 +301,11 @@ class TemplateRegenerateRequest(BaseModel):
         description="User preferences for generation (e.g., 'More chicken dishes, less spicy food')",
         max_length=500
     )
-    week_number: Optional[int] = Field(
-        None,
-        ge=1,
-        le=4,
-        description="Specific week to regenerate (1-4). If not provided, regenerates current week"
-    )
     
     class Config:
         json_schema_extra = {
             "example": {
-                "preferences": "More chicken dishes, less spicy food, quick prep meals only",
-                "week_number": 1
+                "preferences": "More chicken dishes, less spicy food, quick prep meals only"
             }
         }
 

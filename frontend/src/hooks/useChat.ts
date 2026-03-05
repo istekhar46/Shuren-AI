@@ -126,6 +126,13 @@ export const useChat = (isOnboarding: boolean = false): UseChatReturn => {
       cancelStreamRef.current = chatService.streamMessage(
         message,
         {
+          onStatus: (status, metadata) => {
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, status: status, agentType: metadata.agent_type || msg.agentType } 
+                : msg
+            ));
+          },
           // Requirement 3.3: Append chunks to placeholder message content
           // Requirement 9.1: React 19 automatic batching ensures rapid chunks
           // arriving in quick succession are batched into single re-renders
@@ -133,7 +140,7 @@ export const useChat = (isOnboarding: boolean = false): UseChatReturn => {
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + chunk }
+                  ? { ...msg, content: msg.content + chunk, status: undefined }
                   : msg
               )
             );
@@ -147,7 +154,8 @@ export const useChat = (isOnboarding: boolean = false): UseChatReturn => {
                   ? { 
                       ...msg, 
                       isStreaming: false,
-                      agentType: (agentType as any) || 'general_assistant'
+                      agentType: (agentType as any) || 'general_assistant',
+                      status: undefined
                     }
                   : msg
               )
@@ -161,7 +169,7 @@ export const useChat = (isOnboarding: boolean = false): UseChatReturn => {
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMessageId
-                  ? { ...msg, isStreaming: false, error: errorMessage }
+                  ? { ...msg, isStreaming: false, error: errorMessage, status: undefined }
                   : msg
               )
             );

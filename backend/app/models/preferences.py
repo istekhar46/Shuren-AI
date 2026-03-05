@@ -23,8 +23,7 @@ class FitnessGoal(BaseModel):
         nullable=False
     )
     
-    # Goal details
-    goal_type = Column(String(50), nullable=False)  # 'fat_loss', 'muscle_gain', 'general_fitness'
+    goal_type = Column(Text, nullable=False)  # User's freeform dynamic goal
     target_weight_kg = Column(Numeric(5, 2), nullable=True)
     target_body_fat_percentage = Column(Numeric(4, 2), nullable=True)
     priority = Column(Integer, default=1, nullable=False)
@@ -137,6 +136,27 @@ class MealPlan(BaseModel):
     
     # Relationships
     profile = relationship("UserProfile", back_populates="meal_plan")
+    
+    @property
+    def protein_percentage(self) -> float:
+        """Calculate protein percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.protein_grams * 4) / self.daily_calorie_target * 100)
+        
+    @property
+    def carbs_percentage(self) -> float:
+        """Calculate carbs percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.carbs_grams * 4) / self.daily_calorie_target * 100)
+        
+    @property
+    def fats_percentage(self) -> float:
+        """Calculate fats percentage of total calories."""
+        if not self.daily_calorie_target:
+            return 0.0
+        return float((self.fats_grams * 9) / self.daily_calorie_target * 100)
     
     # Table constraints
     __table_args__ = (

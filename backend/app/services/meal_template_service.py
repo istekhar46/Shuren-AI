@@ -31,8 +31,7 @@ class MealTemplateService:
     async def get_active_template(self, profile_id: UUID) -> Optional[MealTemplate]:
         """Get user's currently active meal template.
         
-        Determines the current week number based on a 4-week rotation
-        and retrieves the corresponding template with all related data.
+        Retrieves the single active template with all related data.
         
         Args:
             profile_id: UUID of the user profile
@@ -40,15 +39,11 @@ class MealTemplateService:
         Returns:
             MealTemplate object if found, None otherwise
         """
-        # Determine current week number (1-4 rotation)
-        week_of_year = date.today().isocalendar()[1]
-        current_week = ((week_of_year - 1) % 4) + 1
-        
         result = await self.db.execute(
             select(MealTemplate)
             .where(
                 MealTemplate.profile_id == profile_id,
-                MealTemplate.week_number == current_week,
+                MealTemplate.is_active == True,
                 MealTemplate.deleted_at.is_(None)
             )
             .options(
@@ -175,7 +170,6 @@ class MealTemplateService:
         meals.sort(key=lambda m: m['scheduled_time'])
         
         return {
-            'date': today.isoformat(),
             'day_of_week': day_of_week,
             'day_name': today.strftime('%A'),
             'meals': meals,
@@ -219,53 +213,21 @@ class MealTemplateService:
         
         return None
     
-    async def get_template_by_week(
-        self,
-        profile_id: UUID,
-        week_number: int
-    ) -> Optional[MealTemplate]:
-        """Get specific week template.
-        
-        Retrieves a meal template for a specific week number (1-4)
-        with all related meals, dishes, and schedules.
-        
-        Args:
-            profile_id: UUID of the user profile
-            week_number: Week number (1-4)
-            
-        Returns:
-            MealTemplate object if found, None otherwise
-        """
-        result = await self.db.execute(
-            select(MealTemplate)
-            .where(
-                MealTemplate.profile_id == profile_id,
-                MealTemplate.week_number == week_number,
-                MealTemplate.deleted_at.is_(None)
-            )
-            .options(
-                selectinload(MealTemplate.template_meals)
-                .selectinload(TemplateMeal.dish),
-                selectinload(MealTemplate.template_meals)
-                .selectinload(TemplateMeal.meal_schedule)
-            )
-        )
-        return result.scalar_one_or_none()
+
     
     async def generate_template(
         self,
         profile_id: UUID,
-        week_number: int,
         preferences: Optional[str] = None
     ) -> MealTemplate:
         """Generate new meal template for user.
         
         Creates a complete weekly meal template with specific dish assignments
         for each meal slot. Generates primary dish and 2 alternatives per slot.
+        Deactivates any existing templates.
         
         Args:
             profile_id: UUID of the user profile
-            week_number: Week number (1-4) for the template
             preferences: Optional user preferences for generation
             
         Returns:
@@ -296,10 +258,14 @@ class MealTemplateService:
         daily_calories = meal_plan.daily_calorie_target
         daily_protein = float(meal_plan.protein_percentage) / 100 * daily_calories / 4  # 4 cal/g
         
+        # Deactivate existing template
+        existing_template = await self.get_active_template(profile_id)
+        if existing_template:
+            existing_template.is_active = False
+            
         # Create template
         template = MealTemplate(
             profile_id=profile_id,
-            week_number=week_number,
             is_active=True,
             generated_by='ai_agent',
             generation_reason=preferences or 'Initial template generation'

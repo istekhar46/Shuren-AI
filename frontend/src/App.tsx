@@ -2,9 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { UserProvider } from './contexts/UserContext';
-import { VoiceProvider } from './contexts/VoiceContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
-import { RootRedirect } from './components/common/RootRedirect';
 import { NotFoundRedirect } from './components/common/NotFoundRedirect';
 import { MainLayout } from './components/layout/MainLayout';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -13,12 +11,12 @@ import './App.css';
 // Eager load auth pages for faster initial load
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { LandingPage } from './pages/LandingPage';
 
 // Lazy load protected pages for code splitting
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const OnboardingChatPage = lazy(() => import('./pages/OnboardingChatPage').then(m => ({ default: m.OnboardingChatPage })));
 const ChatPage = lazy(() => import('./pages/ChatPage').then(m => ({ default: m.ChatPage })));
-const VoicePage = lazy(() => import('./pages/VoicePage').then(m => ({ default: m.VoicePage })));
 const MealsPage = lazy(() => import('./pages/MealsPage').then(m => ({ default: m.MealsPage })));
 const WorkoutsPage = lazy(() => import('./pages/WorkoutsPage').then(m => ({ default: m.WorkoutsPage })));
 
@@ -27,10 +25,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <UserProvider>
-          <VoiceProvider>
             <Routes>
               {/* Public routes */}
-              <Route path="/" element={<RootRedirect />} />
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
 
@@ -74,18 +71,6 @@ function App() {
                 }
               />
               <Route
-                path="/voice"
-                element={
-                  <ProtectedRoute requireOnboardingComplete={true}>
-                    <MainLayout>
-                      <Suspense fallback={<LoadingSpinner message="Loading voice session..." />}>
-                        <VoicePage />
-                      </Suspense>
-                    </MainLayout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
                 path="/meals"
                 element={
                   <ProtectedRoute requireOnboardingComplete={true}>
@@ -113,7 +98,6 @@ function App() {
               {/* 404 fallback */}
               <Route path="*" element={<NotFoundRedirect />} />
             </Routes>
-          </VoiceProvider>
         </UserProvider>
       </AuthProvider>
     </BrowserRouter>

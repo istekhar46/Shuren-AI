@@ -57,25 +57,17 @@ export const mealTemplateService = {
    * Get meal template for a specific week
    * 
    * Retrieves the complete meal template for a week, including all days
-   * and meals with assigned dishes. If no week number is specified,
-   * returns the current active template.
+   * and meals with assigned dishes.
    * 
-   * @param {number} [weekNumber] - Week number (1-4), optional
    * @returns {Promise<MealTemplateResponse>} Complete meal template with all days and meals
    * @throws {Error} If the request fails or user is not authenticated
    * 
    * @example
-   * // Get current week's template
    * const template = await mealTemplateService.getMealTemplate();
-   * 
-   * // Get specific week's template
-   * const week2 = await mealTemplateService.getMealTemplate(2);
-   * console.log(week2.days); // Array of 7 days with meals
+   * console.log(template.days); // Array of 7 days with meals
    */
-  async getMealTemplate(weekNumber?: number): Promise<MealTemplateResponse> {
-    const response = await api.get<MealTemplateResponse>('/meal-templates/template', {
-      params: weekNumber ? { week_number: weekNumber } : {},
-    });
+  async getMealTemplate(): Promise<MealTemplateResponse> {
+    const response = await api.get<MealTemplateResponse>('/meal-templates/template');
     return response.data;
   },
 
@@ -87,27 +79,23 @@ export const mealTemplateService = {
    * the meal structure and nutritional targets.
    * 
    * @param {string} [preferences] - Optional preferences for dish selection (e.g., 'more variety', 'quick meals')
-   * @param {number} [weekNumber] - Optional week number to regenerate (1-4)
    * @returns {Promise<MealTemplateResponse>} Newly generated meal template
    * @throws {Error} If the request fails or user is not authenticated
    * 
    * @example
    * // Regenerate with preferences
    * const newTemplate = await mealTemplateService.regenerateMealTemplate(
-   *   'I want more variety and quick meals',
-   *   1
+   *   'I want more variety and quick meals'
    * );
    * 
    * // Regenerate without preferences
    * const refreshed = await mealTemplateService.regenerateMealTemplate();
    */
   async regenerateMealTemplate(
-    preferences?: string,
-    weekNumber?: number
+    preferences?: string
   ): Promise<MealTemplateResponse> {
     const payload: TemplateRegenerateRequest = {};
     if (preferences) payload.preferences = preferences;
-    if (weekNumber) payload.week_number = weekNumber;
 
     const response = await api.post<MealTemplateResponse>(
       '/meal-templates/template/regenerate',

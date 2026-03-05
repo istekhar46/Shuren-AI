@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
-from app.agents.onboarding_tools import call_onboarding_step
+from app.agents.tools.onboarding_tools import call_onboarding_step
 
 logger = logging.getLogger(__name__)
 
@@ -95,56 +95,13 @@ class SupplementGuideAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response with disclaimers.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words) with disclaimer included.
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech with disclaimer
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
+    def _get_agent_tools(self) -> List:
         """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-    
-    def get_tools(self) -> List:
-        """
-        Get the list of tools available to the supplement guidance agent.
+        Get the list of tools available to the supplement guide agent.
         
         Returns:
-            List: List of LangChain tools for supplement information operations
+            List: List of LangChain tools for supplement operations
         """
         # Create closures to pass context to tools
         context = self.context
@@ -505,6 +462,8 @@ IMPORTANT REMINDERS:
 - More is not always better - dosage matters
 - Some supplements may be unnecessary with proper diet
 - Professional guidance is essential for safety
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 """
         
         if voice_mode:

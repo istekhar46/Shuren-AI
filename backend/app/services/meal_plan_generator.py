@@ -18,6 +18,8 @@ class MealType(str, Enum):
     LUNCH = "lunch"
     DINNER = "dinner"
     SNACK = "snack"
+    PRE_WORKOUT = "pre_workout"
+    POST_WORKOUT = "post_workout"
 
 
 class SampleMeal(BaseModel):
@@ -46,21 +48,31 @@ class MealPlan(BaseModel):
     sample_meals: List[SampleMeal]
     meal_timing_suggestions: str
     
-    @field_validator('diet_type')
+    @field_validator('diet_type', mode='before')
     @classmethod
     def validate_diet_type(cls, v: str) -> str:
         valid_types = ["omnivore", "vegetarian", "vegan", "pescatarian"]
-        if v.lower() not in valid_types:
-            raise ValueError(f"diet_type must be one of {valid_types}")
-        return v.lower()
+        if not isinstance(v, str):
+            return "omnivore"
+        val = v.lower()
+        if val == "non-veg" or val == "non-vegetarian":
+            return "omnivore"
+        if val not in valid_types:
+            logger.warning(f"Invalid diet_type {v}, defaulting to omnivore")
+            return "omnivore"
+        return val
     
-    @field_validator('meal_prep_level')
+    @field_validator('meal_prep_level', mode='before')
     @classmethod
     def validate_meal_prep_level(cls, v: str) -> str:
         valid_levels = ["low", "medium", "high"]
-        if v.lower() not in valid_levels:
-            raise ValueError(f"meal_prep_level must be one of {valid_levels}")
-        return v.lower()
+        if not isinstance(v, str):
+            return "medium"
+        val = v.lower()
+        if val not in valid_levels:
+            logger.warning(f"Invalid meal_prep_level {v}, defaulting to medium")
+            return "medium"
+        return val
 
 
 
@@ -94,7 +106,11 @@ class MealPlanGenerator:
         allergies: List[str],
         dislikes: List[str],
         meal_frequency: int,
-        meal_prep_level: str
+        meal_prep_level: str,
+        weight_kg: float = 75.0,
+        height_cm: float = 175.0,
+        age: int = 30,
+        gender: str = "male"
     ) -> MealPlan:
         """
         Generate a meal plan based on user profile and preferences.
@@ -123,13 +139,16 @@ class MealPlanGenerator:
         
         # Calculate calorie target based on goal and workout plan
         workout_frequency = workout_plan.get("frequency", 3)
-        daily_calories = self._calculate_calorie_target(primary_goal, workout_frequency)
+        daily_calories = self._calculate_calorie_target(
+            primary_goal, workout_frequency, weight_kg, height_cm, age, gender
+        )
         
         # Calculate macro breakdown
         protein_g, carbs_g, fats_g = self._calculate_macros(
             daily_calories=daily_calories,
             primary_goal=primary_goal,
-            workout_frequency=workout_frequency
+            workout_frequency=workout_frequency,
+            weight_kg=weight_kg
         )
         
         # Generate sample meals
@@ -285,13 +304,19 @@ class MealPlanGenerator:
         if meal_prep_level not in valid_prep_levels:
             raise ValueError(f"meal_prep_level must be one of {valid_prep_levels}")
     
-    def _calculate_calorie_target(self, primary_goal: str, workout_frequency: int) -> int:
-        """Calculate daily calorie target based on goal and activity level."""
-        # Simplified calculation - using average TDEE of 2000 calories as baseline
-        # Real implementation would use user's weight, age, height, gender
-        base_tdee = 2000
+    def _calculate_calorie_target(
+        self, primary_goal: str, workout_frequency: int, 
+        weight_kg: float, height_cm: float, age: int, gender: str
+    ) -> int:
+        """Calculate daily calorie target based on Mifflin-St Jeor equation and goal."""
+        # Use Mifflin-St Jeor equation for BMR
+        if gender.lower().strip() == "female":
+            bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) - 161
+        else:
+            bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + 5
+            
         activity_multiplier = self.ACTIVITY_MULTIPLIERS.get(workout_frequency, 1.375)
-        tdee = int(base_tdee * activity_multiplier)
+        tdee = int(bmr * activity_multiplier)
         
         if primary_goal == "muscle_gain":
             return tdee + 400  # Surplus for muscle gain
@@ -304,19 +329,17 @@ class MealPlanGenerator:
         self,
         daily_calories: int,
         primary_goal: str,
-        workout_frequency: int
+        workout_frequency: int,
+        weight_kg: float
     ) -> tuple[int, int, int]:
         """Calculate protein, carbs, and fats in grams."""
-        # Protein calculation based on goal
-        # Using 75kg as average weight - real implementation would use actual weight
-        avg_weight_kg = 75
         
         if primary_goal == "muscle_gain":
-            protein_g = int(avg_weight_kg * 2.0)  # 2.0g/kg for muscle gain
+            protein_g = int(weight_kg * 2.0)  # 2.0g/kg for muscle gain
         elif primary_goal == "fat_loss":
-            protein_g = int(avg_weight_kg * 1.8)  # 1.8g/kg for fat loss
+            protein_g = int(weight_kg * 1.8)  # 1.8g/kg for fat loss
         else:  # general_fitness
-            protein_g = int(avg_weight_kg * 1.6)  # 1.6g/kg for maintenance
+            protein_g = int(weight_kg * 1.6)  # 1.6g/kg for maintenance
         
         # Protein calories
         protein_calories = protein_g * 4

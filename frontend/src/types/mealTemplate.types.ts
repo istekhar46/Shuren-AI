@@ -13,7 +13,6 @@ import type { DishSummaryResponse } from './dish.types';
  * Contains all meals for today with assigned dishes
  */
 export interface TodayMealsResponse {
-  date: string;
   day_of_week: number;
   day_name: string;
   meals: MealSlot[];
@@ -55,7 +54,6 @@ export interface NextMealResponse {
  */
 export interface MealTemplateResponse {
   id: string;
-  week_number: number;
   is_active: boolean;
   days: DayMeals[];
   created_at: string;
@@ -79,5 +77,4 @@ export interface DayMeals {
  */
 export interface TemplateRegenerateRequest {
   preferences?: string;
-  week_number?: number;
 }

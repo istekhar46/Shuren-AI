@@ -95,56 +95,13 @@ class TrackerAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Stream response chunks
-        async for chunk in self.llm.astream(messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the tracker agent.
         
         Returns:
-            List: List of LangChain tools for tracking and adjustment operations
+            List: List of LangChain tools for tracking operations
         """
         # Create closures to pass context and db_session to tools
         context = self.context
@@ -417,6 +374,8 @@ Available Tools:
 - get_workout_adherence: Calculate adherence statistics for specified period
 - get_progress_metrics: Retrieve weight, measurements, and tracked metrics
 - suggest_plan_adjustment: Generate adaptive adjustment suggestions based on patterns
+
+CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.
 
 Core Principles:
 - Life happens - missed workouts are data, not failures

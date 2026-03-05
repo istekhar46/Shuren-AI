@@ -54,14 +54,16 @@ class DietPlanningAgent(BaseOnboardingAgent):
         self.current_plan = None  # Store generated plan for modifications
         self._current_user_id = None  # Store user_id for tool access
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get diet planning specific tools.
         
         Returns:
             List containing generate_meal_plan, save_meal_plan, and modify_meal_plan tools
         """
+        from typing import Dict
         from pydantic import BaseModel, Field
+        from app.services.meal_plan_generator import MealPlan, MealType
         
         # Capture self reference for use in tools
         agent_instance = self
@@ -115,9 +117,14 @@ class DietPlanningAgent(BaseOnboardingAgent):
             """
             try:
                 # Get context from previous agents
-                fitness_level = agent_instance.context.get("fitness_assessment", {}).get("fitness_level", "beginner")
-                primary_goal = agent_instance.context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
-                workout_plan = agent_instance.context.get("workout_planning", {}).get("plan", {})
+                fitness_level = agent_instance.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "beginner")
+                primary_goal = agent_instance.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "general_fitness")
+                goal_category = agent_instance.context.agent_context.get("fitness_assessment", {}).get("goal_category", "general_fitness")
+                weight_kg = float(agent_instance.context.agent_context.get("fitness_assessment", {}).get("weight_kg", 75.0))
+                height_cm = float(agent_instance.context.agent_context.get("fitness_assessment", {}).get("height_cm", 175.0))
+                age = int(agent_instance.context.agent_context.get("fitness_assessment", {}).get("age", 30))
+                gender = agent_instance.context.agent_context.get("fitness_assessment", {}).get("gender", "male")
+                workout_plan = agent_instance.context.agent_context.get("workout_planning", {}).get("plan", {})
                 
                 logger.info(
                     f"Generating meal plan for user {agent_instance._current_user_id}: "
@@ -127,13 +134,17 @@ class DietPlanningAgent(BaseOnboardingAgent):
                 # Generate plan
                 plan = await agent_instance.meal_generator.generate_plan(
                     fitness_level=fitness_level,
-                    primary_goal=primary_goal,
+                    primary_goal=goal_category, # Use strict category for math
                     workout_plan=workout_plan,
                     diet_type=diet_type,
                     allergies=allergies,
                     dislikes=dislikes,
                     meal_frequency=meal_frequency,
-                    meal_prep_level=meal_prep_level
+                    meal_prep_level=meal_prep_level,
+                    weight_kg=weight_kg,
+                    height_cm=height_cm,
+                    age=age,
+                    gender=gender
                 )
                 
                 # Store for potential modifications
@@ -154,10 +165,26 @@ class DietPlanningAgent(BaseOnboardingAgent):
                     "message": "Failed to generate meal plan. Please try again."
                 }
         
-        @tool
+        class MealScheduleItem(BaseModel):
+            meal_type: MealType = Field(description="The generic type of this meal (must strictly be 'breakfast', 'lunch', 'dinner', 'snack', 'pre_workout', or 'post_workout')")
+            time: str = Field(description="Time of the meal in HH:MM format (e.g., '07:00' or '16:00')")
+
+        class SaveMealPlanInput(BaseModel):
+            """Input schema for saving meal plan."""
+            plan_data: MealPlan = Field(
+                description="The exact generated meal plan object to save"
+            )
+            meal_times: List[MealScheduleItem] = Field(
+                description="A list of all scheduled meals and their times. Use multiple objects if there are multiple meals of the same type (like multiple snacks)."
+            )
+            user_approved: bool = Field(
+                description="Must be True to save (safety check)"
+            )
+
+        @tool(args_schema=SaveMealPlanInput)
         async def save_meal_plan(
-            plan_data: dict,
-            meal_times: dict,
+            plan_data: MealPlan,
+            meal_times: List[MealScheduleItem],
             user_approved: bool
         ) -> dict:
             """
@@ -167,14 +194,13 @@ class DietPlanningAgent(BaseOnboardingAgent):
             - "Yes", "Looks good", "Perfect", "I approve", "Let's do it"
             - "Sounds great", "That works", "I'm happy with this"
             
-            You must also collect:
-            - Meal times for each meal (e.g., {"breakfast": "07:00", "lunch": "12:00", "dinner": "19:00"})
-            
+            - Meal times for each meal as a list of types and times.
+
             Do NOT call this tool unless user has clearly approved AND provided meal times.
             
             Args:
                 plan_data: The meal plan dictionary to save
-                meal_times: Dict of meal names to times in HH:MM format (e.g., {"breakfast": "07:00"})
+                meal_times: List of MealScheduleItems
                 user_approved: Must be True to save (safety check)
                 
             Returns:
@@ -187,8 +213,10 @@ class DietPlanningAgent(BaseOnboardingAgent):
                     "message": "Cannot save plan without user approval"
                 }
             
+            actual_plan = plan_data.model_dump() if hasattr(plan_data, "model_dump") else plan_data.dict()
+            meal_frequency = actual_plan.get("meal_frequency")
+            
             # Validate meal times count matches frequency
-            meal_frequency = plan_data.get("meal_frequency", 0)
             if len(meal_times) != meal_frequency:
                 return {
                     "status": "error",
@@ -197,25 +225,42 @@ class DietPlanningAgent(BaseOnboardingAgent):
             
             # Prepare data with metadata and schedule
             diet_data = {
-                "plan": plan_data,
-                "schedule": meal_times,
+                "diet_type": agent_instance.context.agent_context.get("diet_type") or actual_plan.get("diet_type", "omnivore"),
+                "plan": actual_plan,
+                "schedule": [item.model_dump() if hasattr(item, "model_dump") else item.dict() for item in meal_times],
                 "user_approved": True,
                 "completed_at": datetime.utcnow().isoformat()
             }
             
             # Save to context and mark step 3 complete, advance to step 4
             try:
-                from sqlalchemy import update
+                from sqlalchemy import select, update
                 from app.models.onboarding import OnboardingState
+                
+                # Fetch existing state to manually deep merge to avoid JSONB op(||) wipeout
+                stmt_select = select(OnboardingState).where(OnboardingState.user_id == agent_instance._current_user_id)
+                result = await agent_instance.db.execute(stmt_select)
+                state = result.scalars().first()
+                if not state:
+                    return {"status": "error", "message": "Onboarding state not found"}
+                    
+                agent_context = state.agent_context or {}
+                existing_diet_planning = agent_context.get("diet_planning", {})
+                
+                # Safely merge
+                if isinstance(existing_diet_planning, dict):
+                    merged_diet_planning = {**existing_diet_planning, **diet_data}
+                else:
+                    merged_diet_planning = diet_data
+                    
+                agent_context["diet_planning"] = merged_diet_planning
                 
                 # Update onboarding state with new data
                 stmt = (
                     update(OnboardingState)
                     .where(OnboardingState.user_id == agent_instance._current_user_id)
                     .values(
-                        agent_context=OnboardingState.agent_context.op('||')(
-                            {"diet_planning": diet_data}
-                        ),
+                        agent_context=agent_context,
                         step_3_complete=True,
                         current_step=4,
                         current_agent="scheduling"
@@ -318,6 +363,18 @@ class DietPlanningAgent(BaseOnboardingAgent):
         # Store user_id for tool access
         self._current_user_id = user_id
         
+        # Build chat history from context
+        from langchain_core.messages import HumanMessage, AIMessage
+        chat_history = []
+        for msg in self.context.conversation_history[-15:]:
+            try:
+                if msg["role"] == "user":
+                    chat_history.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    chat_history.append(AIMessage(content=msg["content"]))
+            except (KeyError, TypeError):
+                continue
+        
         # Build prompt with context from previous agents
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.get_system_prompt()),
@@ -341,10 +398,10 @@ class DietPlanningAgent(BaseOnboardingAgent):
             handle_parsing_errors=True
         )
         
-        # Execute agent
+        # Execute agent with actual conversation history
         result = await agent_executor.ainvoke({
             "input": message,
-            "chat_history": []  # Conversation history is included via _build_messages in stream_response
+            "chat_history": chat_history
         })
         
         # Check if step is complete
@@ -496,7 +553,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
                 if content:
                     yield content
     
-    def get_system_prompt(self) -> str:
+    def _get_agent_system_prompt(self) -> str:
         """
         Get system prompt for diet planning agent with context from previous steps.
         
@@ -571,8 +628,8 @@ Meal Time Collection:
 - Ask for time for each meal in the plan (e.g., breakfast, lunch, dinner)
 - Accept times in various formats (7am, 07:00, 7:00 AM)
 - Convert to HH:MM format (24-hour)
-- Example: "What time do you usually eat breakfast? And lunch? And dinner?"
-- Only call save_meal_plan when you have ALL meal times
+- Example: "What time do you usually eat breakfast? And lunch? And your two snacks?"
+- Only call save_meal_plan when you have ALL meal times mapped correctly in a list to their Enum Types (e.g., two elements with meal_type='snack')
 
 Modification Handling:
 - Extract what user wants to change (calories, protein, meal frequency, etc.)
