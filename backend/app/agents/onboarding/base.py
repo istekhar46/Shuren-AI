@@ -169,8 +169,61 @@ class BaseOnboardingAgent(ABC):
         """
         pass
     
-    @abstractmethod
+    def get_common_tools(self) -> List:
+        """
+        Get the list of common tools available to all onboarding agents.
+        
+        This includes the `get_current_datetime` tool which returns
+        the current system time, essential for time-sensitive operations.
+        
+        Returns:
+            List of LangChain tools available to all agents
+        """
+        from langchain_core.tools import tool
+        @tool
+        def get_current_datetime() -> str:
+            """Get the current date, time, and day of the week.
+            
+            Returns:
+                JSON string with the current datetime, date, day of week, and time.
+            """
+            from datetime import datetime
+            
+            now = datetime.now()
+            
+            # Map Python weekday() to 0=Monday, ... 6=Sunday
+            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            day_of_week_num = now.weekday()
+            
+            import json
+            return json.dumps({
+                "success": True,
+                "data": {
+                    "datetime": now.isoformat(),
+                    "date": now.strftime("%Y-%m-%d"),
+                    "time": now.strftime("%H:%M:%S"),
+                    "day_of_week": day_names[day_of_week_num],
+                    "day_of_week_num": day_of_week_num
+                },
+                "metadata": {
+                    "timestamp": now.isoformat(),
+                    "source": "common_tools"
+                }
+            })
+
+        return [get_current_datetime]
+
     def get_tools(self) -> List:
+        """
+        Get the combined list of common tools and agent-specific tools.
+        
+        Returns:
+            List of LangChain tools available to this agent
+        """
+        return self.get_common_tools() + self._get_agent_tools()
+        
+    @abstractmethod
+    def _get_agent_tools(self) -> List:
         """
         Get agent-specific tools for LLM function calling.
         
@@ -182,10 +235,21 @@ class BaseOnboardingAgent(ABC):
         """
         pass
     
-    @abstractmethod
     def get_system_prompt(self) -> str:
         """
-        Get the system prompt for this agent.
+        Get the complete system prompt for this agent, including common instructions.
+        
+        Returns:
+            System prompt string defining agent role and behavior plus common tools instructions
+        """
+        prompt = self._get_agent_system_prompt()
+        prompt += "\n\nYou also have access to the 'get_current_datetime' tool. Use it whenever you need the precise current time, date, or day of week to answer temporal aspects of the user's query."
+        return prompt
+        
+    @abstractmethod
+    def _get_agent_system_prompt(self) -> str:
+        """
+        Get the specific system prompt for this agent.
         
         Each specialized agent defines its own system prompt that includes
         domain expertise, role definition, and behavioral guidelines.

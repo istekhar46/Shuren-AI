@@ -18,9 +18,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
-from app.agents.onboarding_tools import call_onboarding_step
+from app.agents.tools.onboarding_tools import call_onboarding_step
 from app.models.workout import WorkoutPlan, WorkoutDay, WorkoutExercise, ExerciseLibrary
 from app.models.preferences import WorkoutSchedule
+from app.services.workout_service import WorkoutService
 from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
@@ -99,97 +100,8 @@ class WorkoutPlannerAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Get tools for this agent
-        tools = self.get_tools()
-        llm_with_tools = self.llm.bind_tools(tools)
-        
-        # First pass to capture the response (might be streaming text or tool calls)
-        response_message = None
-        has_tool_calls = False
-        
-        async for chunk in llm_with_tools.astream(messages):
-            # Accumulate chunk
-            if response_message is None:
-                response_message = chunk
-            else:
-                response_message += chunk
-                
-            # Yield content if it exists
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-                
-            # Check if this chunk has tool calls
-            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                has_tool_calls = True
-        
-        # If tools were called, execute them and stream the final answer
-        if has_tool_calls and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
-            # We must append the full AIMessage with tool calls to history
-            messages.append(response_message)
-            
-            from langchain_core.messages import ToolMessage
-            for tool_call in response_message.tool_calls:
-                # Find and execute the tool
-                for t in tools:
-                    if t.name == tool_call['name']:
-                        try:
-                            tool_result = await t.ainvoke(tool_call['args'])
-                            messages.append(ToolMessage(
-                                content=str(tool_result),
-                                tool_call_id=tool_call['id']
-                            ))
-                        except Exception as e:
-                            logger.error(f"Tool execution error: {e}")
-                            messages.append(ToolMessage(
-                                content=f"Error executing tool: {e}",
-                                tool_call_id=tool_call['id']
-                            ))
-                            
-            # Now stream the final response based on tool results
-            async for chunk in self.llm.astream(messages):
-                if hasattr(chunk, 'content') and chunk.content:
-                    yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the workout planner agent.
         
@@ -201,118 +113,52 @@ class WorkoutPlannerAgent(BaseAgent):
         db_session = self.db_session
         
         @tool
-        async def get_current_workout() -> str:
-            """Get today's workout plan for the user.
+        async def get_workout_plan(target_date: str = None) -> str:
+            """Get the workout plan for the user for a specific date.
+            
+            Args:
+                target_date: Optional ISO format date string (e.g., '2023-12-25'). If not provided, returns today's plan.
             
             Returns:
                 JSON string with workout details including exercises, sets, reps, and rest periods
             """
             try:
-                if not db_session:
-                    return json.dumps({
-                        "success": False,
-                        "error": "Database session not available"
-                    })
-                
-                # Get today's day of week (0=Monday, 6=Sunday)
-                today = date.today().weekday()
-                
-                # Query workout schedule for today
-                stmt = select(WorkoutSchedule).where(
-                    WorkoutSchedule.day_of_week == today
-                ).join(
-                    WorkoutSchedule.profile
-                ).where(
-                    WorkoutSchedule.profile.has(user_id=context.user_id)
+                result = await WorkoutService.get_workout_dict_for_date(
+                    user_id=context.user_id,
+                    db_session=db_session,
+                    target_date=target_date
                 )
                 
-                result = await db_session.execute(stmt)
-                schedule = result.scalar_one_or_none()
-                
-                if not schedule:
+                if result is None:
                     return json.dumps({
                         "success": True,
                         "data": {
-                            "message": "No workout scheduled for today. It's a rest day!"
+                            "message": f"No workout scheduled for {target_date or 'today'}. It's a rest day!"
                         }
                     })
-                
-                # Get workout plan for user
-                # stmt = select(WorkoutPlan).where(
-                #     WorkoutPlan.user_id == context.user_id,
-                #     WorkoutPlan.deleted_at.is_(None)
-                # )
-                stmt = select(WorkoutPlan).where(
-                    WorkoutPlan.user_id == context.user_id,
-                    WorkoutPlan.deleted_at.is_(None)
-                ).options(
-                    selectinload(WorkoutPlan.workout_days).selectinload(WorkoutDay.exercises).selectinload(WorkoutExercise.exercise_library)
-                )
-                
-                result = await db_session.execute(stmt)
-                workout_plan = result.scalar_one_or_none()
-                
-                if not workout_plan:
-                    return json.dumps({
-                        "success": False,
-                        "error": "No workout plan found for user"
-                    })
-                
-                # Get workout day matching today
-                # Map day_of_week to day_number (assuming 1-based day_number)
-                day_number = today + 1
-                
-                workout_day = None
-                for day in workout_plan.workout_days:
-                    if day.day_number == day_number and day.deleted_at is None:
-                        workout_day = day
-                        break
-                
-                if not workout_day:
-                    return json.dumps({
-                        "success": True,
-                        "data": {
-                            "message": "No specific workout programmed for today"
-                        }
-                    })
-                
-                # Build exercise list
-                exercises = []
-                for exercise in workout_day.exercises:
-                    if exercise.deleted_at is None:
-                        exercise_data = {
-                            "name": exercise.exercise_library.exercise_name,
-                            "sets": exercise.sets,
-                            "reps": exercise.reps_target or f"{exercise.reps_min}-{exercise.reps_max}",
-                            "weight_kg": float(exercise.weight_kg) if exercise.weight_kg else None,
-                            "rest_seconds": exercise.rest_seconds,
-                            "notes": exercise.notes
-                        }
-                        exercises.append(exercise_data)
                 
                 return json.dumps({
                     "success": True,
-                    "data": {
-                        "day_name": workout_day.day_name,
-                        "workout_type": workout_day.workout_type,
-                        "muscle_groups": workout_day.muscle_groups,
-                        "estimated_duration_minutes": workout_day.estimated_duration_minutes,
-                        "exercises": exercises
-                    },
+                    "data": result,
                     "metadata": {
                         "timestamp": datetime.utcnow().isoformat(),
                         "source": "workout_planner_agent"
                     }
                 })
                 
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
             except SQLAlchemyError as e:
-                logger.error(f"Database error in get_current_workout: {e}")
+                logger.error(f"Database error in get_workout_plan: {e}")
                 return json.dumps({
                     "success": False,
                     "error": "Unable to retrieve workout plan. Please try again."
                 })
             except Exception as e:
-                logger.error(f"Unexpected error in get_current_workout: {e}")
+                logger.error(f"Unexpected error in get_workout_plan: {e}")
                 return json.dumps({
                     "success": False,
                     "error": "An unexpected error occurred. Please try again."
@@ -548,7 +394,7 @@ class WorkoutPlannerAgent(BaseAgent):
             return json.dumps(result)
         
         return [
-            get_current_workout,
+            get_workout_plan,
             show_exercise_demo,
             log_set_completion,
             suggest_workout_modification,
@@ -594,8 +440,15 @@ Guidelines:
 - Promote sustainable, long-term fitness habits
 
 Available Tools:
-- get_current_workout: Retrieve today's workout plan
+- get_workout_plan: Retrieve the workout plan for any given date
+- research: Search for evidence-based exercise science, muscle group targeting, and training research. Always use this BEFORE suggesting major modifications or answering training questions.
 - show_exercise_demo: Get exercise demonstration GIFs and instructions
+- get_current_datetime: Get the current date and time (use this to determine the date for future/past requests)
+
+When to Use Tools:
+- Use research when you need to verify training methods, search for exercise variations, or find evidence-based answers to fitness questions.
+- Use get_workout_plan when users ask about a specific day's workout, exercises, or training plan. Always use get_current_datetime first if the user refers to "tomorrow", "yesterday", or a specific day of the week to calculate the correct target_date.
+- Use show_exercise_demo when users ask how to perform a specific exercise or need form guidance
 - log_set_completion: Record completed sets with reps and weight
 - suggest_workout_modification: Generate workout adjustments based on needs
 

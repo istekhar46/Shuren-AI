@@ -38,7 +38,7 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
     
     agent_type = "fitness_assessment"
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get fitness assessment specific tools.
         
@@ -156,7 +156,7 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
                 if secondary_goal_lower not in valid_categories: # Use valid_categories for secondary goal too
                     return {
                         "status": "error",
-                        "message": f"Invalid secondary_goal. Must be one of: {valid_goals}"
+                        "message": f"Invalid secondary_goal. Must be one of: {valid_categories}"
                     }
             else:
                 secondary_goal_lower = None
@@ -389,7 +389,7 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
                 if content:
                     yield content
     
-    def get_system_prompt(self) -> str:
+    def _get_agent_system_prompt(self) -> str:
         """
         Get system prompt for fitness assessment and goal setting.
         

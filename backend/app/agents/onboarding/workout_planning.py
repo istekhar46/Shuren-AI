@@ -54,7 +54,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         self.current_plan = None  # Store generated plan for modifications
         self._current_user_id = None  # Store user_id for tool access
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get workout planning specific tools.
         
@@ -542,7 +542,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                 if content:
                     yield content
     
-    def get_system_prompt(self) -> str:
+    def _get_agent_system_prompt(self) -> str:
         """
         Get system prompt for workout planning agent with context from previous steps.
         

@@ -551,7 +551,10 @@ async def chat_onboarding_stream(
                 history_stmt = (
                     sql_select(ConversationMessage)
                     .where(ConversationMessage.user_id == current_user.id)
-                    .order_by(ConversationMessage.created_at.desc())
+                    .order_by(
+                        ConversationMessage.created_at.desc(),
+                        ConversationMessage.role.asc()
+                    )
                     .limit(20)
                 )
                 history_result = await db.execute(history_stmt)
@@ -1012,13 +1015,17 @@ async def chat_stream(
             
             # Stream response chunks via agent.stream_response()
             try:
-                async for chunk in agent.stream_response(message):
-                    full_response += chunk
-                    chunk_count += 1
+                async for res in agent.stream_response(message):
                     last_chunk_time = time.time()
                     
-                    # Send each chunk as SSE data event with JSON payload
-                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                    if isinstance(res, dict):
+                        # Status updates or tool call signals
+                        yield f"data: {json.dumps(res)}\n\n"
+                    else:
+                        # Regular text chunks
+                        full_response += res
+                        chunk_count += 1
+                        yield f"data: {json.dumps({'chunk': res})}\n\n"
                     
                     # Check for timeout (30 seconds of no chunks)
                     if time.time() - last_chunk_time > 30:
@@ -1262,7 +1269,10 @@ async def get_chat_history(
         stmt = (
             select(ConversationMessage)
             .where(ConversationMessage.user_id == user_id)
-            .order_by(ConversationMessage.created_at.desc())
+            .order_by(
+                ConversationMessage.created_at.desc(),
+                ConversationMessage.role.asc()  # Tie-breaker: 'assistant' comes before 'user' in DESC logic
+            )
             .limit(limit)
         )
         
@@ -1400,7 +1410,10 @@ async def get_onboarding_chat_history(
         stmt = (
             select(ConversationMessage)
             .where(ConversationMessage.user_id == user_id)
-            .order_by(ConversationMessage.created_at.desc())
+            .order_by(
+                ConversationMessage.created_at.desc(),
+                ConversationMessage.role.asc()  # Tie-breaker for identical transaction timestamps
+            )
             .limit(limit)
         )
         

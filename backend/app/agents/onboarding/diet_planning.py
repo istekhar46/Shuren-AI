@@ -54,7 +54,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
         self.current_plan = None  # Store generated plan for modifications
         self._current_user_id = None  # Store user_id for tool access
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get diet planning specific tools.
         
@@ -553,7 +553,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
                 if content:
                     yield content
     
-    def get_system_prompt(self) -> str:
+    def _get_agent_system_prompt(self) -> str:
         """
         Get system prompt for diet planning agent with context from previous steps.
         

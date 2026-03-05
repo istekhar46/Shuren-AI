@@ -166,18 +166,21 @@ class MealService:
         return await self.get_meal_schedule(user_id)
         
     @staticmethod
-    async def get_today_meal_plan(
+    async def get_meal_plan_for_date(
         user_id: UUID,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        target_date: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
-        """Get today's meal plan for a user.
+        """Get the meal plan for a specific date (defaults to today).
         
         Queries MealTemplate, TemplateMeal, Dish, MealSchedule, and MealPlan tables
-        to build a complete meal plan for today with nutritional information.
+        to build a complete meal plan for the given date with nutritional information.
         
         Args:
             user_id: User's UUID
             db_session: Database session
+            target_date: Optional ISO format date string (YYYY-MM-DD). If None, uses today.
+            
             
         Returns:
             Dict with meal details or None if no meal plan configured
@@ -211,8 +214,17 @@ class MealService:
         if not profile.meal_templates:
             return None
         
-        # Get current day of week (0=Monday, 6=Sunday)
-        current_day = datetime.now().weekday()
+        # Get target day of week (0=Monday, 6=Sunday)
+        if target_date:
+            try:
+                # Parse to handle either ISO format or just YYYY-MM-DD
+                dt = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
+                current_day = dt.weekday()
+            except ValueError:
+                raise ValueError(f"Invalid date format: {target_date}. Please use ISO format (e.g., YYYY-MM-DD).")
+        else:
+            current_day = datetime.now().weekday()
+        
         
         # Find active meal template
         active_template = None

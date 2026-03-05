@@ -38,7 +38,7 @@ class SchedulingAgent(BaseOnboardingAgent):
     
     agent_type = "scheduling"
     
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get scheduling-specific tools.
         
@@ -50,7 +50,7 @@ class SchedulingAgent(BaseOnboardingAgent):
         # They will be bound in process_message when user_id is available
         return []
     
-    def get_system_prompt(self) -> str:
+    def _get_agent_system_prompt(self) -> str:
         """
         Get system prompt for scheduling with context from previous agents.
         

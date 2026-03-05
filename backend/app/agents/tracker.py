@@ -95,102 +95,13 @@ class TrackerAgent(BaseAgent):
             }
         )
     
-    async def process_voice(self, query: str) -> str:
-        """
-        Process a voice query and return a concise response.
-        
-        Builds messages with limited conversation history for low-latency,
-        calls the LLM without tools, and returns a plain string suitable
-        for text-to-speech (under 75 words).
-        
-        Args:
-            query: User's voice query (transcribed to text)
-            
-        Returns:
-            str: Concise response text suitable for text-to-speech
-        """
-        # Build messages with limited history for voice mode
-        messages = self._build_messages(query, voice_mode=True)
-        
-        # Call LLM without tools for faster response
-        response = await self.llm.ainvoke(messages)
-        
-        # Return plain string for voice
-        return response.content
     
-    async def stream_response(self, query: str) -> AsyncIterator[str]:
-        """
-        Stream response chunks for real-time display.
-        
-        Builds messages and uses the LLM's streaming capability to yield
-        response chunks as they are generated.
-        
-        Args:
-            query: User's query
-            
-        Yields:
-            str: Response chunks as they are generated
-        """
-        # Build messages
-        messages = self._build_messages(query, voice_mode=False)
-        
-        # Get tools for this agent
-        tools = self.get_tools()
-        llm_with_tools = self.llm.bind_tools(tools)
-        
-        # First pass to capture the response (might be streaming text or tool calls)
-        response_message = None
-        has_tool_calls = False
-        
-        async for chunk in llm_with_tools.astream(messages):
-            # Accumulate chunk
-            if response_message is None:
-                response_message = chunk
-            else:
-                response_message += chunk
-                
-            # Yield content if it exists
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-                
-            # Check if this chunk has tool calls
-            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                has_tool_calls = True
-        
-        # If tools were called, execute them and stream the final answer
-        if has_tool_calls and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
-            # We must append the full AIMessage with tool calls to history
-            messages.append(response_message)
-            
-            from langchain_core.messages import ToolMessage
-            for tool_call in response_message.tool_calls:
-                # Find and execute the tool
-                for t in tools:
-                    if t.name == tool_call['name']:
-                        try:
-                            tool_result = await t.ainvoke(tool_call['args'])
-                            messages.append(ToolMessage(
-                                content=str(tool_result),
-                                tool_call_id=tool_call['id']
-                            ))
-                        except Exception as e:
-                            logger.error(f"Tool execution error: {e}")
-                            messages.append(ToolMessage(
-                                content=f"Error executing tool: {e}",
-                                tool_call_id=tool_call['id']
-                            ))
-                            
-            # Now stream the final response based on tool results
-            async for chunk in self.llm.astream(messages):
-                if hasattr(chunk, 'content') and chunk.content:
-                    yield chunk.content
-    
-    def get_tools(self) -> List:
+    def _get_agent_tools(self) -> List:
         """
         Get the list of tools available to the tracker agent.
         
         Returns:
-            List: List of LangChain tools for tracking and adjustment operations
+            List: List of LangChain tools for tracking operations
         """
         # Create closures to pass context and db_session to tools
         context = self.context

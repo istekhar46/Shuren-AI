@@ -526,11 +526,12 @@ class WorkoutService:
         return workout_schedules
     
     @staticmethod
-    async def get_today_workout_dict(
+    async def get_workout_dict_for_date(
         user_id: UUID,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        target_date: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
-        """Get today's workout plan for a user.
+        """Get the workout plan for a specific date (defaults to today).
         
         Static method for use by general agent delegation tools.
         Returns dict format matching design spec.
@@ -538,6 +539,7 @@ class WorkoutService:
         Args:
             user_id: User's UUID
             db_session: Database session
+            target_date: Optional ISO format date string (YYYY-MM-DD). If None, uses today.
             
         Returns:
             Dict with workout details or None if no workout scheduled
@@ -559,8 +561,16 @@ class WorkoutService:
         if not profile:
             raise ValueError(f"User profile not found for user_id: {user_id}")
         
-        # Get current day of week (0=Monday, 6=Sunday)
-        current_day = datetime.now().weekday()
+        # Get target day of week (0=Monday, 6=Sunday)
+        if target_date:
+            try:
+                # Parse to handle either ISO format or just YYYY-MM-DD
+                dt = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
+                current_day = dt.weekday()
+            except ValueError:
+                raise ValueError(f"Invalid date format: {target_date}. Please use ISO format (e.g., YYYY-MM-DD).")
+        else:
+            current_day = datetime.now().weekday()
         
         # Check if there's a workout scheduled for today
         workout_scheduled_today = False
