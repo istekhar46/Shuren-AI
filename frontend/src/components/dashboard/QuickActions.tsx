@@ -2,11 +2,13 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../../pages/DashboardPage.css';
 
+import { FaRobot, FaDumbbell } from "react-icons/fa";
+
 const actions = [
   {
-    title: 'Chat with AI',
+    title: 'Chat with Shuren',
     description: 'Get personalized guidance from your coach',
-    icon: '💬',
+    icon: <FaRobot />,
     accent: 'violet',
     iconBg: 'rgba(167,139,250,0.12)',
     path: '/chat',
@@ -22,7 +24,7 @@ const actions = [
   {
     title: 'Workouts',
     description: 'Track exercises and follow your plan',
-    icon: '💪',
+    icon: <FaDumbbell />,
     accent: 'emerald',
     iconBg: 'rgba(52,211,153,0.12)',
     path: '/workouts',

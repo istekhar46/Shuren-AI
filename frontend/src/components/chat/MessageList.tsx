@@ -66,6 +66,20 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
               </span>
             </div>
             <div className="text-[15px] leading-relaxed wrap-break-word markdown-content">
+              {message.status === 'searching' && (
+                <div className="flex items-center gap-2 mt-1 mb-2 px-3 py-1.5 rounded-md border" 
+                  style={{ 
+                    background: 'rgba(167, 139, 250, 0.08)', 
+                    borderColor: 'rgba(167, 139, 250, 0.2)' 
+                  }}>
+                  <div className="flex items-center gap-1.5 h-4">
+                    <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '300ms' }} />
+                  </div>
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-violet)' }}>Searching web...</span>
+                </div>
+              )}
               {message.content ? (
                 <>
                   <ReactMarkdown
@@ -88,7 +102,7 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
                   >
                     {message.content}
                   </ReactMarkdown>
-                  {message.isStreaming && (
+                  {message.isStreaming && !message.status && (
                     <span
                       className="inline-block ml-1 w-2 h-4 animate-pulse"
                       style={{ background: 'var(--color-violet)' }}
@@ -99,7 +113,7 @@ export const MessageList = ({ messages, onRetry }: MessageListProps) => {
                     </span>
                   )}
                 </>
-              ) : message.isStreaming ? (
+              ) : message.isStreaming && !message.status ? (
                 <div className="flex items-center gap-1.5 h-6 px-1 py-1" aria-label="Agent is typing" role="status">
                   <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '0ms' }} />
                   <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-violet)', animationDelay: '150ms' }} />

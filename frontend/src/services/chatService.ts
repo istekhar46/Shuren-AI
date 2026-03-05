@@ -6,6 +6,7 @@ import type { ChatResponse, ChatHistoryResponse, ChatServiceError } from '../typ
  */
 interface StreamCallbacks {
   onChunk: (chunk: string) => void;
+  onStatus?: (status: string, metadata?: any) => void;
   onComplete: (agentType?: string) => void;
   onError: (error: string) => void;
 }
@@ -180,6 +181,8 @@ class ChatService {
           callbacks.onComplete(data.agent_type);
           this.activeStream?.close();
           this.activeStream = null;
+        } else if (data.status) {
+          callbacks.onStatus?.(data.status, data);
         } else if (data.chunk) {
           callbacks.onChunk(data.chunk);
         }

@@ -133,6 +133,7 @@ export interface ChatMessage {
   agentType: AgentType;
   timestamp: string;
   isStreaming?: boolean;
+  status?: string;
   error?: string;
 }
 
