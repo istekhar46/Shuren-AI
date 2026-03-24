@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ProfileLockedException
 from app.models.preferences import (
     DietaryPreference,
     FitnessGoal,
@@ -108,12 +107,6 @@ class ProfileService:
         # Get current profile
         profile = await self.get_profile(user_id)
         
-        # Check if profile is locked
-        if profile.is_locked and "unlock" not in updates:
-            raise ProfileLockedException(
-                detail="Profile is locked. Provide explicit unlock or reason to modify."
-            )
-        
         try:
             # Create profile version before modification
             await self._create_profile_version(profile, reason)
@@ -121,13 +114,6 @@ class ProfileService:
             # Apply updates to profile
             if "fitness_level" in updates:
                 profile.fitness_level = updates["fitness_level"]
-            
-            # Handle is_locked status
-            if "is_locked" in updates:
-                profile.is_locked = updates["is_locked"]
-            elif "unlock" in updates and updates["unlock"]:
-                # Explicit unlock request
-                profile.is_locked = False
             
             # Commit changes
             await self.db.commit()
@@ -163,57 +149,7 @@ class ProfileService:
                 detail=f"Failed to update profile: {str(e)}"
             )
     
-    async def lock_profile(self, user_id: UUID) -> UserProfile:
-        """Lock user profile to prevent modifications.
-        
-        Sets is_locked=True on the user profile.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            Updated UserProfile with all relationships loaded
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        # Get current profile
-        profile = await self.get_profile(user_id)
-        
-        try:
-            # Set is_locked to True
-            profile.is_locked = True
-            
-            # Commit changes
-            await self.db.commit()
-            
-            # Reload profile with all relationships
-            await self.db.refresh(profile)
-            result = await self.db.execute(
-                select(UserProfile)
-                .where(UserProfile.id == profile.id)
-                .options(
-                    selectinload(UserProfile.fitness_goals),
-                    selectinload(UserProfile.physical_constraints),
-                    selectinload(UserProfile.dietary_preferences),
-                    selectinload(UserProfile.meal_plan),
-                    selectinload(UserProfile.meal_schedules),
-                    selectinload(UserProfile.workout_schedules),
-                    selectinload(UserProfile.hydration_preferences),
-                    selectinload(UserProfile.lifestyle_baseline),
-                    selectinload(UserProfile.versions)
-                )
-            )
-            profile = result.scalar_one()
-            
-            return profile
-            
-        except Exception as e:
-            await self.db.rollback()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to lock profile: {str(e)}"
-            )
+
     
     async def _create_profile_version(
         self,
@@ -284,7 +220,6 @@ class ProfileService:
         
         snapshot = {
             "fitness_level": profile.fitness_level,
-            "is_locked": profile.is_locked,
             "fitness_goals": [
                 {
                     "goal_type": goal.goal_type,

@@ -76,21 +76,5 @@ export const mealService = {
     // For now, return empty array to prevent build errors
     console.warn('searchDishes not yet implemented in backend');
     return [];
-  },
-
-  /**
-   * Generate shopping list for date range
-   * @param startDate - Start date (YYYY-MM-DD)
-   * @param endDate - End date (YYYY-MM-DD)
-   * @returns Shopping list with ingredients
-   */
-  async generateShoppingList(_startDate: string, _endDate: string): Promise<any> {
-    // TODO: Implement when backend endpoint is available
-    // For now, return empty shopping list to prevent build errors
-    console.warn('generateShoppingList not yet implemented in backend');
-    return {
-      items: [],
-      generatedAt: new Date().toISOString(),
-    };
-  },
+  }
 };

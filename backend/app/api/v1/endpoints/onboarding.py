@@ -148,7 +148,7 @@ async def complete_onboarding(
         
     Returns:
         OnboardingCompleteResponse with profile_id, user_id, fitness_level,
-        is_locked, onboarding_complete, and success message
+        onboarding_complete, and success message
         
     Raises:
         HTTPException(400): If agent data is missing or incomplete
@@ -241,7 +241,6 @@ async def complete_onboarding(
             profile_id=str(profile.id),
             user_id=str(current_user.id),
             fitness_level=profile.fitness_level,
-            is_locked=profile.is_locked,
             onboarding_complete=True,
             message="Onboarding completed successfully! Your personalized fitness profile is ready."
         )

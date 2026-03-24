@@ -281,7 +281,8 @@ class BaseAgent(ABC):
             from langchain_core.messages import ToolMessage
             for tool_call in response_message.tool_calls:
                 # Signal the tool execution to the frontend
-                yield {"status": "searching", "tool": tool_call['name'], "args": tool_call['args']}
+                status_to_emit = "searching" if tool_call['name'] == "research" else "using_tool"
+                yield {"status": status_to_emit, "tool": tool_call['name'], "args": tool_call['args']}
                 
                 # Find and execute the tool
                 tool_found = False

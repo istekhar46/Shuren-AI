@@ -211,7 +211,99 @@ class BaseOnboardingAgent(ABC):
                 }
             })
 
-        return [get_current_datetime]
+        tools = [get_current_datetime]
+
+        # Conditional Business Logic for research tool
+        from app.core.config import settings
+        
+        tavily_key = settings.TAVILY_API_KEY
+        pplx_key = settings.PPLX_API_KEY
+
+        if tavily_key or pplx_key:
+            @tool
+            async def research(query: str, provider: str = "auto") -> str:
+                """Research a topic using web search to get evidence-based, up-to-date information.
+
+                Use this tool BEFORE generating workout plans, meal plans, exercise recommendations,
+                or nutritional advice to ensure responses are backed by current research and evidence.
+
+                Args:
+                    query: The research question (be specific for better results).
+                    provider: Search provider - "tavily" for fast factual lookups,
+                              "perplexity" for deep synthesized research with citations,
+                              or "auto" (uses best available).
+
+                Returns:
+                    JSON string with research results including content and source citations.
+                """
+                # Local imports for tool execution
+                import json
+                from datetime import datetime
+                
+                # Resolve provider
+                target = provider.lower()
+                if target == "auto":
+                    target = "tavily" if bool(tavily_key) else "perplexity"
+                
+                logger.info(f"Research tool invoked: query='{query}', selected_provider='{target}'")
+                
+                if target == "tavily":
+                    if not bool(tavily_key):
+                        logger.warning("Research attempt failed: Tavily API key missing")
+                        return json.dumps({"success": False, "error": "Tavily provider not configured in .env"})
+                    try:
+                        from langchain_tavily import TavilySearch
+                        from langchain_tavily.tavily_search import TavilySearchAPIWrapper
+                        
+                        logger.debug(f"Executing Tavily search for: {query}")
+                        wrapper = TavilySearchAPIWrapper(tavily_api_key=tavily_key)
+                        tavily = TavilySearch(api_wrapper=wrapper, max_results=5)
+                        results = await tavily.ainvoke(query)
+                        
+                        result_count = len(results) if isinstance(results, list) else 1
+                        logger.info(f"Tavily search successful: {result_count} results found for query='{query}'")
+                        
+                        return json.dumps({
+                            "success": True,
+                            "provider": "tavily",
+                            "data": results,
+                            "metadata": {"timestamp": datetime.utcnow().isoformat(), "query": query}
+                        })
+                    except Exception as e:
+                        logger.error(f"Tavily search exception for query='{query}': {str(e)}", exc_info=True)
+                        return json.dumps({"success": False, "error": f"Tavily search failed: {str(e)}"})
+
+                elif target == "perplexity":
+                    if not bool(pplx_key):
+                        logger.warning("Research attempt failed: Perplexity API key missing")
+                        return json.dumps({"success": False, "error": "Perplexity provider not configured in .env"})
+                    try:
+                        from langchain_perplexity import ChatPerplexity
+                        
+                        logger.debug(f"Executing Perplexity research for: {query}")
+                        chat = ChatPerplexity(model="sonar", temperature=0.3, pplx_api_key=pplx_key)
+                        response = await chat.ainvoke(query)
+                        
+                        logger.info(f"Perplexity research successful: response length={len(response.content)} for query='{query}'")
+                        
+                        return json.dumps({
+                            "success": True,
+                            "provider": "perplexity",
+                            "data": {
+                                "answer": response.content,
+                                "citations": response.additional_kwargs.get("search_results", [])
+                            },
+                            "metadata": {"timestamp": datetime.utcnow().isoformat(), "query": query}
+                        })
+                    except Exception as e:
+                        logger.error(f"Perplexity research exception for query='{query}': {str(e)}", exc_info=True)
+                        return json.dumps({"success": False, "error": f"Perplexity research failed: {str(e)}"})
+                
+                return json.dumps({"success": False, "error": f"Invalid provider '{provider}'. Use 'tavily', 'perplexity', or 'auto'."})
+
+            tools.append(research)
+
+        return tools
 
     def get_tools(self) -> List:
         """

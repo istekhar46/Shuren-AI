@@ -30,7 +30,7 @@ from app.models.preferences import (
     MealPlan,
     MealSchedule
 )
-from app.models.dish import Dish, Ingredient, DishIngredient
+from app.models.dish import Dish
 from app.models.meal_template import MealTemplate, TemplateMeal
 
 

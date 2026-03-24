@@ -150,7 +150,7 @@ class TestMealServiceDelegationMethods:
     
     async def test_get_recipe_details_with_valid_dish(self, db_session):
         """Test getting recipe details when dish exists."""
-        from app.models.dish import Dish, Ingredient, DishIngredient
+        from app.models.dish import Dish
         
         # Create dish
         dish = Dish(

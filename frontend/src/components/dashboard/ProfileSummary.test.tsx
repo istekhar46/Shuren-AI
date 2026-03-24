@@ -45,7 +45,6 @@ describe('ProfileSummary', () => {
       hydrationReminders: true,
       motivationalMessages: false
     },
-    isLocked: true,
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z'
   };
@@ -79,17 +78,6 @@ describe('ProfileSummary', () => {
     expect(screen.getByText('Medium')).toBeInTheDocument();
   });
 
-  it('displays locked profile status', () => {
-    render(<ProfileSummary profile={mockProfile} />);
-    expect(screen.getByText('Profile Status:')).toBeInTheDocument();
-    expect(screen.getByText('Locked')).toBeInTheDocument();
-  });
-
-  it('displays unlocked profile status when not locked', () => {
-    const unlockedProfile = { ...mockProfile, isLocked: false };
-    render(<ProfileSummary profile={unlockedProfile} />);
-    expect(screen.getByText('Unlocked')).toBeInTheDocument();
-  });
 
   it('formats beginner fitness level correctly', () => {
     const beginnerProfile = { ...mockProfile, fitnessLevel: 'beginner' as const };

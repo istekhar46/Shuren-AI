@@ -437,24 +437,15 @@ async def regenerate_meal_template(
         }
         ```
     """
-    from app.core.exceptions import ProfileLockedException
-    
     # Initialize meal template service
     service = MealTemplateService(db)
     profile = current_user.profile
     
     # Generate new template (service handles deactivating old one)
-    try:
-        template = await service.generate_template(
-            profile_id=profile.id,
-            preferences=request.preferences
-        )
-    except ProfileLockedException:
-        # Re-raise with proper error code
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Profile is locked. Unlock profile before making modifications."
-        )
+    template = await service.generate_template(
+        profile_id=profile.id,
+        preferences=request.preferences
+    )
     
     # Transform template to response format
     # Group template meals by day

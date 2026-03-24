@@ -81,7 +81,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
                 description="List of disliked foods to avoid in meal suggestions"
             )
             meal_frequency: int = Field(
-                description="Number of meals per day (2-6)"
+                description="Number of meals per day (2-6). You must determine the optimal number based on research and user's fitness goals, DO NOT ask the user."
             )
             meal_prep_level: str = Field(
                 description="Cooking/prep willingness: low, medium, or high"
@@ -425,7 +425,8 @@ class DietPlanningAgent(BaseOnboardingAgent):
             True if agent_context contains diet_planning data with user_approved=True
         """
         stmt = select(OnboardingState).where(
-            OnboardingState.user_id == user_id
+            OnboardingState.user_id == user_id,
+            OnboardingState.deleted_at.is_(None)
         )
         result = await self.db.execute(stmt)
         state = result.scalars().first()
@@ -474,13 +475,12 @@ class DietPlanningAgent(BaseOnboardingAgent):
         # Define required fields for diet planning
         required_fields = {
             "diet_type": "diet type preference (e.g., balanced, vegetarian, vegan, keto, paleo)",
-            "meal_frequency": "number of meals per day (integer between 3-6)",
             "allergies": "list of food allergies or empty list if none",
             "dislikes": "list of foods user dislikes or empty list if none"
         }
         
         # Extract info from conversation if not already collected
-        if not collected_info or any(field not in collected_info for field in ["diet_type", "meal_frequency"]):
+        if not collected_info or any(field not in collected_info for field in ["diet_type"]):
             logger.info(f"Extracting diet preferences from conversation for user {self.context.user_id}")
             extracted = await self.extract_info_from_conversation(
                 conversation_history or [],
@@ -496,7 +496,7 @@ class DietPlanningAgent(BaseOnboardingAgent):
                 logger.info(f"Saved extracted diet preferences: {extracted}")
         
         # Check what information is still missing
-        missing_fields = [field for field in ["diet_type", "meal_frequency"] 
+        missing_fields = [field for field in ["diet_type"] 
                          if field not in collected_info or collected_info[field] is None]
         
         logger.info(
@@ -561,15 +561,19 @@ class DietPlanningAgent(BaseOnboardingAgent):
             System prompt including fitness level, primary goal, and workout plan summary
         """
         # Get context from previous agents
-        fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
-        primary_goal = self.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "unknown")
+        fitness_data = self.context.agent_context.get("fitness_assessment", {})
+        fitness_level = fitness_data.get("fitness_level", "unknown")
+        primary_goal = fitness_data.get("primary_goal", "unknown")
+        weight_kg = fitness_data.get("weight_kg", "unknown")
+        height_cm = fitness_data.get("height_cm", "unknown")
+        age = fitness_data.get("age", "unknown")
+        gender = fitness_data.get("gender", "unknown")
         workout_plan = self.context.agent_context.get("workout_planning", {}).get("plan", {})
         workout_frequency = workout_plan.get("frequency", "unknown")
         
         # Get collected diet information
         collected_info = self.get_collected_info(self.context.user_id)
         diet_type = collected_info.get("diet_type", "not provided")
-        meal_frequency = collected_info.get("meal_frequency", "not provided")
         allergies = collected_info.get("allergies", "not provided")
         dislikes = collected_info.get("dislikes", "not provided")
         
@@ -578,11 +582,14 @@ class DietPlanningAgent(BaseOnboardingAgent):
 Context from previous steps:
 - Fitness Level: {fitness_level}
 - Primary Goal: {primary_goal}
+- Weight: {weight_kg} kg
+- Height: {height_cm} cm
+- Age: {age}
+- Gender: {gender}
 - Workout Frequency: {workout_frequency} days/week
 
 Already collected diet preferences:
 - Diet Type: {diet_type}
-- Meal Frequency: {meal_frequency} meals/day
 - Allergies: {allergies}
 - Dislikes: {dislikes}
 
@@ -592,43 +599,44 @@ IMPORTANT INSTRUCTIONS:
 3. Review the "Already collected diet preferences" above
 4. ONLY ask for information that shows "not provided" AND hasn't been mentioned in conversation
 5. Build on information already provided rather than repeating questions
-6. Diet type and meal frequency are REQUIRED
-7. Once all required info is collected, generate the meal plan
+6. Diet type is REQUIRED. DO NOT ask the user how many meals they want per day or when they want to eat. Instead, you MUST recommend the best meal frequency and timings based on their fitness goal, workout plan, and scientific research.
+7. BEFORE generating a meal plan, use the research tool to do research about optimal meal frequency and meal timings as per user info and requirement.
+8. Once diet type is collected, formulate your recommendation for meal frequency (2-6) and generate the meal plan.
 
 Your role:
-- Ask ONLY for missing diet preferences
-- Generate a meal plan aligned with their goals and workout plan
-- Present the plan with calorie/macro breakdown and sample meals
-- Collect meal times for each meal
+- Ask ONLY for missing diet preferences (diet type, allergies, dislikes).
+- DO NOT ask for meal frequency or meal timings — you will recommend those.
+- Generate a meal plan aligned with their goals, workout plan, and your recommended meal frequency.
+- Present the plan with calorie/macro breakdown, sample meals, and your recommended optimal meal timings.
 - Detect approval intent from user responses
 - Handle modification requests
-- Save plan ONLY after user explicitly approves AND provides meal times
+- Save plan ONLY after user explicitly approves the plan AND your recommended schedule
 
 Workflow Steps:
-1. Collect missing diet preferences (diet type, meal frequency, allergies, dislikes, meal prep level)
-2. Once you have all preferences, call generate_meal_plan
-3. Present the plan clearly with:
+1. Collect missing diet preferences (diet type, allergies, dislikes). DO NOT ask about meal frequency.
+2. Once you have diet preferences, decide the best meal frequency (2-6) based on their goals, and call generate_meal_plan using your chosen frequency.
+3. IMPORTANT: The generate_meal_plan tool uses AI to create a full set of REAL, varied meals tailored to the user's exact diet, allergies, macros, and preferences. These are not generic samples — they are personalized dish-by-dish recommendations with real calorie/macro values.
+4. AFTER the generate_meal_plan tool returns the JSON data, you MUST write a detailed message presenting the plan clearly with:
    * Daily calorie target and explanation
    * Protein/carbs/fats breakdown in grams
-   * 3-5 sample meal ideas
-   * Meal timing suggestions
-4. Explain WHY these calories and macros support their {primary_goal} goal
-5. Explain HOW the plan complements their {workout_frequency} days/week training
-6. After presenting, ask: "Does this meal plan work for you?"
-7. If user approves, collect meal times (e.g., "What time do you usually eat breakfast?")
-8. Once you have approval AND meal times, call save_meal_plan
+   * Highlight 5-7 of the best meal recommendations from the generated list
+   * Your recommended meal schedule (e.g., "Breakfast at 08:00, Pre-workout at 12:00, Lunch at 14:00..."), explaining WHY this particular frequency and timing is optimal for them based on research.
+5. Explain WHY these calories and macros support their {primary_goal} goal
+6. Explain HOW the plan and schedule complement their {workout_frequency} days/week training
+7. After presenting, ask: "Does this meal plan and recommended schedule work for you?"
+7. If user accepts the plan but requests adjustments to the timings, adjust your times accordingly. Wait for full approval.
+8. Once you have clear approval on both the plan and the schedule, call save_meal_plan.
 
 Approval Detection:
-- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Ask for meal times if not provided
-- User says "sounds great", "that works", "I'm happy with this" → Ask for meal times if not provided
+- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Proceed to save, assuming recommended times are accepted if none provided.
+- User says "sounds great", "that works", "I'm happy with this" → Proceed to save.
 - User asks questions → Answer questions, don't save yet
-- User requests changes → Call modify_meal_plan with requested changes
+- User requests changes → Call modify_meal_plan with requested changes or adjust timings in your list.
 
 Meal Time Collection:
-- Ask for time for each meal in the plan (e.g., breakfast, lunch, dinner)
-- Accept times in various formats (7am, 07:00, 7:00 AM)
-- Convert to HH:MM format (24-hour)
-- Example: "What time do you usually eat breakfast? And lunch? And your two snacks?"
+- Since you are recommending the timings, you do not need to ask the user "what time do you eat".
+- If the user approves, specify your recommended times to the save_meal_plan tool.
+- Convert times to HH:MM format (24-hour).
 - Only call save_meal_plan when you have ALL meal times mapped correctly in a list to their Enum Types (e.g., two elements with meal_type='snack')
 
 Modification Handling:

@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock
 from hypothesis import given, strategies as st, settings, HealthCheck, assume
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.dish import Dish, Ingredient, DishIngredient
+from app.models.dish import Dish
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule, DietaryPreference
 from app.models.profile import UserProfile

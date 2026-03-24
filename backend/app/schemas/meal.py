@@ -29,7 +29,6 @@ class MealPlanResponse(BaseModel):
     carbs_percentage: Decimal = Field(..., description="Carbs as percentage of total calories")
     fats_percentage: Decimal = Field(..., description="Fats as percentage of total calories")
     plan_rationale: Optional[str] = Field(None, description="AI-generated explanation of why this plan suits the user")
-    is_locked: bool = Field(..., description="Whether the plan is locked (requires unlock to modify)")
     created_at: datetime = Field(..., description="Timestamp when the plan was created")
     updated_at: datetime = Field(..., description="Timestamp of last modification")
     

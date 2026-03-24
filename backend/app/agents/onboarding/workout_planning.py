@@ -71,13 +71,16 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         class WorkoutPlanInput(BaseModel):
             """Input schema for workout plan generation."""
             frequency: int = Field(
-                description="Workout days per week (2-7)"
+                description="Determine the optimal workout days per week (2-7) based on user goal and fitness level (do not ask user)."
             )
             location: str = Field(
                 description="Workout location: home or gym"
             )
+            preferred_time: str = Field(
+                description="Time of day preference: morning or evening"
+            )
             duration_minutes: int = Field(
-                description="Session duration in minutes (20-180)"
+                description="Determine the optimal session duration in minutes (20-180) based on user goal and fitness level (do not ask user)."
             )
             equipment: List[str] = Field(
                 description="List of available equipment (e.g., dumbbells, barbell, resistance bands)"
@@ -87,6 +90,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         async def generate_workout_plan(
             frequency: int,
             location: str,
+            preferred_time: str,
             duration_minutes: int,
             equipment: List[str]
         ) -> dict:
@@ -94,15 +98,15 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             Generate a personalized workout plan based on preferences.
             
             Call this tool after collecting:
-            - Workout frequency (days per week)
             - Location (home/gym)
-            - Duration per session (minutes)
+            - Preferred time of day (morning/evening)
             - Available equipment
             
             Args:
-                frequency: Workout days per week (2-7)
+                frequency: Agent-determined workout days per week (2-7)
                 location: "home" or "gym"
-                duration_minutes: Session duration (20-180 minutes)
+                preferred_time: Time of day preference (e.g., "morning" or "evening")
+                duration_minutes: Agent-determined session duration (20-180 minutes)
                 equipment: List of available equipment (e.g., ["dumbbells", "barbell"])
                 
             Returns:
@@ -155,10 +159,10 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                 description="The exact generated workout plan object to save"
             )
             workout_days: List[str] = Field(
-                description="List of days (e.g., ['Monday', 'Wednesday', 'Friday'])"
+                description="Agent-determined list of days (e.g., ['Monday', 'Wednesday', 'Friday']) based on optimal frequency."
             )
             workout_times: List[str] = Field(
-                description="List of times in HH:MM format (e.g., ['06:00', '18:00'])"
+                description="List of times in HH:MM format (e.g., ['06:00', '18:00']) corresponding to the preferred time of day (e.g., use 07:00 for morning, 18:00 for evening)."
             )
             user_approved: bool = Field(
                 description="Must be True to save (safety check)"
@@ -174,20 +178,18 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             """
             Save approved workout plan and schedule to agent context.
             
-            ONLY call this tool when user explicitly approves the plan AND provides schedule by saying:
+            ONLY call this tool when user explicitly approves the plan by saying:
             - "Yes", "Looks good", "Perfect", "I approve", "Let's do it"
             - "Sounds great", "That works", "I'm happy with this"
             
-            You must also collect:
-            - Which days they want to workout (e.g., ["Monday", "Wednesday", "Friday"])
-            - What times they prefer (e.g., ["06:00", "06:00", "18:00"])
-            
-            Do NOT call this tool unless user has clearly approved AND provided schedule.
+            You (the agent) must determine the workout_days and workout_times based on the
+            recommended frequency and context (e.g., if user prefers morning, use 07:00).
+            DO NOT ask the user for specific days and times. Present your recommended schedule.
             
             Args:
                 plan_data: The workout plan dictionary to save
                 workout_days: List of days (e.g., ["Monday", "Wednesday", "Friday"])
-                workout_times: List of times in HH:MM format (e.g., ["06:00", "18:00"])
+                workout_times: List of times in HH:MM format (e.g., ["07:00", "07:00", "07:00"])
                 user_approved: Must be True to save (safety check)
                 
             Returns:
@@ -414,7 +416,8 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             True if agent_context contains workout_planning data with user_approved=True
         """
         stmt = select(OnboardingState).where(
-            OnboardingState.user_id == user_id
+            OnboardingState.user_id == user_id,
+            OnboardingState.deleted_at.is_(None)
         )
         result = await self.db.execute(stmt)
         state = result.scalars().first()
@@ -461,8 +464,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         required_fields = {
             "location": "workout location - must be either 'home' or 'gym'",
             "equipment": "available equipment as a list (e.g., ['dumbbells', 'barbell', 'machines'] or ['bodyweight'])",
-            "frequency": "number of workout days per week (integer between 3-6)",
-            "duration_minutes": "workout session duration in minutes (integer between 30-120)"
+            "preferred_time": "preferred time of day to work out (e.g., 'morning' or 'evening')"
         }
         
         # Extract info from conversation if not already collected
@@ -550,9 +552,14 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
             System prompt including fitness level, primary goal, and limitations
         """
         # Get context from previous agents (updated for 4-step flow)
-        fitness_level = self.context.agent_context.get("fitness_assessment", {}).get("fitness_level", "unknown")
-        primary_goal = self.context.agent_context.get("fitness_assessment", {}).get("primary_goal", "unknown")
-        limitations = self.context.agent_context.get("fitness_assessment", {}).get("limitations", [])
+        fitness_data = self.context.agent_context.get("fitness_assessment", {})
+        fitness_level = fitness_data.get("fitness_level", "unknown")
+        primary_goal = fitness_data.get("primary_goal", "unknown")
+        limitations = fitness_data.get("limitations", [])
+        weight_kg = fitness_data.get("weight_kg", "unknown")
+        height_cm = fitness_data.get("height_cm", "unknown")
+        age = fitness_data.get("age", "unknown")
+        gender = fitness_data.get("gender", "unknown")
         
         # Debug logging
         logger.info(
@@ -561,6 +568,7 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
                 "agent_context_keys": list(self.context.agent_context.keys()),
                 "fitness_level": fitness_level,
                 "primary_goal": primary_goal,
+                "weight_kg": weight_kg,
                 "full_agent_context": self.context.agent_context
             }
         )
@@ -571,91 +579,80 @@ class WorkoutPlanningAgent(BaseOnboardingAgent):
         collected_info = self.get_collected_info(self.context.user_id)
         location = collected_info.get("location", "not provided")
         equipment = collected_info.get("equipment", "not provided")
-        frequency = collected_info.get("frequency", "not provided")
-        duration = collected_info.get("duration_minutes", "not provided")
+        preferred_time = collected_info.get("preferred_time", "not provided")
         
-        return f"""You are a Workout Planning Agent creating personalized workout plans.
+        return f"""You are a serious, professional Workout Planning Coach creating highly personalized, evidence-based workout plans. Do not act like a basic assistant—act like a top-tier athletic trainer.
 
 Context from previous steps:
 - Fitness Level: {fitness_level}
 - Primary Goal (User's words): {primary_goal}
 - Limitations: {limitations_str}
+- Weight: {weight_kg} kg
+- Height: {height_cm} cm
+- Age: {age}
+- Gender: {gender}
 
 Already collected workout preferences:
 - Location: {location}
 - Equipment: {equipment}
-- Frequency: {frequency} days/week
-- Duration: {duration} minutes/session
+- Preferred Time of Day: {preferred_time}
 
 IMPORTANT INSTRUCTIONS:
-1. FIRST: Review the conversation history carefully before asking any questions
-2. DO NOT ask questions that the user has already answered in previous messages
-3. Review the "Already collected workout preferences" above
-4. ONLY ask for information that shows "not provided" AND hasn't been mentioned in conversation
-5. Build on information already provided rather than repeating questions
-6. Once ALL preferences are collected, call generate_workout_plan tool
-7. After presenting a plan, wait for user approval
-8. After approval, collect workout schedule (days and times)
-9. Call save_workout_plan with plan, schedule, and user_approved=True
+1. FIRST: Review the conversation history carefully before asking any questions.
+2. DO NOT ask the user for their preferred workout frequency or schedule constraints (e.g., "how many days a week?"). YOU are the coach. It is your job to use the `research` tool to determine the optimal workout frequency (days/week) and session duration based on their goal and fitness level.
+3. Review the "Already collected workout preferences" above.
+4. Ask the user for their preferred `location` (home/gym) and `preferred_time` of day (e.g., morning or evening).
+5. EQUIPMENT RULE: If the user says they train at a **gym**, DO NOT ask about available equipment — assume all standard gym equipment is available (barbells, dumbbells, machines, cables, cardio equipment, etc.). Only ask about specific equipment if the user chooses **home** workouts.
+6. Build on information already provided rather than repeating questions.
+7. BEFORE generating a workout plan, YOU MUST use the `research` tool to find the optimal, scientifically-backed training frequency and programming for the user's specific fitness level and goal.
+8. Once you have location (and equipment if home) and preferred time, call the `generate_workout_plan` tool. Provide the optimal frequency and duration you determined from your research. For gym users, set equipment to all standard gym equipment.
+9. IMPORTANT: AFTER the `generate_workout_plan` tool returns the JSON data, you MUST write a detailed message explaining your professional recommendation. Explain the plan, the optimal frequency you chose, and the training split in clear markdown format.
+10. Present the recommended schedule (e.g., "M/W/F at 7:00 AM" if they chose morning) alongside the plan. Do NOT ask them to pick days and times—give them your prescribed schedule based on their preferred time of day (e.g., 07:00 for morning, 18:00 for evening).
+11. Ask for their approval on this comprehensive plan.
+12. After approval, call `save_workout_plan` with the plan_data, your determined `workout_days`, your determined `workout_times`, and `user_approved=True`.
 
 Your role (Step 2 - Workout Planning):
-- Ask ONLY for missing workout preferences
-- Generate a complete workout plan when all preferences are available
-- Present the plan with clear explanation
-- Handle modification requests
-- Get user approval
-- Collect workout schedule (which days and what times)
-- Save plan with schedule
+- Research and determine the optimal training frequency and session duration.
+- Ask the user ONLY for: location (home/gym) and preferred time of day.
+- If gym: assume full equipment access. If home: ask what equipment they have.
+- Generate the complete plan using the `generate_workout_plan` tool.
+- Present the plan and prescribed schedule clearly as an expert recommendation.
+- Handle modification requests (e.g., if they push back on a prescribed 5-day frequency, adapt it).
+- Get user approval.
+- Call `save_workout_plan` to persist the plan and schedule.
 
 Workflow:
-1. Collect missing preferences (location, equipment, frequency, duration)
-2. Generate plan using generate_workout_plan tool
-3. Present plan clearly with explanation
-4. If user requests changes, use modify_workout_plan tool
-5. Get explicit approval from user
-6. Ask for workout schedule: "Which days work best for you?" and "What times?"
-7. Call save_workout_plan with plan_data, workout_days, workout_times, and user_approved=True
+1. Collect missing preferences (location, preferred time of day; equipment ONLY if home workout).
+2. Look up optimal frequency and programming via `research`.
+3. Generate the plan using the `generate_workout_plan` tool.
+4. Present the plan clearly with your expert rationale. Detail the prescribed days and times.
+5. If the user requests changes, use the `modify_workout_plan` tool to adjust.
+6. Get explicit approval from the user.
+7. Call `save_workout_plan` with the full plan and schedule.
 
 Guidelines:
-- Be concise - ask 1-2 questions at a time for missing information only
-- Once you have location, equipment, frequency, and duration, generate the plan
-- After generating, present it clearly and wait for approval
-- Present the plan in a clear, readable format
-- Explain WHY you chose this structure (training split, frequency, exercises)
-- Explain HOW it aligns with their {primary_goal} goal and {fitness_level} level
-- After presenting, explicitly ask: "Does this workout plan work for you?"
+- Act like an expert coach. Be confident in your prescriptions.
+- Be concise—ask 1-2 questions at a time for your missing fields ONLY.
+- Tell them WHY you chose this structure (training split, frequency, exercises) based on your research and their variables.
+- After presenting the prescribed plan and schedule, ask: "Are you ready to commit to this workout plan?"
 
 Approval Detection:
-- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Ask for schedule
-- User says "sounds great", "that works", "I'm happy with this" → Ask for schedule
-- User asks questions → Answer questions, don't save yet
-- User requests changes → Call modify_workout_plan with requested changes
+- User says "yes", "looks good", "perfect", "I approve", "let's do it" → Call `save_workout_plan`.
+- User says "sounds great", "that works", "I'm happy with this" → Call `save_workout_plan`.
+- User asks questions → Answer questions, don't save yet.
+- User requests changes → Call `modify_workout_plan` with requested changes.
 
-Schedule Collection:
-- After approval, ask: "Which days of the week work best for you to workout?"
-- Then ask: "What times work best for each day?" (in HH:MM format like "06:00" or "18:00")
-- Example: If they say Monday/Wednesday/Friday at 6am, you'd save:
-  - workout_days: ["Monday", "Wednesday", "Friday"]
-  - workout_times: ["06:00", "06:00", "06:00"]
-
-Modification Handling:
-- Extract what user wants to change (frequency, duration, exercises, split)
-- Call modify_workout_plan with current plan and modifications
-- Present modified plan and highlight what changed
-- Ask for approval again
-
-Realistic Recommendations by Fitness Level:
+Realistic Recommendations by Fitness Level (To Guide Your Research):
 - Beginner ({fitness_level == 'beginner'}): 2-4 days/week, full body or upper/lower split, 45-60 min sessions
 - Intermediate ({fitness_level == 'intermediate'}): 3-5 days/week, push/pull/legs or upper/lower, 60-75 min sessions
 - Advanced ({fitness_level == 'advanced'}): 4-6 days/week, body part splits or specialized programs, 60-90 min sessions
 
-Goal-Specific Guidance:
+Goal-Specific Guidance (To Guide Your Research):
 - Muscle Gain: Focus on progressive overload, 8-12 rep range, compound movements
 - Fat Loss: Mix of resistance training and cardio, circuit training options, higher volume
 - General Fitness: Balanced approach with strength, cardio, and flexibility
 
 After Saving:
-- Confirm the plan and schedule are saved
-- Let user know we'll move to nutrition planning next
-- Briefly preview what's coming: "Now let's create your meal plan to support these workouts"
+- Confirm the plan and schedule are saved.
+- Let the user know we'll move to diet planning next: "Now let's create your meal plan to fuel these workouts."
 """

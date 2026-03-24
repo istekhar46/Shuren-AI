@@ -51,11 +51,8 @@ from .chat import (
 )
 from .dish import (
     DishBase,
-    DishIngredientResponse,
     DishResponse,
     DishSummaryResponse,
-    IngredientBase,
-    IngredientResponse,
 )
 from .meal_template import (
     DayMealsResponse,
@@ -67,11 +64,7 @@ from .meal_template import (
     TemplateMealResponse,
     TodayMealsResponse,
 )
-from .shopping_list import (
-    ShoppingListCategory,
-    ShoppingListIngredient,
-    ShoppingListResponse,
-)
+
 from .error import (
     ErrorResponse,
     ValidationErrorDetail,
@@ -122,9 +115,6 @@ __all__ = [
     "ChatHistoryResponse",
     "MessageDict",
     # Dish schemas
-    "IngredientBase",
-    "IngredientResponse",
-    "DishIngredientResponse",
     "DishBase",
     "DishResponse",
     "DishSummaryResponse",
@@ -137,10 +127,7 @@ __all__ = [
     "NextMealResponse",
     "TemplateRegenerateRequest",
     "DishSwapRequest",
-    # Shopping list schemas
-    "ShoppingListIngredient",
-    "ShoppingListCategory",
-    "ShoppingListResponse",
+
     # Error schemas
     "ErrorResponse",
     "ValidationErrorDetail",

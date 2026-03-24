@@ -659,7 +659,7 @@ async def sample_dishes(db_session: AsyncSession, sample_ingredients: list) -> l
             breakfast_dishes = [d for d in sample_dishes if d.meal_type == 'breakfast']
             assert len(breakfast_dishes) > 0
     """
-    from app.models.dish import Dish, DishIngredient
+    from app.models.dish import Dish
     from decimal import Decimal
     
     # Get ingredients by name for easy reference

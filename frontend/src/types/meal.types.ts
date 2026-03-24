@@ -23,7 +23,6 @@ export interface MealPlanResponse {
   carbs_percentage: number;
   fats_percentage: number;
   plan_rationale: string;
-  is_locked: boolean;
   created_at: string;
   updated_at: string;
 }

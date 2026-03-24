@@ -201,7 +201,6 @@ class GeneralAssistantAgent(BaseAgent):
                         "goals": goals,
                         "has_workout_plan": workout_plan_exists,
                         "workout_days_per_week": workout_days_per_week,
-                        "profile_locked": profile.is_locked,
                         "profile_created": profile.created_at.isoformat()
                     },
                     "metadata": {
@@ -494,61 +493,14 @@ class GeneralAssistantAgent(BaseAgent):
                     "error": "An unexpected error occurred. Please try again."
                 })
         
-        @tool
-        async def get_recipe_details(dish_name: str) -> str:
-            """Get recipe details including ingredients and cooking instructions.
-            
-            Args:
-                dish_name: Name of the dish/recipe
-            
-            Returns:
-                JSON string with ingredients, cooking instructions, and nutritional information.
-                If recipe not found, returns a helpful error message.
-            """
-            try:
-                result = await MealService.get_recipe_details(
-                    dish_name=dish_name,
-                    db_session=db_session
-                )
-                
-                if result is None:
-                    return json.dumps({
-                        "success": True,
-                        "data": {
-                            "message": f"Recipe '{dish_name}' not found. Try a different dish name."
-                        }
-                    })
-                
-                return json.dumps({
-                    "success": True,
-                    "data": result,
-                    "metadata": {
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "source": "general_assistant_agent"
-                    }
-                })
-                
-            except SQLAlchemyError as e:
-                logger.error(f"Database error in get_recipe_details: {e}")
-                return json.dumps({
-                    "success": False,
-                    "error": "Unable to retrieve recipe details. Please try again."
-                })
-            except Exception as e:
-                logger.error(f"Unexpected error in get_recipe_details: {e}")
-                return json.dumps({
-                    "success": False,
-                    "error": "An unexpected error occurred. Please try again."
-                })
-        
+
         return [
             get_user_stats, 
             provide_motivation,
             get_workout_info,
             get_meal_info,
             get_schedule_info,
-            get_exercise_demo,
-            get_recipe_details
+            get_exercise_demo
         ]
     
     def _system_prompt(self, voice_mode: bool = False) -> str:
@@ -596,7 +548,6 @@ Available Tools:
 - get_meal_info: Get the meal plan for any given date with dishes, timing, and nutritional information
 - get_schedule_info: Get upcoming workout and meal schedules with days and times
 - get_exercise_demo: Get exercise demonstration details (GIF, video, instructions) by exercise name
-- get_recipe_details: Get recipe details with ingredients and cooking instructions by dish name
 - get_current_datetime: Get the current date and time (use this to determine relative dates)
 
 When to Use Tools:
@@ -605,7 +556,6 @@ When to Use Tools:
 - Use get_meal_info when users ask about a specific day's meals, nutrition, or eating plan
 - Use get_schedule_info when users ask about upcoming workouts, meal times, or their schedule
 - Use get_exercise_demo when users ask how to perform a specific exercise or need form guidance
-- Use get_recipe_details when users ask about cooking instructions, ingredients, or recipe preparation
 - Use get_user_stats for general profile information and fitness goals
 - Use provide_motivation for encouragement and motivational messages
 

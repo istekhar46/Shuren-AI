@@ -9,7 +9,6 @@ interface UserContextType {
   onboardingCompleted: boolean;
   refreshProfile: () => Promise<void>;
   refreshOnboardingStatus: () => Promise<void>;
-  unlockProfile: () => Promise<void>;
   loading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -68,28 +67,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   }, []);
 
   /**
-   * Unlock the user's profile for editing
-   * After unlocking, refresh the profile to get the updated lock status
-   * Note: unlockProfile method doesn't exist in profileService yet
-   */
-  const unlockProfile = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // TODO: Implement unlockProfile in profileService when backend endpoint is available
-      // For now, just refresh the profile
-      await refreshProfile();
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to unlock profile';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshProfile]);
-
-  /**
    * Fetch onboarding status on context initialization
    */
   useEffect(() => {
@@ -113,7 +90,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     onboardingCompleted,
     refreshProfile,
     refreshOnboardingStatus,
-    unlockProfile,
     loading,
     isInitialized,
     error,

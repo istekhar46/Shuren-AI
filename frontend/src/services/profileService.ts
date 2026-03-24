@@ -53,24 +53,6 @@ export const profileService = {
     return mapProfileResponseToUserProfile(response.data);
   },
 
-  /**
-   * Lock user's profile to prevent modifications
-   * 
-   * Locks the profile to prevent accidental or unauthorized changes.
-   * Once locked, updates require a valid reason. This is typically used
-   * after onboarding is complete to maintain plan consistency.
-   * 
-   * @returns {Promise<UserProfileResponse>} Updated user profile with is_locked=true
-   * @throws {Error} If the request fails or profile is already locked
-   * 
-   * @example
-   * const locked = await profileService.lockProfile();
-   * console.log(locked.is_locked); // true
-   */
-  async lockProfile(): Promise<UserProfile> {
-    const response = await api.post('/profiles/me/lock');
-    return mapProfileResponseToUserProfile(response.data);
-  },
 };
 
 /**
@@ -129,7 +111,6 @@ export function mapProfileResponseToUserProfile(response: UserProfileResponse): 
       hydrationReminders: true,
       motivationalMessages: true
     },
-    isLocked: response.is_locked,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

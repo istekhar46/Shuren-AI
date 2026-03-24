@@ -307,6 +307,11 @@ async def chat_onboarding(
         
         # 6. Check if state was updated (agent called save function)
         updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+        
+        # Refresh the state from the DB to ensure any direct updates by agents are reflected
+        if updated_state:
+            await db.refresh(updated_state)
+            
         updated_completed_count = sum([
             1 for step_complete in [
                 updated_state.step_1_complete,
@@ -604,6 +609,11 @@ async def chat_onboarding_stream(
                     
                     # Check if state was updated (agent called save function)
                     updated_state = await onboarding_service.get_onboarding_state(current_user.id)
+                    
+                    # Refresh the state from the DB to ensure any direct updates by agents are reflected
+                    if updated_state:
+                        await db.refresh(updated_state)
+                        
                     updated_completed_count = sum([
                         1 for step_complete in [
                             updated_state.step_1_complete,
@@ -626,6 +636,27 @@ async def chat_onboarding_stream(
                                 "agent_type": agent_type_value
                             }
                         )
+                    else:
+                        # Diagnostic: detect if LLM hallucinated a save action
+                        response_lower = full_response.lower()
+                        save_indicators = [
+                            "saved successfully", "plan saved", "i have saved",
+                            "moving to diet", "moving to meal", "moving to scheduling",
+                            "moving to lifestyle", "saved your workout", "saved your meal"
+                        ]
+                        if any(phrase in response_lower for phrase in save_indicators):
+                            logger.warning(
+                                "LLM response contains save indicators but step did NOT advance. "
+                                "The save tool may not have been called.",
+                                extra={
+                                    "event": "possible_hallucinated_save",
+                                    "user_id": user_id,
+                                    "message_id": message_id,
+                                    "current_step": updated_state.current_step,
+                                    "agent_type": agent_type_value,
+                                    "response_preview": full_response[:200]
+                                }
+                            )
                     
                     # Get progress
                     progress = await onboarding_service.get_progress(current_user.id)

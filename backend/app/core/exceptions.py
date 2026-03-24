@@ -3,48 +3,6 @@
 from fastapi import HTTPException, status
 
 
-class ProfileLockedException(HTTPException):
-    """
-    Exception raised when attempting to modify a locked profile.
-    
-    This exception enforces the "no silent changes" principle by preventing
-    modifications to locked profiles. Users must explicitly unlock their
-    profile before making changes to workout plans, meal plans, or schedules.
-    
-    Returns HTTP 403 Forbidden with a clear explanation.
-    
-    Example:
-        >>> if profile.is_locked:
-        ...     raise ProfileLockedException()
-        
-        Response:
-        {
-            "detail": "Profile is locked. Unlock profile before making modifications.",
-            "error_code": "PROFILE_LOCKED"
-        }
-    """
-    
-    def __init__(
-        self,
-        detail: str = "Profile is locked. Unlock profile before making modifications.",
-        headers: dict[str, str] | None = None
-    ):
-        """
-        Initialize ProfileLockedException.
-        
-        Args:
-            detail: Custom error message (optional, uses default if not provided)
-            headers: Additional HTTP headers (optional)
-        """
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=detail,
-            headers=headers
-        )
-        # Add error_code for client-side handling
-        self.error_code = "PROFILE_LOCKED"
-
-
 class ResourceNotFoundException(HTTPException):
     """
     Exception raised when a requested resource is not found.

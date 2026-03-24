@@ -38,10 +38,6 @@ class WorkoutPlan(BaseModel):
     # including exercises, sets, reps, rest periods, progression strategy, etc.
     plan_data = Column(JSONB, nullable=True)
     
-    # Lock status
-    is_locked = Column(Boolean, default=True, nullable=False)
-    locked_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    
     # Relationships
     user = relationship("User", backref="workout_plan")
     workout_days = relationship(

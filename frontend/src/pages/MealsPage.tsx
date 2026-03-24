@@ -36,8 +36,6 @@ export const MealsPage = () => {
                   id: slot.primary_dish.id,
                   name: slot.primary_dish.name,
                   description: slot.primary_dish.cuisine_type || '', 
-                  ingredients: [],
-                  instructions: [],
                   macros: {
                     calories: slot.primary_dish.calories,
                     protein: slot.primary_dish.protein_g,

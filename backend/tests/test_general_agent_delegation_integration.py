@@ -36,7 +36,7 @@ from app.models.workout import (
     ExerciseLibrary
 )
 from app.models.meal_template import MealTemplate, TemplateMeal
-from app.models.dish import Dish, DishIngredient, Ingredient
+from app.models.dish import Dish
 
 
 # ============================================================================

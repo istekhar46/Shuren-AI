@@ -23,7 +23,6 @@ export interface ProfileUpdateRequest {
 export interface UserProfileResponse {
   id: string;
   user_id: string;
-  is_locked: boolean;
   fitness_level: string;
   fitness_goals: FitnessGoal[];
   physical_constraints: PhysicalConstraint[];
@@ -87,7 +86,6 @@ export interface MealPlan {
   carbs_percentage: number;
   fats_percentage: number;
   plan_rationale: string;
-  is_locked: boolean;
   created_at: string;
   updated_at: string;
 }

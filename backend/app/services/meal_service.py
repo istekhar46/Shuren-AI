@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.dish import Dish, DishIngredient, Ingredient
+from app.models.dish import Dish
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule
 from app.models.profile import UserProfile
@@ -64,7 +64,6 @@ class MealService:
             carbs_percentage=mp.carbs_percentage,
             fats_percentage=mp.fats_percentage,
             plan_rationale="AI-optimized breakdown",
-            is_locked=profile.is_locked,
             created_at=mp.created_at,
             updated_at=mp.updated_at
         )
@@ -83,8 +82,6 @@ class MealService:
         
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        if profile.is_locked:
-            raise HTTPException(status_code=403, detail="Profile is locked. Unlock profile before making modifications.")
         if not profile.meal_plan:
             raise HTTPException(status_code=404, detail="Meal plan not found")
             
@@ -143,8 +140,6 @@ class MealService:
         
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        if profile.is_locked:
-            raise HTTPException(status_code=403, detail="Profile is locked. Unlock profile before making modifications.")
             
         # For simplicity in this mock, we map schedule updates by index mapping
         active_schedules = sorted([m for m in profile.meal_schedules if m.deleted_at is None], key=lambda x: x.scheduled_time)
@@ -310,79 +305,98 @@ class MealService:
             }
         }
     
+
     @staticmethod
-    async def get_recipe_details(
-        dish_name: str,
-        db_session: AsyncSession
-    ) -> Optional[dict[str, Any]]:
-        """Get recipe details including ingredients and cooking instructions.
-        
-        Queries Dish, DishIngredient, and Ingredient tables with case-insensitive
-        partial match to find recipe details.
+    async def update_meal_dish(
+        user_id: UUID,
+        db_session: AsyncSession,
+        target_date: str,
+        meal_name: str,
+        new_dish_name: str
+    ) -> dict[str, Any]:
+        """Update a specific meal with a new dish in the user's meal plan.
         
         Args:
-            dish_name: Name of dish (case-insensitive partial match)
+            user_id: User's UUID
             db_session: Database session
+            target_date: ISO format date string
+            meal_name: Name of the meal slot (e.g., 'breakfast', 'dinner', 'snack')
+            new_dish_name: Name of the new dish to substitute
             
         Returns:
-            Dict with recipe details or None if not found
+            Dict indicating success and potentially the new meal plan
         """
-        # Query Dish with case-insensitive partial match
+        # Parse date to get day of week
+        try:
+            dt = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
+            current_day = dt.weekday()
+        except ValueError:
+            raise ValueError(f"Invalid date format: {target_date}. Please use ISO format (e.g., YYYY-MM-DD).")
+        
+        # Verify user profile exists
+        profile_result = await db_session.execute(
+            select(UserProfile)
+            .where(
+                UserProfile.user_id == user_id,
+                UserProfile.deleted_at.is_(None)
+            )
+            .options(
+                selectinload(UserProfile.meal_templates)
+            )
+        )
+        profile = profile_result.scalar_one_or_none()
+        
+        if not profile:
+            raise ValueError(f"User profile not found")
+        
+        # Find active meal template
+        active_template = None
+        for template in profile.meal_templates:
+            if template.is_active and template.deleted_at is None:
+                active_template = template
+                break
+                
+        if not active_template:
+            raise ValueError("No active meal template found for user")
+            
+        # Get new dish
         dish_result = await db_session.execute(
             select(Dish)
             .where(
-                func.lower(Dish.name).contains(func.lower(dish_name)),
+                func.lower(Dish.name).contains(func.lower(new_dish_name)),
                 Dish.deleted_at.is_(None),
                 Dish.is_active == True
             )
-            .options(
-                selectinload(Dish.dish_ingredients)
-                .selectinload(DishIngredient.ingredient)
-            )
             .limit(1)
         )
-        dish = dish_result.scalar_one_or_none()
+        new_dish = dish_result.scalar_one_or_none()
+        if not new_dish:
+            raise ValueError(f"Dish '{new_dish_name}' not found")
+            
+        # Get target TemplateMeal by meal_schedule meal_name
+        template_meals_result = await db_session.execute(
+            select(TemplateMeal)
+            .where(
+                TemplateMeal.template_id == active_template.id,
+                TemplateMeal.day_of_week == current_day,
+                TemplateMeal.is_primary == True,
+                TemplateMeal.deleted_at.is_(None)
+            )
+            .options(selectinload(TemplateMeal.meal_schedule))
+        )
+        template_meals = template_meals_result.scalars().all()
         
-        if not dish:
-            return None
+        target_template_meal = None
+        for tm in template_meals:
+            if tm.meal_schedule.deleted_at is None and tm.meal_schedule.meal_name.lower() == meal_name.lower() or meal_name.lower() in tm.meal_schedule.meal_name.lower():
+                target_template_meal = tm
+                break
+                
+        if not target_template_meal:
+            raise ValueError(f"Meal slot '{meal_name}' not found in the plan for the specified day")
+            
+        # Update dish
+        target_template_meal.dish_id = new_dish.id
+        await db_session.commit()
         
-        # Build ingredients list
-        ingredients = []
-        for dish_ingredient in dish.dish_ingredients:
-            if dish_ingredient.deleted_at is None and dish_ingredient.ingredient.deleted_at is None:
-                ingredients.append({
-                    "name": dish_ingredient.ingredient.name,
-                    "name_hindi": dish_ingredient.ingredient.name_hindi,
-                    "quantity": float(dish_ingredient.quantity),
-                    "unit": dish_ingredient.unit,
-                    "preparation_note": dish_ingredient.preparation_note,
-                    "is_optional": dish_ingredient.is_optional
-                })
-        
-        # Build response dict matching design spec
-        return {
-            "dish_name": dish.name,
-            "dish_name_hindi": dish.name_hindi,
-            "description": dish.description,
-            "cuisine_type": dish.cuisine_type,
-            "meal_type": dish.meal_type,
-            "difficulty_level": dish.difficulty_level,
-            "prep_time_minutes": dish.prep_time_minutes,
-            "cook_time_minutes": dish.cook_time_minutes,
-            "serving_size_g": float(dish.serving_size_g),
-            "nutrition": {
-                "calories": float(dish.calories),
-                "protein_g": float(dish.protein_g),
-                "carbs_g": float(dish.carbs_g),
-                "fats_g": float(dish.fats_g),
-                "fiber_g": float(dish.fiber_g) if dish.fiber_g else None
-            },
-            "dietary_tags": {
-                "is_vegetarian": dish.is_vegetarian,
-                "is_vegan": dish.is_vegan,
-                "is_gluten_free": dish.is_gluten_free,
-                "is_dairy_free": dish.is_dairy_free,
-                "is_nut_free": dish.is_nut_free
-            },
-            "ingredients": ingredients
-        }
+        return {"success": True, "message": f"Successfully updated {meal_name} to {new_dish.name}"}

@@ -105,7 +105,6 @@ class UserProfileResponse(BaseModel):
     """Schema for complete user profile response"""
     id: str
     user_id: str
-    is_locked: bool
     fitness_level: str
     fitness_goals: List[FitnessGoalSchema]
     physical_constraints: List[PhysicalConstraintSchema]

@@ -402,7 +402,6 @@ class OnboardingCompleteResponse(BaseModel):
         profile_id: UUID of the created profile
         user_id: UUID of the user
         fitness_level: User's fitness level from assessment
-        is_locked: Whether the profile is locked (always True)
         onboarding_complete: Whether onboarding is complete (always True)
         message: Success confirmation message
     """
@@ -422,11 +421,6 @@ class OnboardingCompleteResponse(BaseModel):
         description="User's fitness level from assessment"
     )
     
-    is_locked: bool = Field(
-        ...,
-        description="Whether the profile is locked"
-    )
-    
     onboarding_complete: bool = Field(
         ...,
         description="Whether onboarding is complete"
@@ -443,7 +437,6 @@ class OnboardingCompleteResponse(BaseModel):
                 "profile_id": "550e8400-e29b-41d4-a716-446655440000",
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "fitness_level": "intermediate",
-                "is_locked": True,
                 "onboarding_complete": True,
                 "message": "Onboarding completed successfully! Your personalized fitness profile is ready."
             }

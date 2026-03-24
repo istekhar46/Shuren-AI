@@ -26,7 +26,6 @@ class UserProfile(BaseModel):
     )
     
     # Profile state
-    is_locked = Column(Boolean, default=False, nullable=False)
     fitness_level = Column(String(50), nullable=True)  # 'beginner', 'intermediate', 'advanced'
     
     # Relationships

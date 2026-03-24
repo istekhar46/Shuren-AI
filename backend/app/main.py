@@ -20,7 +20,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.v1.endpoints import auth, profiles, workouts
 from app.api import v1
 from app.core.config import settings
-from app.core.exceptions import ProfileLockedException
 # from app.schemas.error import ErrorResponse
 
 
@@ -126,33 +125,6 @@ app.include_router(
 
 
 # Exception Handlers
-
-@app.exception_handler(ProfileLockedException)
-async def profile_locked_exception_handler(
-    request: Request,
-    exc: ProfileLockedException
-) -> JSONResponse:
-    """
-    Handle ProfileLockedException errors.
-    
-    Returns HTTP 403 with explanation that profile must be unlocked
-    before modifications can be made.
-    """
-    logger.warning(
-        f"Profile locked error: {request.url}",
-        extra={
-            "path": str(request.url.path),
-            "method": request.method
-        }
-    )
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={
-            "detail": str(exc.detail),
-            "error_code": "PROFILE_LOCKED"
-        }
-    )
-
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: Exception) -> JSONResponse:

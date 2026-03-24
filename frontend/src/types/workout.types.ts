@@ -71,7 +71,6 @@ export interface WorkoutPlanResponse {
   duration_weeks: number;
   days_per_week: number;
   plan_rationale: string | null;
-  is_locked: boolean;
   workout_days: WorkoutDayResponse[];
   created_at: string;
   updated_at: string;

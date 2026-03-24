@@ -47,7 +47,6 @@ router = APIRouter()
                         "duration_weeks": 12,
                         "days_per_week": 4,
                         "plan_rationale": "Balanced approach for building strength foundation",
-                        "is_locked": True,
                         "workout_days": [
                             {
                                 "id": "223e4567-e89b-12d3-a456-426614174001",
@@ -285,8 +284,7 @@ async def get_week_workouts(
                     "example": {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "plan_name": "Updated Plan Name",
-                        "duration_weeks": 16,
-                        "is_locked": False
+                        "duration_weeks": 16
                     }
                 }
             }

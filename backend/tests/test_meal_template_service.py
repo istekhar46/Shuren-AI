@@ -17,7 +17,6 @@ from app.models.preferences import MealPlan, MealSchedule, DietaryPreference
 from app.models.profile import UserProfile
 from app.models.user import User
 from app.models.dish import Dish
-from app.core.exceptions import ProfileLockedException
 from app.core.security import hash_password
 
 
@@ -96,32 +95,6 @@ async def test_user_with_profile(db_session: AsyncSession):
     await db_session.refresh(profile)
     
     return user, profile, meal_schedules
-
-
-@pytest_asyncio.fixture
-async def locked_profile(db_session: AsyncSession):
-    """Create a locked profile for testing lock validation."""
-    user = User(
-        id=uuid4(),
-        email="locked@example.com",
-        hashed_password=hash_password("password123"),
-        full_name="Locked User",
-        is_active=True
-    )
-    db_session.add(user)
-    
-    profile = UserProfile(
-        id=uuid4(),
-        user_id=user.id,
-        is_locked=True,
-        fitness_level="beginner"
-    )
-    db_session.add(profile)
-    
-    await db_session.commit()
-    await db_session.refresh(profile)
-    
-    return user, profile
 
 
 @pytest_asyncio.fixture
@@ -520,22 +493,7 @@ class TestGenerateTemplate:
         assert result.generation_reason == "Test preferences"
         assert len(result.template_meals) > 0
     
-    @pytest.mark.asyncio
-    async def test_generate_template_locked_profile(
-        self,
-        db_session: AsyncSession,
-        locked_profile
-    ):
-        """Test that generation fails for locked profile."""
-        _, profile = locked_profile
-        service = MealTemplateService(db_session)
-        
-        with pytest.raises(ProfileLockedException):
-            await service.generate_template(
-                profile_id=profile.id,
-                week_number=1
-            )
-    
+
     @pytest.mark.asyncio
     async def test_generate_template_missing_meal_plan(
         self,
@@ -665,25 +623,7 @@ class TestSwapDish:
         assert result is not None
         assert result.id == template.id
     
-    @pytest.mark.asyncio
-    async def test_swap_dish_locked_profile(
-        self,
-        db_session: AsyncSession,
-        locked_profile,
-        sample_dishes
-    ):
-        """Test that swap fails for locked profile."""
-        _, profile = locked_profile
-        service = MealTemplateService(db_session)
-        
-        with pytest.raises(ProfileLockedException):
-            await service.swap_dish(
-                profile_id=profile.id,
-                day_of_week=0,
-                meal_name="Breakfast",
-                new_dish_id=sample_dishes[0].id
-            )
-    
+
     @pytest.mark.asyncio
     async def test_swap_dish_no_template(
         self,

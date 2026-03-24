@@ -9,7 +9,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ProfileLockedException
 from app.models.preferences import WorkoutSchedule
 from app.models.profile import UserProfile, UserProfileVersion
 from app.models.workout import ExerciseLibrary, WorkoutDay, WorkoutExercise, WorkoutPlan
@@ -265,36 +264,7 @@ class WorkoutService:
         
         return None
     
-    async def check_profile_lock(self, user_id: UUID) -> bool:
-        """Check if user's profile is locked.
-        
-        Verifies profile lock status before allowing modifications.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            True if profile is locked, False otherwise
-            
-        Raises:
-            HTTPException: 404 if profile not found
-        """
-        result = await self.db.execute(
-            select(UserProfile)
-            .where(
-                UserProfile.user_id == user_id,
-                UserProfile.deleted_at.is_(None)
-            )
-        )
-        profile = result.scalar_one_or_none()
-        
-        if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
-        
-        return profile.is_locked
+
     
     async def create_profile_version(self, user_id: UUID, reason: str) -> None:
         """Create profile version record before modification.
@@ -352,7 +322,6 @@ class WorkoutService:
         snapshot = {
             "profile_id": str(profile.id),
             "user_id": str(profile.user_id),
-            "is_locked": profile.is_locked,
             "fitness_level": profile.fitness_level,
             "workout_plan": None,
             "workout_schedules": []
@@ -365,7 +334,6 @@ class WorkoutService:
                 "plan_name": workout_plan.plan_name,
                 "duration_weeks": workout_plan.duration_weeks,
                 "days_per_week": workout_plan.days_per_week,
-                "is_locked": workout_plan.is_locked,
                 "workout_days_count": len(workout_plan.workout_days)
             }
         
@@ -394,28 +362,7 @@ class WorkoutService:
         user_id: UUID,
         update: dict
     ) -> WorkoutPlan:
-        """Update workout plan with lock validation.
-        
-        Validates profile lock status before applying changes.
-        Creates profile version if locked profile is modified.
-        
-        Args:
-            user_id: User's unique identifier
-            update: Dictionary of fields to update
-            
-        Returns:
-            Updated WorkoutPlan
-            
-        Raises:
-            HTTPException: 403 if profile is locked
-            HTTPException: 404 if workout plan not found
         """
-        # Check profile lock
-        is_locked = await self.check_profile_lock(user_id)
-        
-        if is_locked:
-            raise ProfileLockedException()
-        
         # Get workout plan
         workout_plan = await self.get_workout_plan(user_id)
         
@@ -479,28 +426,7 @@ class WorkoutService:
         user_id: UUID,
         update: dict
     ) -> list[WorkoutSchedule]:
-        """Update workout schedule with lock validation.
-        
-        Validates profile lock status before applying changes.
-        Updates workout days and timing preferences.
-        
-        Args:
-            user_id: User's unique identifier
-            update: Dictionary of fields to update
-            
-        Returns:
-            Updated list of WorkoutSchedule objects
-            
-        Raises:
-            HTTPException: 403 if profile is locked
-            HTTPException: 404 if profile not found
         """
-        # Check profile lock
-        is_locked = await self.check_profile_lock(user_id)
-        
-        if is_locked:
-            raise ProfileLockedException()
-        
         # Get current workout schedules
         workout_schedules = await self.get_workout_schedule(user_id)
         

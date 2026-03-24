@@ -56,7 +56,6 @@ router = APIRouter()
                                 "carbs_percentage": 45.0,
                                 "fats_percentage": 25.0,
                                 "plan_rationale": "Balanced macros for muscle gain",
-                                "is_locked": True,
                                 "created_at": "2026-01-15T10:00:00Z",
                                 "updated_at": "2026-01-15T10:00:00Z"
                             }
@@ -110,17 +109,6 @@ async def get_meal_plan(
         200: {
             "description": "Meal plan updated successfully"
         },
-        403: {
-            "description": "Profile is locked",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Profile is locked. Unlock profile before making modifications.",
-                        "error_code": "PROFILE_LOCKED"
-                    }
-                }
-            }
-        },
         422: {
             "description": "Validation error",
             "content": {
@@ -145,10 +133,9 @@ async def update_meal_plan(
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> MealPlanResponse:
     """
-    Update meal plan (requires unlocked profile).
+    Update meal plan.
     
-    Updates the user's meal plan with the provided changes. Validates that
-    the profile is unlocked before applying changes. Creates a profile version
+    Updates the user's meal plan with the provided changes. Creates a profile version
     for audit trail if locked profile is modified.
     
     **Request Body Example:**
@@ -170,7 +157,6 @@ async def update_meal_plan(
         MealPlanResponse with updated meal plan
         
     Raises:
-        HTTPException(403): If profile is locked
         HTTPException(404): If meal plan not found
         HTTPException(422): If validation fails (handled by FastAPI)
         HTTPException(401): If authentication fails (handled by dependency)
@@ -227,10 +213,9 @@ async def update_meal_schedule(
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> MealScheduleResponse:
     """
-    Update meal schedule (requires unlocked profile).
+    Update meal schedule.
     
-    Updates the user's meal schedule with the provided changes. Validates that
-    the profile is unlocked before applying changes. Validates time format (HH:MM).
+    Updates the user's meal schedule with the provided changes. Validates time format (HH:MM).
     
     Args:
         update_data: MealScheduleUpdate schema with fields to update
@@ -241,7 +226,6 @@ async def update_meal_schedule(
         MealScheduleResponse with updated meal schedule
         
     Raises:
-        HTTPException(403): If profile is locked
         HTTPException(404): If profile not found
         HTTPException(422): If validation fails (handled by FastAPI)
         HTTPException(401): If authentication fails (handled by dependency)

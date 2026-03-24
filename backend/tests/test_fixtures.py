@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.dish import Dish, Ingredient
+from app.models.dish import Dish
 from app.models.user import User
 from app.models.profile import UserProfile
 

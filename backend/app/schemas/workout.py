@@ -91,7 +91,6 @@ class WorkoutPlanResponse(BaseModel):
     duration_weeks: int = Field(..., description="Planned duration of the program in weeks (1-52)")
     days_per_week: int = Field(..., description="Number of workout days per week (1-7)")
     plan_rationale: Optional[str] = Field(None, description="AI-generated explanation of why this plan suits the user")
-    is_locked: bool = Field(..., description="Whether the plan is locked (requires unlock to modify)")
     workout_days: List[WorkoutDayResponse] = Field(..., description="All workout days in the plan")
     created_at: datetime = Field(..., description="Timestamp when the plan was created")
     updated_at: datetime = Field(..., description="Timestamp of last modification")

@@ -113,7 +113,6 @@ export const MealPlanSchema = z.object({
   carbs_percentage: z.number().min(0).max(100),
   fats_percentage: z.number().min(0).max(100),
   plan_rationale: z.string(),
-  is_locked: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -170,7 +169,6 @@ export const LifestyleBaselineSchema = z.object({
 export const UserProfileResponseSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  is_locked: z.boolean(),
   fitness_level: z.string(),
   fitness_goals: z.array(FitnessGoalSchema),
   physical_constraints: z.array(PhysicalConstraintSchema),
@@ -237,7 +235,6 @@ export const MealPlanResponseSchema = z.object({
   carbs_percentage: z.number().min(0).max(100),
   fats_percentage: z.number().min(0).max(100),
   plan_rationale: z.string(),
-  is_locked: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -268,19 +265,7 @@ export const MealScheduleResponseSchema = z.object({
 // Dish Schemas
 // ============================================================================
 
-/**
- * Schema for dish ingredient
- */
-export const DishIngredientSchema = z.object({
-  id: z.string().uuid(),
-  ingredient_id: z.string().uuid(),
-  ingredient_name: z.string(),
-  ingredient_name_hindi: z.string(),
-  quantity: z.number().positive(),
-  unit: z.string(),
-  is_optional: z.boolean(),
-  preparation_notes: z.string().nullable(),
-});
+
 
 /**
  * Schema for dish summary response
@@ -319,7 +304,6 @@ export const DishResponseSchema = DishSummaryResponseSchema.extend({
   contains_allergens: z.array(z.string()),
   is_active: z.boolean(),
   popularity_score: z.number().nonnegative(),
-  ingredients: z.array(DishIngredientSchema),
 });
 
 // ============================================================================
@@ -388,36 +372,7 @@ export const MealTemplateResponseSchema = z.object({
 // Shopping List Schemas
 // ============================================================================
 
-/**
- * Schema for shopping list ingredient
- */
-export const ShoppingListIngredientSchema = z.object({
-  ingredient_id: z.string().uuid(),
-  name: z.string(),
-  name_hindi: z.string(),
-  category: z.string(),
-  total_quantity: z.number().positive(),
-  unit: z.string(),
-  is_optional: z.boolean(),
-  used_in_dishes: z.array(z.string()),
-});
 
-/**
- * Schema for ingredient category
- */
-export const IngredientCategorySchema = z.object({
-  category: z.string(),
-  ingredients: z.array(ShoppingListIngredientSchema),
-});
-
-/**
- * Schema for shopping list response
- * Used by GET /shopping-list/
- */
-export const ShoppingListResponseSchema = z.object({
-  categories: z.array(IngredientCategorySchema),
-  total_items: z.number().int().nonnegative(),
-});
 
 // ============================================================================
 // Workout Schemas
@@ -473,7 +428,6 @@ export const WorkoutPlanResponseSchema = z.object({
   duration_weeks: z.number().int().positive(),
   days_per_week: z.number().int().min(1).max(7),
   plan_rationale: z.string(),
-  is_locked: z.boolean(),
   workout_days: z.array(WorkoutDayResponseSchema),
   created_at: z.string(),
   updated_at: z.string(),

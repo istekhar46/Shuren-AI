@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from app.api.v1.endpoints.dishes import router
 from app.models.user import User
 from app.models.profile import UserProfile
-from app.models.dish import Dish, Ingredient, DishIngredient
+from app.models.dish import Dish
 from app.models.preferences import DietaryPreference
 
 

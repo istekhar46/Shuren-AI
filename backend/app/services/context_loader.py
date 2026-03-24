@@ -126,8 +126,7 @@ async def load_agent_context(
     # Log context loading mode
     logger.debug(
         f"Loading context for user {user_id}: "
-        f"onboarding_mode={onboarding_mode}, "
-        f"profile_locked={profile.is_locked}"
+        f"onboarding_mode={onboarding_mode}"
     )
     
     # Extract fitness level (default to 'beginner' if not set)

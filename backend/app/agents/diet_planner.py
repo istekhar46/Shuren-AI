@@ -19,7 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.agents.base import BaseAgent
 from app.agents.context import AgentContext, AgentResponse
 from app.agents.tools.onboarding_tools import call_onboarding_step
-from app.models.dish import Dish, DishIngredient, Ingredient
+from app.models.dish import Dish
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule, DietaryPreference
 from app.services.meal_service import MealService
@@ -165,6 +165,54 @@ class DietPlannerAgent(BaseAgent):
                 })
         
         @tool
+        async def update_meal(target_date: str, meal_name: str, new_dish_name: str) -> str:
+            """Update a specific meal in the user's meal plan with a new dish.
+            
+            Args:
+                target_date: ISO format date string (e.g., '2023-12-25'). Use get_current_datetime if needed.
+                meal_name: The name of the meal to update (e.g., 'breakfast', 'dinner', 'snack')
+                new_dish_name: The name of the new dish to substitute into the meal plan
+            
+            Returns:
+                JSON string with success status and message
+            """
+            try:
+                result = await MealService.update_meal_dish(
+                    user_id=context.user_id,
+                    db_session=db_session,
+                    target_date=target_date,
+                    meal_name=meal_name,
+                    new_dish_name=new_dish_name
+                )
+                
+                return json.dumps({
+                    "success": True,
+                    "data": result,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "diet_planner_agent"
+                    }
+                })
+                
+            except ValueError as e:
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                })
+            except SQLAlchemyError as e:
+                logger.error(f"Database error in update_meal: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Unable to update meal plan. Please try again."
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error in update_meal: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "An unexpected error occurred. Please try again."
+                })
+        
+        @tool
         async def suggest_meal_substitution(meal_type: str, reason: str) -> str:
             """Suggest meal substitution based on dietary preferences and restrictions.
             
@@ -304,117 +352,7 @@ class DietPlannerAgent(BaseAgent):
                 })
         
         @tool
-        async def get_recipe_details(dish_name: str) -> str:
-            """Get recipe details including ingredients and cooking instructions.
-            
-            Args:
-                dish_name: Name of the dish to get recipe for
-                
-            Returns:
-                JSON string with recipe ingredients and cooking instructions
-            """
-            try:
-                if not db_session:
-                    return json.dumps({
-                        "success": False,
-                        "error": "Database session not available"
-                    })
-                
-                # Query dish by name (case-insensitive)
-                stmt = select(Dish).where(
-                    Dish.name.ilike(f"%{dish_name}%"),
-                    Dish.is_active == True,
-                    Dish.deleted_at.is_(None)
-                )
-                
-                result = await db_session.execute(stmt)
-                dish = result.scalar_one_or_none()
-                
-                if not dish:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Dish '{dish_name}' not found in recipe database"
-                    })
-                
-                # Get ingredients for this dish
-                stmt = select(DishIngredient).where(
-                    DishIngredient.dish_id == dish.id,
-                    DishIngredient.deleted_at.is_(None)
-                ).join(DishIngredient.ingredient)
-                
-                result = await db_session.execute(stmt)
-                dish_ingredients = result.scalars().all()
-                
-                # Build ingredients list
-                ingredients = []
-                for dish_ingredient in dish_ingredients:
-                    ingredient = dish_ingredient.ingredient
-                    ingredient_data = {
-                        "name": ingredient.name,
-                        "name_hindi": ingredient.name_hindi,
-                        "quantity": float(dish_ingredient.quantity),
-                        "unit": dish_ingredient.unit,
-                        "preparation_note": dish_ingredient.preparation_note,
-                        "is_optional": dish_ingredient.is_optional,
-                        "category": ingredient.category,
-                        "is_allergen": ingredient.is_allergen,
-                        "allergen_type": ingredient.allergen_type
-                    }
-                    ingredients.append(ingredient_data)
-                
-                # Build recipe response
-                recipe_data = {
-                    "dish_name": dish.name,
-                    "dish_name_hindi": dish.name_hindi,
-                    "description": dish.description,
-                    "cuisine_type": dish.cuisine_type,
-                    "meal_type": dish.meal_type,
-                    "serving_size_g": float(dish.serving_size_g),
-                    "prep_time_minutes": dish.prep_time_minutes,
-                    "cook_time_minutes": dish.cook_time_minutes,
-                    "total_time_minutes": dish.prep_time_minutes + dish.cook_time_minutes,
-                    "difficulty_level": dish.difficulty_level,
-                    "ingredients": ingredients,
-                    "nutritional_info": {
-                        "calories": float(dish.calories),
-                        "protein_g": float(dish.protein_g),
-                        "carbs_g": float(dish.carbs_g),
-                        "fats_g": float(dish.fats_g),
-                        "fiber_g": float(dish.fiber_g) if dish.fiber_g else None
-                    },
-                    "dietary_tags": {
-                        "is_vegetarian": dish.is_vegetarian,
-                        "is_vegan": dish.is_vegan,
-                        "is_gluten_free": dish.is_gluten_free,
-                        "is_dairy_free": dish.is_dairy_free,
-                        "is_nut_free": dish.is_nut_free
-                    },
-                    "contains_allergens": dish.contains_allergens
-                }
-                
-                return json.dumps({
-                    "success": True,
-                    "data": recipe_data,
-                    "metadata": {
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "source": "diet_planner_agent"
-                    }
-                })
-                
-            except SQLAlchemyError as e:
-                logger.error(f"Database error in get_recipe_details: {e}")
-                return json.dumps({
-                    "success": False,
-                    "error": "Unable to retrieve recipe details. Please try again."
-                })
-            except Exception as e:
-                logger.error(f"Unexpected error in get_recipe_details: {e}")
-                return json.dumps({
-                    "success": False,
-                    "error": "An unexpected error occurred. Please try again."
-                })
-        
-        @tool
+
         async def calculate_nutrition(dish_name: str) -> str:
             """Calculate nutritional information for a dish.
             
@@ -572,7 +510,7 @@ class DietPlannerAgent(BaseAgent):
         return [
             get_meal_plan,
             suggest_meal_substitution,
-            get_recipe_details,
+            update_meal,
             calculate_nutrition,
             save_dietary_preferences_tool,
             save_meal_plan_tool
@@ -605,17 +543,18 @@ Dietary Preferences:
         base_prompt = f"""You are a professional nutrition and meal planning assistant for the Shuren fitness coaching system.
 
 - get_meal_plan: Retrieve the meal plan for any given date with dishes, timing, and nutritional information
-- research: Search for evidence-based nutritional information, calorie data, and dietary research. Always use this BEFORE suggesting substitutions or new dishes.
+- research: Search for evidence-based nutritional information, calorie data, and dietary research. Always use this to do research about workout meals etc as per user info and requirement BEFORE creating plans, suggesting substitutions, or new dishes.
 - suggest_meal_substitution: Suggest meal substitution based on dietary preferences and restrictions
-- get_recipe_details: Get recipe details including ingredients and cooking instructions
+- update_meal: Replace a dish in a specific meal (e.g., breakfast, dinner) on a specific date with a new dish. Call this when the user chooses a suggested alternative.
 - calculate_nutrition: Calculate nutritional information for a dish
 - get_current_datetime: Get the current date and time (use this to determine the date for future/past requests)
 
 When to Use Tools:
-- Use research when you need to verify nutritional facts, search for healthy recipes, or find evidence-based answers to dietary questions.
+- Use research when you need to verify nutritional facts, search for healthy recipes, do research about workout meals based on user requirements before creating plans, or find evidence-based answers to dietary questions.
 - Use get_meal_plan when users ask about a specific day's meals, nutrition, or eating plan. Always use get_current_datetime first if the user refers to "tomorrow", "yesterday", or a specific day of the week to calculate the correct target_date.
 - Use suggest_meal_substitution when users want variety or need to change a dish in their plan
-- Use get_recipe_details when users ask for cooking instructions or ingredients for a specific dish
+- Use update_meal when the user explicitly agrees to substitute or replace a dish with an alternative.
+- When a user asks for a recipe, ingredients, or cooking instructions for a dish, use the `research` tool to find the recipe online.
 - Use calculate_nutrition when users ask for macro breakdowns of specific dishes
 
 User Profile:
@@ -642,7 +581,7 @@ Guidelines:
 Available Tools:
 - get_current_meal_plan: Retrieve today's meal plan
 - suggest_meal_substitution: Generate alternative meal suggestions
-- get_recipe_details: Get recipe ingredients and cooking instructions
+- update_meal: Replace a dish with an alternative in the meal plan
 - calculate_nutrition: Calculate macros and calories for dishes
 
 CRITICAL INSTRUCTION: You must ONLY use real data fetched from your tools. If you cannot retrieve the real data using your tools, or if the tools return no data, DO NOT make up or guess information. Instead, state clearly that you do not have the relevant data regarding that query.

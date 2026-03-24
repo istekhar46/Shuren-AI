@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.dish_service import DishService
-from app.models.dish import Dish, Ingredient, DishIngredient
+from app.models.dish import Dish
 
 
 @pytest_asyncio.fixture

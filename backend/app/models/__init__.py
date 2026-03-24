@@ -21,11 +21,7 @@ from app.models.workout import (
 )
 from app.models.workout_log import WorkoutLog
 from app.models.conversation import ConversationMessage
-from app.models.dish import (
-    Dish,
-    Ingredient,
-    DishIngredient,
-)
+from app.models.dish import Dish
 from app.models.meal_template import (
     MealTemplate,
     TemplateMeal,
@@ -51,8 +47,6 @@ __all__ = [
     "WorkoutLog",
     "ConversationMessage",
     "Dish",
-    "Ingredient",
-    "DishIngredient",
     "MealTemplate",
     "TemplateMeal",
 ]

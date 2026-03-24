@@ -311,24 +311,7 @@ class TestRegenerateMealTemplate:
             data = response.json()
             assert "week_number" in data
     
-    def test_regenerate_profile_locked(self, client, mock_user):
-        """Test 403 when profile is locked."""
-        with patch('app.api.v1.endpoints.meal_templates.MealTemplateService') as MockService:
-            mock_service = MockService.return_value
-            mock_service.get_template_by_week = AsyncMock(return_value=None)
-            mock_service.generate_template = AsyncMock(
-                side_effect=ProfileLockedException()
-            )
-            
-            response = client.post(
-                "/api/v1/meals/template/regenerate",
-                json={"week_number": 1}
-            )
-            
-            assert response.status_code == 403
-            data = response.json()
-            assert "locked" in data["detail"].lower()
-    
+
     def test_regenerate_missing_meal_plan(self, client, mock_user):
         """Test 400 when user doesn't have meal plan configured."""
         from fastapi import HTTPException

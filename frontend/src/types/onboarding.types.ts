@@ -171,7 +171,6 @@ export interface OnboardingCompleteResponse {
   profile_id: string;
   user_id: string;
   fitness_level: string;
-  is_locked: boolean;
   onboarding_complete: boolean;
   message: string;
 }

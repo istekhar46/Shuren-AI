@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.dish import Dish, DishIngredient, Ingredient
+from app.models.dish import Dish
 
 
 class DishService:
@@ -41,10 +41,7 @@ class DishService:
             Dish.is_active == True
         )
         
-        if include_ingredients:
-            query = query.options(
-                selectinload(Dish.dish_ingredients).selectinload(DishIngredient.ingredient)
-            )
+
         
         result = await self.db.execute(query)
         return result.scalar_one_or_none()

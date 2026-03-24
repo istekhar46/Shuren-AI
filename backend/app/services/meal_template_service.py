@@ -9,7 +9,6 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ProfileLockedException
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealSchedule
 from app.models.profile import UserProfile
@@ -234,13 +233,9 @@ class MealTemplateService:
             MealTemplate object with all template meals
             
         Raises:
-            ProfileLockedException: If profile is locked
             HTTPException: If profile not found or missing required data
         """
-        # Check profile lock
         profile = await self._get_profile(profile_id)
-        if profile.is_locked:
-            raise ProfileLockedException()
         
         # Get user's meal plan and schedules
         meal_plan = profile.meal_plan
@@ -342,13 +337,9 @@ class MealTemplateService:
             Updated MealTemplate object
             
         Raises:
-            ProfileLockedException: If profile is locked
             HTTPException: If template, meal schedule, dish, or template meal not found
         """
-        # Check profile lock
         profile = await self._get_profile(profile_id)
-        if profile.is_locked:
-            raise ProfileLockedException()
         
         # Get active template
         template = await self.get_active_template(profile_id)

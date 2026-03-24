@@ -26,7 +26,7 @@ from app.models.preferences import (
 )
 from app.models.workout import WorkoutPlan, WorkoutDay, WorkoutExercise
 from app.models.meal_template import MealTemplate, TemplateMeal
-from app.models.dish import Dish, DishIngredient
+from app.models.dish import Dish
 from app.services.onboarding_completion import verify_onboarding_completion, OnboardingIncompleteError
 from app.utils.schedule_validation import day_name_to_number, time_str_to_time
 
@@ -94,7 +94,7 @@ class ProfileCreationService:
             schedule_data = self._extract_schedule_data(agent_context)
             
             # Begin transaction (will be committed by caller)
-            # Create UserProfile with is_locked=True
+            # Create UserProfile
             profile = self._create_profile_entity(user_id, fitness_data["fitness_level"])
             self.db.add(profile)
             await self.db.flush()  # Get profile.id
@@ -379,8 +379,7 @@ class ProfileCreationService:
         """
         return UserProfile(
             user_id=user_id,
-            fitness_level=fitness_level,
-            is_locked=True
+            fitness_level=fitness_level
         )
     
     def _create_fitness_goals(self, profile_id: UUID, goal_data: dict) -> List[FitnessGoal]:
@@ -551,9 +550,7 @@ class ProfileCreationService:
             plan_description=workout_data.get("rationale", ""),
             duration_weeks=workout_data.get("duration_weeks", 12),
             days_per_week=workout_data["frequency"],
-            plan_rationale=workout_data.get("rationale", ""),
-            is_locked=True,
-            locked_at=datetime.utcnow()
+            plan_rationale=workout_data.get("rationale", "")
         )
         
         # Create workout days from training split

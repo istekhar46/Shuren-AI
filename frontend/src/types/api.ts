@@ -29,8 +29,7 @@ export * from './dish.types';
 // Meal template types
 export * from './mealTemplate.types';
 
-// Shopping list types
-export * from './shoppingList.types';
+
 
 // Workout types
 export * from './workout.types';

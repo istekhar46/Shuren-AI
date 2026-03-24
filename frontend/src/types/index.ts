@@ -120,7 +120,6 @@ export interface UserProfile {
   hydrationPreferences: HydrationPreference;
   lifestyleBaseline: LifestyleBaseline;
   notificationPreferences: NotificationPreference;
-  isLocked: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -151,20 +150,11 @@ export interface ChatResponse {
 }
 
 // Meal Types
-export interface Ingredient {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  category: string;
-}
 
 export interface Dish {
   id: string;
   name: string;
   description: string;
-  ingredients: Ingredient[];
-  instructions: string[];
   macros: {
     calories: number;
     protein: number;
@@ -183,16 +173,7 @@ export interface Meal {
   dayName: string;
 }
 
-export interface ShoppingListItem {
-  ingredient: Ingredient;
-  totalQuantity: number;
-  meals: string[]; // meal IDs
-}
 
-export interface ShoppingList {
-  items: ShoppingListItem[];
-  generatedAt: string;
-}
 
 // Workout Types
 export interface ExerciseSet {

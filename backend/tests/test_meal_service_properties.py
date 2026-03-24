@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.profile import UserProfile
-from app.models.dish import Dish, Ingredient, DishIngredient
+from app.models.dish import Dish
 from app.models.meal_template import MealTemplate, TemplateMeal
 from app.models.preferences import MealPlan, MealSchedule
 from app.services.meal_service import MealService

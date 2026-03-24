@@ -45,7 +45,7 @@ export interface DishSummaryResponse {
 /**
  * Complete dish response
  * Returned by GET /dishes/{dish_id}
- * Extends DishSummaryResponse with full details and ingredients
+ * Extends DishSummaryResponse with full details
  */
 export interface DishResponse extends DishSummaryResponse {
   description: string;
@@ -58,20 +58,4 @@ export interface DishResponse extends DishSummaryResponse {
   contains_allergens: string[];
   is_active: boolean;
   popularity_score: number;
-  ingredients: DishIngredient[];
-}
-
-/**
- * Dish ingredient definition
- * Represents an ingredient used in a dish
- */
-export interface DishIngredient {
-  id: string;
-  ingredient_id: string;
-  ingredient_name: string;
-  ingredient_name_hindi: string;
-  quantity: number;
-  unit: string;
-  is_optional: boolean;
-  preparation_notes: string | null;
 }

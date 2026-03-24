@@ -301,7 +301,8 @@ class FitnessAssessmentAgent(BaseOnboardingAgent):
             True if agent_context contains fitness_assessment data
         """
         stmt = select(OnboardingState).where(
-            OnboardingState.user_id == user_id
+            OnboardingState.user_id == user_id,
+            OnboardingState.deleted_at.is_(None)
         )
         result = await self.db.execute(stmt)
         state = result.scalars().first()

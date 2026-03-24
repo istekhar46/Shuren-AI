@@ -37,9 +37,6 @@ export const ProfileSummary: React.FC<ProfileSummaryProps> = ({ profile }) => {
           </h2>
           <div className="flex items-center gap-2 mt-1">
             <span className={`dash-badge dash-badge--${fitnessLevel}`}>{levelLabel}</span>
-            <span className="text-xs" style={{ color: 'var(--color-text-faint)' }}>
-              {profile.isLocked ? '🔒 Locked' : '🔓 Unlocked'}
-            </span>
           </div>
         </div>
       </div>

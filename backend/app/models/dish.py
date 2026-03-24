@@ -54,12 +54,6 @@ class Dish(BaseModel):
     popularity_score = Column(Integer, default=0, nullable=False)
     
     # Relationships
-    dish_ingredients = relationship(
-        "DishIngredient",
-        back_populates="dish",
-        cascade="all, delete-orphan"
-    )
-    
     template_meals = relationship(
         "TemplateMeal",
         back_populates="dish"
@@ -93,83 +87,3 @@ class Dish(BaseModel):
         )),
     )
 
-
-class Ingredient(BaseModel):
-    """Ingredient entity representing a food component."""
-    
-    __tablename__ = "ingredients"
-    
-    # Basic information
-    name = Column(String(200), nullable=False, unique=True)
-    name_hindi = Column(String(200), nullable=True)
-    
-    # Classification
-    category = Column(String(50), nullable=False)
-    
-    # Nutritional information (per 100g)
-    calories_per_100g = Column(Numeric(6, 2), nullable=True)
-    protein_per_100g = Column(Numeric(5, 2), nullable=True)
-    carbs_per_100g = Column(Numeric(5, 2), nullable=True)
-    fats_per_100g = Column(Numeric(5, 2), nullable=True)
-    
-    # Measurement
-    typical_unit = Column(String(20), nullable=False)
-    
-    # Allergen tags
-    is_allergen = Column(Boolean, default=False, nullable=False)
-    allergen_type = Column(String(50), nullable=True)
-    
-    # Metadata
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    dish_ingredients = relationship(
-        "DishIngredient",
-        back_populates="ingredient"
-    )
-    
-    # Table constraints
-    __table_args__ = (
-        CheckConstraint(
-            "category IN ('vegetable', 'fruit', 'protein', 'grain', 'dairy', 'spice', 'oil', 'other')",
-            name='valid_category'
-        ),
-        Index('idx_ingredients_category', 'category', postgresql_where=(
-            Column('deleted_at').is_(None) & (Column('is_active') == True)
-        )),
-        Index('idx_ingredients_allergen', 'is_allergen', 'allergen_type', postgresql_where=(
-            Column('deleted_at').is_(None) & (Column('is_active') == True)
-        )),
-    )
-
-
-class DishIngredient(BaseModel):
-    """Junction table linking dishes to ingredients with quantities."""
-    
-    __tablename__ = "dish_ingredients"
-    
-    # Foreign keys
-    dish_id = Column(UUID(as_uuid=True), ForeignKey("dishes.id", ondelete="CASCADE"), nullable=False)
-    ingredient_id = Column(UUID(as_uuid=True), ForeignKey("ingredients.id", ondelete="RESTRICT"), nullable=False)
-    
-    # Quantity information
-    quantity = Column(Numeric(8, 2), nullable=False)
-    unit = Column(String(20), nullable=False)
-    
-    # Optional notes
-    preparation_note = Column(String(200), nullable=True)
-    
-    # Metadata
-    is_optional = Column(Boolean, default=False, nullable=False)
-    
-    # Relationships
-    dish = relationship("Dish", back_populates="dish_ingredients")
-    ingredient = relationship("Ingredient", back_populates="dish_ingredients")
-    
-    # Table constraints
-    __table_args__ = (
-        CheckConstraint('quantity > 0', name='valid_quantity'),
-        UniqueConstraint('dish_id', 'ingredient_id', name='unique_dish_ingredient'),
-        Index('idx_dish_ingredients_dish', 'dish_id'),
-        Index('idx_dish_ingredients_ingredient', 'ingredient_id'),
-    )
